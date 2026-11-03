@@ -6,21 +6,33 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
-import { fetchCurrentUser, fetchMyWork, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { fetchCurrentUser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
 const SESSION_COOKIE = 'derkumpel_session';
+const mapOrigin = new URL(config.mapStyleUrl).origin;
 
 await app.register(cookie);
 await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });
 
-app.addHook('onSend', async (_request, reply, payload) => {
+app.addHook('onRequest', async (request, reply) => {
+  if (!request.url.startsWith('/api/')) return;
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(request.method);
+  if (!unsafe) return;
+  const origin = request.headers.origin;
+  if (origin && origin !== config.publicBaseUrl.origin) {
+    return reply.code(403).send({ error: 'invalid_origin', message: 'Ungültiger Anfrageursprung' });
+  }
+});
+
+app.addHook('onSend', async (request, reply, payload) => {
   reply.header('X-Content-Type-Options', 'nosniff');
   reply.header('Referrer-Policy', 'no-referrer');
   reply.header('X-Frame-Options', 'DENY');
   reply.header('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=()');
-  reply.header('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://sgx.geodatenzentrum.de; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  reply.header('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ${mapOrigin}; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`);
+  if (request.url.startsWith('/api/') && !request.url.startsWith('/api/health/')) reply.header('Cache-Control', 'no-store');
   return payload;
 });
 
@@ -39,8 +51,13 @@ function clearSession(reply: FastifyReply): void { reply.clearCookie(SESSION_COO
 function credentials(request: FastifyRequest): CredentialEnvelope {
   const token = request.cookies[SESSION_COOKIE];
   if (!token) throw new RedmineError(401, 'Authentication required');
-  try { return decryptCredentials(token, config.sessionKey); }
-  catch { throw new RedmineError(401, 'Authentication required'); }
+  try {
+    const value = decryptCredentials(token, config.sessionKey);
+    if (Date.now() - value.issuedAt > config.sessionMaxAgeSeconds * 1000) throw new Error('expired');
+    return value;
+  } catch {
+    throw new RedmineError(401, 'Authentication required');
+  }
 }
 
 function numeric(value: string): number {
@@ -85,6 +102,12 @@ app.get('/api/issues/my', async (request) => {
   const query = request.query as { status?: string };
   const status = query.status && ['open', 'closed', '*'].includes(query.status) ? query.status : 'open';
   return fetchMyWork(config, credentials(request), status);
+});
+
+app.get('/api/issues/visible', async (request) => {
+  const query = request.query as { status?: string };
+  const status = query.status && ['open', 'closed', '*'].includes(query.status) ? query.status : 'open';
+  return fetchVisibleIssues(config, credentials(request), status);
 });
 
 app.get('/api/issues/:id', async (request) => {
