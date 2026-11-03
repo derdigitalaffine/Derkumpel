@@ -54,6 +54,12 @@ export function navigationUrl(issue: RedmineIssue): string | undefined {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
 }
 
+function normalizedCustomFields(issue: RedmineIssue): Array<{ id: number; value: RedmineCustomField['value'] }> {
+  return (issue.custom_fields ?? [])
+    .map((field) => ({ id: field.id, value: field.value ?? null }))
+    .sort((a, b) => a.id - b.id);
+}
+
 export function redminePatchValue(issue: RedmineIssue, key: string): unknown {
   switch (key) {
     case 'status_id': return issue.status.id;
@@ -62,6 +68,7 @@ export function redminePatchValue(issue: RedmineIssue, key: string): unknown {
     case 'project_id': return issue.project.id;
     case 'tracker_id': return issue.tracker.id;
     case 'parent_issue_id': return issue.parent?.id ?? null;
+    case 'custom_fields': return normalizedCustomFields(issue);
     default: return (issue as unknown as Record<string, unknown>)[key];
   }
 }
