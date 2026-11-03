@@ -1,5 +1,5 @@
 import { ActionIcon, Alert, Box, Group, Paper, Stack, Text, Title } from '@mantine/core';
-import maplibregl, { Marker } from 'maplibre-gl';
+import { Map, Marker, NavigationControl } from 'maplibre-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -13,15 +13,19 @@ export function MapPage() {
   const query = useCallback(() => db.issues.where('active').equals(1).toArray(), []);
   const records = useDexieLive(query, []);
   const mapNode = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map>();
+  const mapRef = useRef<Map | null>(null);
   const navigate = useNavigate();
   const [error, setError] = useState('');
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
-    const map = new maplibregl.Map({ container: mapNode.current, style: DEFAULT_STYLE, center: [7.77, 49.5], zoom: 11, attributionControl: true });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-    mapRef.current = map;
-    return () => { map.remove(); mapRef.current = undefined; };
+    let disposed = false;
+    void api.config().catch(() => ({ mapStyleUrl: DEFAULT_STYLE, mapCenter: [7.77, 49.5] as [number, number] })).then((config) => {
+      if (disposed || !mapNode.current || mapRef.current) return;
+      const map = new Map({ container: mapNode.current, style: config.mapStyleUrl || DEFAULT_STYLE, center: config.mapCenter, zoom: 11, attributionControl: true });
+      map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+      mapRef.current = map;
+    });
+    return () => { disposed = true; mapRef.current?.remove(); mapRef.current = null; };
   }, []);
   useEffect(() => {
     const map = mapRef.current; if (!map) return;
@@ -30,7 +34,7 @@ export function MapPage() {
       const coords = issueCoordinates(record.data); if (!coords) continue;
       const el = document.createElement('button'); el.type = 'button'; el.ariaLabel = `Auftrag ${record.data.id}: ${record.data.subject}`; el.textContent = String(record.data.id); el.style.cssText = 'min-width:36px;height:36px;border:3px solid white;border-radius:18px;background:#1c5d99;color:white;font-weight:800;box-shadow:0 2px 8px #0005;padding:0 8px;';
       el.onclick = () => navigate(`/issues/${record.data.id}`);
-      markers.push(new maplibregl.Marker({ element: el }).setLngLat(coords).addTo(map));
+      markers.push(new Marker({ element: el }).setLngLat(coords).addTo(map));
     }
     return () => markers.forEach((m) => m.remove());
   }, [records, navigate]);
