@@ -27,7 +27,7 @@ export const api = {
   me: () => request<CurrentUser>('/api/auth/me'),
   config: () => request<PublicConfig>('/api/config'),
   myIssues: () => request<{ issues: RedmineIssue[]; user: CurrentUser }>('/api/issues/my'),
-  visibleIssues: () => request<{ issues: RedmineIssue[] }>('/api/issues/visible'),
+  visibleIssues: (status: 'open' | 'closed' | '*' = 'open') => request<{ issues: RedmineIssue[] }>(`/api/issues/visible?status=${encodeURIComponent(status)}`),
   issue: async (id: number) => (await request<{ issue: RedmineIssue }>(`/api/issues/${id}`)).issue,
   updateIssue: (id: number, issue: Record<string, unknown>) => request<void>(`/api/issues/${id}`, { method: 'PUT', body: JSON.stringify({ issue }) }),
   comment: (id: number, notes: string, privateNote = false) => request<void>(`/api/issues/${id}/comments`, { method: 'POST', body: JSON.stringify({ notes, private: privateNote }) }),
@@ -36,8 +36,9 @@ export const api = {
     form.append('file', blob, filename);
     return request<{ ok: true }>(`/api/issues/${id}/attachments`, { method: 'POST', body: form });
   },
-  attachmentBlob: async (id: number) => {
-    const response = await fetch(`/api/attachments/${id}/content`, { credentials: 'same-origin', cache: 'no-store' });
+  attachmentBlob: async (id: number, contentUrl?: string) => {
+    const query = contentUrl ? `?url=${encodeURIComponent(contentUrl)}` : '';
+    const response = await fetch(`/api/attachments/${id}/content${query}`, { credentials: 'same-origin', cache: 'no-store' });
     if (response.status === 401) throw new AuthRequiredError('Anmeldung erforderlich');
     if (!response.ok) throw new ApiError(response.status, `Anhang konnte nicht geladen werden (${response.status})`);
     return response.blob();
