@@ -7,8 +7,22 @@ import type { RedmineIssue } from './types';
 let activeSync: Promise<void> | undefined;
 
 type AttachmentCacheWarning = { attachmentId: number; issueId: number; filename: string; message: string };
+type AttachmentFailure = { retryAfter: number; message: string };
 
 async function setSync(key: string, value: unknown): Promise<void> { await db.syncState.put({ key, value }); }
+function attachmentFailureKey(id: number): string { return `attachmentFailure:${id}`; }
+
+async function storeFreshIssue(fresh: RedmineIssue): Promise<void> {
+  const existing = await db.issues.get(fresh.id);
+  const active = existing?.active ?? 0;
+  await db.issues.put({
+    id: fresh.id,
+    data: fresh,
+    active,
+    staleSince: active === 1 ? undefined : (existing?.staleSince ?? Date.now()),
+    syncedAt: Date.now(),
+  });
+}
 
 export async function queueIssueUpdate(issue: RedmineIssue, patch: Record<string, unknown>, optimistic?: (current: RedmineIssue) => RedmineIssue): Promise<string> {
   const id = crypto.randomUUID();
@@ -69,7 +83,7 @@ async function replay(record: OutboxRecord): Promise<void> {
   }
   await db.outbox.delete(record.id);
   const fresh = await api.issue(record.issueId);
-  await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
+  await storeFreshIssue(fresh);
 }
 
 function isPermanentApiFailure(error: unknown): error is ApiError {
@@ -115,18 +129,25 @@ async function cacheAttachments(issue: RedmineIssue, warnings: AttachmentCacheWa
   await withLimit(attachments, 3, async (attachment) => {
     const existing = await db.attachments.get(attachment.id);
     if (existing) return;
+
+    const failureRecord = await db.syncState.get(attachmentFailureKey(attachment.id));
+    const failure = failureRecord?.value as AttachmentFailure | undefined;
+    if (failure && failure.retryAfter > Date.now()) {
+      warnings.push({ attachmentId: attachment.id, issueId: issue.id, filename: attachment.filename, message: failure.message });
+      return;
+    }
+
     try {
-      let blob = await api.attachmentBlob(attachment.id);
+      let blob = await api.attachmentBlob(attachment.id, attachment.content_url);
       if (blob.type.startsWith('image/')) blob = await prepareOfflinePreview(blob, attachment.filename);
       await db.attachments.put({ id: attachment.id, issueId: issue.id, filename: attachment.filename, contentType: attachment.content_type || blob.type, size: blob.size, createdOn: attachment.created_on, blob, cachedAt: Date.now() });
+      await db.syncState.delete(attachmentFailureKey(attachment.id));
     } catch (error) {
       if (error instanceof AuthRequiredError) throw error;
-      warnings.push({
-        attachmentId: attachment.id,
-        issueId: issue.id,
-        filename: attachment.filename,
-        message: error instanceof Error ? error.message : 'Anhang konnte nicht offline gespeichert werden',
-      });
+      const message = error instanceof Error ? error.message : 'Anhang konnte nicht offline gespeichert werden';
+      const retryAfter = Date.now() + (error instanceof ApiError && error.status === 404 ? 6 * 60 * 60_000 : 10 * 60_000);
+      await db.syncState.put({ key: attachmentFailureKey(attachment.id), value: { retryAfter, message } satisfies AttachmentFailure });
+      warnings.push({ attachmentId: attachment.id, issueId: issue.id, filename: attachment.filename, message });
     }
   });
 }
@@ -205,13 +226,13 @@ export async function resolveConflict(id: string, choice: 'server' | 'local'): P
   if (choice === 'server') {
     await db.outbox.delete(id);
     const fresh = await api.issue(record.issueId);
-    await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
+    await storeFreshIssue(fresh);
   } else {
     if (record.kind === 'update') await api.updateIssue(record.issueId, record.payload);
     else if (record.kind === 'comment') await api.comment(record.issueId, String(record.payload.notes ?? ''), Boolean(record.payload.private));
     else if (record.kind === 'attachment' && record.blob) await api.uploadAttachment(record.issueId, record.blob, String(record.payload.filename ?? 'foto.jpg'));
     await db.outbox.delete(id);
     const fresh = await api.issue(record.issueId);
-    await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
+    await storeFreshIssue(fresh);
   }
 }
