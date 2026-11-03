@@ -18,6 +18,7 @@ type AuthState = 'loading' | 'ready' | 'offline' | 'login';
 export function App() {
   const [state, setState] = useState<AuthState>('loading');
   const check = async () => {
+    if (await getSetting('locallyLoggedOut', false)) { setState('login'); return; }
     try { const user = await api.me(); await setSetting('lastUser', user); setState('ready'); }
     catch (error) {
       if (error instanceof AuthRequiredError) { setState('login'); return; }
