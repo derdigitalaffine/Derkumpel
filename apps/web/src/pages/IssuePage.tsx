@@ -1,4 +1,4 @@
-import { Accordion, Alert, Badge, Box, Button, Card, Divider, Drawer, Group, Image, Modal, Paper, Progress, Select, SimpleGrid, Stack, Switch, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { Accordion, Alert, Badge, Box, Button, Card, Divider, Drawer, Group, Image, Modal, Paper, Progress, Select, SimpleGrid, Stack, Switch, Text, Textarea, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -16,7 +16,14 @@ type Membership = { id: number; user?: NamedRef; group?: NamedRef; roles?: Named
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   if (value === undefined || value === null || value === '') return null;
-  return <Box><Text className="muted-label">{label}</Text><Text fw={650}>{value}</Text></Box>;
+  return <Box><Text className="muted-label">{label}</Text><Text fw={700} size="sm" mt={3}>{value}</Text></Box>;
+}
+
+function SectionTitle({ icon, children, meta }: { icon: string; children: React.ReactNode; meta?: React.ReactNode }) {
+  return <Group justify="space-between" align="center" wrap="nowrap">
+    <Group gap="sm" wrap="nowrap"><ThemeIcon size={34} radius="md" variant="light">{icon}</ThemeIcon><Text fw={850} size="lg">{children}</Text></Group>
+    {meta}
+  </Group>;
 }
 
 export function IssuePage() {
@@ -57,52 +64,133 @@ export function IssuePage() {
     notifications.show({ message: navigator.onLine ? 'Foto wird hochgeladen' : 'Foto sicher offline gespeichert' });
   };
   const nav = navigationUrl(issue);
-
+  const address = issueAddress(issue);
   const relevantJournals = (issue.journals ?? []).filter((journal) => Boolean(journal.notes?.trim()) || journal.details?.some((detail) => detail.name === 'status_id'));
   const technicalJournals = (issue.journals ?? []).filter((journal) => !relevantJournals.includes(journal));
 
   return <Stack gap="md" maw={900} mx="auto">
-    <Group justify="space-between"><Button component={Link} to="/" variant="subtle" px={0}>← Meine Arbeit</Button>{pending.length > 0 && <Badge color="orange" variant="light">{pending.length} lokal</Badge>}</Group>
-    <Paper withBorder radius="xl" p="lg">
-      <Stack gap="md">
-        <Group justify="space-between" align="flex-start"><Group gap="xs"><Badge color={statusColor(issue.status.name)}>{issue.status.name}</Badge><Badge color="gray" variant="light">#{issue.id}</Badge></Group><Text fw={700} c="dimmed">{issue.priority.name}</Text></Group>
-        <Title order={1} size="h2" lh={1.15}>{issue.subject}</Title>
-        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+    <Group justify="space-between" className="page-heading">
+      <Button component={Link} to="/" variant="subtle" color="gray" px="xs">← Meine Arbeit</Button>
+      {pending.length > 0 && <Badge color="orange" variant="light" size="lg">↻ {pending.length} lokal</Badge>}
+    </Group>
+
+    <Paper withBorder p={{ base: 'md', sm: 'lg' }} className="surface-card">
+      <Stack gap="lg">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Group gap={6} wrap="wrap">
+            <Badge color={statusColor(issue.status.name)} variant="filled" size="lg">{issue.status.name}</Badge>
+            <Badge color="gray" variant="outline">{issue.tracker.name}</Badge>
+            <Badge color="gray" variant="light">#{issue.id}</Badge>
+          </Group>
+          <Badge color="blue" variant="light">{issue.priority.name}</Badge>
+        </Group>
+
+        <Title order={1} size="h2" lh={1.13} style={{ letterSpacing: '-0.03em' }}>{issue.subject}</Title>
+
+        {address && <Card bg="blue.0" p="md" radius="lg">
+          <Group justify="space-between" align="center" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap" align="flex-start">
+              <ThemeIcon variant="white" color="blue" radius="xl" size={38}>⌖</ThemeIcon>
+              <Box><Text className="muted-label">Einsatzort</Text><Text fw={850} size="md" mt={3}>{address}</Text></Box>
+            </Group>
+            {nav && <Button component="a" href={nav} target="_blank" variant="white" size="sm">Route</Button>}
+          </Group>
+        </Card>}
+
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing={{ base: 'md', sm: 'lg' }}>
           <Field label="Zugewiesen" value={issue.assigned_to?.name ?? '—'} />
-          <Field label="Beginn" value={dateLabel(issue.start_date)} />
-          <Field label="Fällig" value={dateLabel(issue.due_date)} />
-          <Field label="Tracker" value={issue.tracker.name} />
+          <Field label="Beginn" value={dateLabel(issue.start_date) ?? '—'} />
+          <Field label="Fällig" value={dateLabel(issue.due_date) ?? '—'} />
+          <Field label="Projekt" value={issue.project.name} />
         </SimpleGrid>
-        <Box><Group justify="space-between"><Text className="muted-label">Erledigt</Text><Text size="sm" fw={700}>{issue.done_ratio ?? 0}%</Text></Group><Progress mt={4} value={issue.done_ratio ?? 0} size="md" radius="xl" /></Box>
-        {issueAddress(issue) && <Card bg="blue.0" radius="lg" p="md"><Text className="muted-label">Ort</Text><Text fw={800} size="lg">{issueAddress(issue)}</Text></Card>}
+
+        <Box>
+          <Group justify="space-between"><Text className="muted-label">Fortschritt</Text><Text size="sm" fw={800}>{issue.done_ratio ?? 0}%</Text></Group>
+          <Progress mt={6} value={issue.done_ratio ?? 0} size="md" radius="xl" color={(issue.done_ratio ?? 0) >= 100 ? 'green' : 'blue'} />
+        </Box>
       </Stack>
     </Paper>
 
-    <Paper withBorder radius="xl" p="lg"><Text className="muted-label" mb="xs">Beschreibung</Text><Text style={{ whiteSpace: 'pre-wrap' }}>{issue.description || 'Keine Beschreibung.'}</Text></Paper>
+    <Paper withBorder p={{ base: 'md', sm: 'lg' }} className="surface-card">
+      <Stack gap="md">
+        <SectionTitle icon="⚡">Schnellaktionen</SectionTitle>
+        <div className="touch-grid">
+          {allowedPrimary.map((status) => <Button
+            key={status.id}
+            color={status.name.toLowerCase().includes('unterbrochen') ? 'orange' : status.name.toLowerCase().includes('erledigt') ? 'green' : 'blue'}
+            variant={issue.status.id === status.id ? 'light' : 'filled'}
+            onClick={() => void setStatus(status)}
+          >{issue.status.id === status.id ? '✓ ' : ''}{status.name}</Button>)}
+          <Button variant="light" leftSection={<Text aria-hidden="true">✎</Text>} onClick={() => setCommentOpen(true)}>Kommentar</Button>
+          <Button variant="light" leftSection={<Text aria-hidden="true">▧</Text>} onClick={() => inputRef.current?.click()}>Foto</Button>
+          <Button variant="light" leftSection={<Text aria-hidden="true">⌖</Text>} disabled={!nav} component={nav ? 'a' : 'button'} href={nav} target="_blank">Navigation</Button>
+          <Button variant="default" leftSection={<Text aria-hidden="true">◷</Text>} onClick={() => notifications.show({ title: 'Rapportzettel', message: 'Die elektronische Zeit-/Rapportfunktion ist als separates Modul vorbereitet und bewusst noch nicht aktiviert.' })}>Zeit buchen</Button>
+        </div>
+        <input ref={inputRef} hidden type="file" accept="image/*" capture="environment" onChange={(event) => void selectPhoto(event.currentTarget.files?.[0])} />
+      </Stack>
+    </Paper>
 
-    <Paper withBorder radius="xl" p="lg"><Stack gap="sm"><Text fw={800} size="lg">Aktionen</Text><div className="touch-grid">
-      {allowedPrimary.map((status) => <Button key={status.id} color={status.name.toLowerCase().includes('unterbrochen') ? 'orange' : status.name.toLowerCase().includes('erledigt') ? 'green' : 'blue'} variant={issue.status.id === status.id ? 'light' : 'filled'} onClick={() => void setStatus(status)}>{status.name}</Button>)}
-      <Button variant="light" onClick={() => setCommentOpen(true)}>Kommentar</Button>
-      <Button variant="light" onClick={() => inputRef.current?.click()}>Foto</Button>
-      <Button variant="light" disabled={!nav} component={nav ? 'a' : 'button'} href={nav} target="_blank">Navigation</Button>
-      <Button variant="light" onClick={() => notifications.show({ title: 'Rapportzettel', message: 'Die elektronische Zeit-/Rapportfunktion ist als separates Modul vorbereitet und bewusst noch nicht aktiviert.' })}>Zeit buchen</Button>
-    </div><input ref={inputRef} hidden type="file" accept="image/*" capture="environment" onChange={(event) => void selectPhoto(event.currentTarget.files?.[0])} /></Stack></Paper>
+    <Paper withBorder p={{ base: 'md', sm: 'lg' }} className="surface-card">
+      <Stack gap="sm">
+        <SectionTitle icon="≡">Beschreibung</SectionTitle>
+        <Text style={{ whiteSpace: 'pre-wrap' }} lh={1.55} c={issue.description ? undefined : 'dimmed'}>{issue.description || 'Keine Beschreibung hinterlegt.'}</Text>
+      </Stack>
+    </Paper>
 
-    {(issue.attachments?.length ?? 0) > 0 && <Paper withBorder radius="xl" p="lg"><Stack><Text fw={800} size="lg">Anhänge</Text><SimpleGrid cols={{ base: 1, sm: 2 }}>{issue.attachments?.map((attachment) => <AttachmentTile key={attachment.id} id={attachment.id} filename={attachment.filename} contentType={attachment.content_type} />)}</SimpleGrid></Stack></Paper>}
+    {(issue.attachments?.length ?? 0) > 0 && <Paper withBorder p={{ base: 'md', sm: 'lg' }} className="surface-card">
+      <Stack gap="md">
+        <SectionTitle icon="▧" meta={<Badge variant="light" color="gray">{issue.attachments?.length}</Badge>}>Anhänge</SectionTitle>
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>{issue.attachments?.map((attachment) => <AttachmentTile key={attachment.id} id={attachment.id} filename={attachment.filename} contentType={attachment.content_type} />)}</SimpleGrid>
+      </Stack>
+    </Paper>}
 
-    <Paper withBorder radius="xl" p="lg"><Stack><Text fw={800} size="lg">Verlauf</Text>{pending.map((item) => <Alert key={item.id} color="orange" variant="light">Lokale Änderung · wartet auf Synchronisation</Alert>)}{relevantJournals.length === 0 && <Text c="dimmed">Noch keine relevanten Einträge.</Text>}{relevantJournals.slice().reverse().map((journal) => <Card key={journal.id} withBorder radius="md"><Group justify="space-between"><Text fw={700}>{journal.user?.name ?? 'System'}</Text><Text size="xs" c="dimmed">{new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(journal.created_on))}</Text></Group>{journal.private_notes && <Badge mt="xs" color="grape" variant="light">Privat</Badge>}{journal.notes && <Text mt="xs" style={{ whiteSpace: 'pre-wrap' }}>{journal.notes}</Text>}{journal.details?.filter((detail) => detail.name === 'status_id').map((_, index) => <Text key={index} mt="xs" size="sm" c="dimmed">Status geändert</Text>)}</Card>)}
-      {technicalJournals.length > 0 && <Accordion variant="contained"><Accordion.Item value="technical"><Accordion.Control>Weitere Änderungen ({technicalJournals.length})</Accordion.Control><Accordion.Panel><Stack gap="xs">{technicalJournals.slice().reverse().map((journal) => <Text size="sm" key={journal.id}>{journal.user?.name ?? 'System'} · {new Date(journal.created_on).toLocaleString('de-DE')} · {journal.details?.length ?? 0} Feldänderung(en)</Text>)}</Stack></Accordion.Panel></Accordion.Item></Accordion>}</Stack></Paper>
+    <Paper withBorder p={{ base: 'md', sm: 'lg' }} className="surface-card">
+      <Stack gap="md">
+        <SectionTitle icon="◷" meta={relevantJournals.length > 0 ? <Badge variant="light" color="gray">{relevantJournals.length}</Badge> : undefined}>Verlauf</SectionTitle>
+        {pending.map((item) => <Alert key={item.id} color="orange" variant="light">Lokale Änderung · wartet auf Synchronisation</Alert>)}
+        {relevantJournals.length === 0 && <Text c="dimmed" size="sm">Noch keine relevanten Einträge.</Text>}
+        {relevantJournals.slice().reverse().map((journal) => <Group key={journal.id} align="flex-start" wrap="nowrap" gap="sm">
+          <ThemeIcon radius="xl" variant="light" color={journal.private_notes ? 'grape' : 'gray'} size={34}>{journal.private_notes ? 'P' : (journal.user?.name ?? 'S').slice(0, 1).toUpperCase()}</ThemeIcon>
+          <Card withBorder p="sm" style={{ flex: 1 }}>
+            <Group justify="space-between" align="flex-start" gap="xs">
+              <Text fw={750} size="sm">{journal.user?.name ?? 'System'}</Text>
+              <Text size="xs" c="dimmed">{new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(journal.created_on))}</Text>
+            </Group>
+            {journal.private_notes && <Badge mt="xs" color="grape" variant="light">Privat</Badge>}
+            {journal.notes && <Text mt="xs" size="sm" style={{ whiteSpace: 'pre-wrap' }} lh={1.5}>{journal.notes}</Text>}
+            {journal.details?.filter((detail) => detail.name === 'status_id').map((_, index) => <Text key={index} mt="xs" size="xs" c="dimmed">Status geändert</Text>)}
+          </Card>
+        </Group>)}
+        {technicalJournals.length > 0 && <Accordion variant="contained">
+          <Accordion.Item value="technical"><Accordion.Control>Weitere Änderungen ({technicalJournals.length})</Accordion.Control><Accordion.Panel><Stack gap="xs">{technicalJournals.slice().reverse().map((journal) => <Text size="sm" key={journal.id}>{journal.user?.name ?? 'System'} · {new Date(journal.created_on).toLocaleString('de-DE')} · {journal.details?.length ?? 0} Feldänderung(en)</Text>)}</Stack></Accordion.Panel></Accordion.Item>
+        </Accordion>}
+      </Stack>
+    </Paper>
 
-    <Accordion variant="separated" radius="lg"><Accordion.Item value="all"><Accordion.Control><Text fw={800}>Alle Angaben</Text></Accordion.Control><Accordion.Panel><Stack gap="md">
-      <SimpleGrid cols={{ base: 1, sm: 2 }}><Field label="Projekt" value={issue.project.name} /><Field label="Tracker" value={issue.tracker.name} /><Field label="Autor" value={issue.author?.name} /><Field label="Erstellt" value={new Date(issue.created_on).toLocaleString('de-DE')} /><Field label="Zuletzt geändert" value={new Date(issue.updated_on).toLocaleString('de-DE')} /><Field label="Geschätzte Stunden" value={issue.estimated_hours} /><Field label="Gebuchte Stunden" value={issue.spent_hours} /></SimpleGrid>
-      <Divider label="Benutzerdefinierte Felder" />{issue.custom_fields?.map((field) => <Field key={field.id} label={field.name} value={Array.isArray(field.value) ? field.value.join(', ') : field.value ?? '—'} />)}
-      {(issue.children?.length ?? 0) > 0 && <><Divider label="Unteraufgaben" />{issue.children?.map((child) => <Button key={child.id} component={Link} to={`/issues/${child.id}`} variant="subtle" justify="flex-start">#{child.id} {child.subject}</Button>)}</>}
-      {(issue.relations?.length ?? 0) > 0 && <><Divider label="Beziehungen" />{issue.relations?.map((relation) => <Text key={relation.id} size="sm">{relation.relation_type}: #{relation.issue_id === issue.id ? relation.issue_to_id : relation.issue_id}</Text>)}</>}
-      <AdvancedEditor issue={issue} />
-    </Stack></Accordion.Panel></Accordion.Item></Accordion>
+    <Paper withBorder className="surface-card" style={{ overflow: 'hidden' }}>
+      <Accordion variant="separated" radius="lg">
+        <Accordion.Item value="all" style={{ border: 0 }}><Accordion.Control><Text fw={850}>Alle Angaben & Bearbeiten</Text></Accordion.Control><Accordion.Panel><Stack gap="md">
+          <SimpleGrid cols={{ base: 1, sm: 2 }}><Field label="Projekt" value={issue.project.name} /><Field label="Tracker" value={issue.tracker.name} /><Field label="Autor" value={issue.author?.name} /><Field label="Erstellt" value={new Date(issue.created_on).toLocaleString('de-DE')} /><Field label="Zuletzt geändert" value={new Date(issue.updated_on).toLocaleString('de-DE')} /><Field label="Geschätzte Stunden" value={issue.estimated_hours} /><Field label="Gebuchte Stunden" value={issue.spent_hours} /></SimpleGrid>
+          <Divider label="Benutzerdefinierte Felder" />
+          {(issue.custom_fields?.length ?? 0) === 0 ? <Text size="sm" c="dimmed">Keine benutzerdefinierten Felder.</Text> : issue.custom_fields?.map((field) => <Field key={field.id} label={field.name} value={Array.isArray(field.value) ? field.value.join(', ') : field.value ?? '—'} />)}
+          {(issue.children?.length ?? 0) > 0 && <><Divider label="Unteraufgaben" />{issue.children?.map((child) => <Button key={child.id} component={Link} to={`/issues/${child.id}`} variant="subtle" justify="flex-start">#{child.id} {child.subject}</Button>)}</>}
+          {(issue.relations?.length ?? 0) > 0 && <><Divider label="Beziehungen" />{issue.relations?.map((relation) => <Text key={relation.id} size="sm">{relation.relation_type}: #{relation.issue_id === issue.id ? relation.issue_to_id : relation.issue_id}</Text>)}</>}
+          <AdvancedEditor issue={issue} />
+        </Stack></Accordion.Panel></Accordion.Item>
+      </Accordion>
+    </Paper>
 
-    <Drawer opened={commentOpen} onClose={() => setCommentOpen(false)} title="Kommentar" position="bottom" size="auto" padding="lg"><Stack><Textarea label="Notiz" minRows={5} autosize value={notes} onChange={(event) => setNotes(event.currentTarget.value)} autoFocus /><Switch label="Private Notiz" checked={privateNote} onChange={(event) => setPrivateNote(event.currentTarget.checked)} /><Button onClick={() => void submitComment()} disabled={!notes.trim()}>Speichern</Button></Stack></Drawer>
-    <Modal opened={Boolean(photo)} onClose={() => { if (photo) URL.revokeObjectURL(photo.url); setPhoto(undefined); }} title="Foto verwenden?" centered><Stack>{photo && <Image src={photo.url} mah="60dvh" fit="contain" radius="md" />}<Group grow><Button variant="default" onClick={() => { if (photo) URL.revokeObjectURL(photo.url); setPhoto(undefined); }}>Verwerfen</Button><Button onClick={() => void usePhoto()}>Verwenden</Button></Group></Stack></Modal>
+    <Drawer opened={commentOpen} onClose={() => setCommentOpen(false)} title="Kommentar hinzufügen" position="bottom" size="auto" padding="lg">
+      <Stack maw={700} mx="auto">
+        <Textarea label="Notiz" placeholder="Kurze Rückmeldung zum Auftrag …" minRows={5} autosize value={notes} onChange={(event) => setNotes(event.currentTarget.value)} autoFocus />
+        <Switch label="Private Notiz" description="Nur verwenden, wenn deine Redmine-Rolle private Notizen erlaubt." checked={privateNote} onChange={(event) => setPrivateNote(event.currentTarget.checked)} />
+        <Button onClick={() => void submitComment()} disabled={!notes.trim()}>Kommentar speichern</Button>
+      </Stack>
+    </Drawer>
+
+    <Modal opened={Boolean(photo)} onClose={() => { if (photo) URL.revokeObjectURL(photo.url); setPhoto(undefined); }} title="Foto verwenden?" centered>
+      <Stack>{photo && <Image src={photo.url} mah="60dvh" fit="contain" radius="md" />}<Group grow><Button variant="default" onClick={() => { if (photo) URL.revokeObjectURL(photo.url); setPhoto(undefined); }}>Verwerfen</Button><Button onClick={() => void usePhoto()}>Foto anhängen</Button></Group></Stack>
+    </Modal>
   </Stack>;
 }
 
