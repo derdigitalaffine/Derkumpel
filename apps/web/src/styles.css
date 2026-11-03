@@ -101,13 +101,39 @@ button, a, input, textarea { touch-action: manipulation; }
 }
 
 .map-shell {
-  height: calc(100dvh - 148px);
-  min-height: 440px;
+  height: calc(100dvh - 166px);
+  min-height: 430px;
   border: 1px solid var(--dk-border);
   border-radius: 18px;
   overflow: hidden;
   box-shadow: var(--dk-shadow);
 }
+.issue-map-marker {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 9px;
+  border: 3px solid white;
+  border-radius: 21px;
+  background: var(--mantine-color-blue-8);
+  color: white;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.28);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.issue-map-marker:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.32); }
+.issue-map-marker:active { transform: scale(.96); }
+.user-map-marker {
+  width: 22px;
+  height: 22px;
+  border: 4px solid white;
+  border-radius: 50%;
+  background: var(--mantine-color-blue-6);
+  box-shadow: 0 0 0 6px rgba(34, 139, 230, 0.18), 0 4px 12px rgba(15, 23, 42, 0.24);
+}
+
 .muted-label {
   letter-spacing: .045em;
   text-transform: uppercase;
@@ -121,6 +147,7 @@ button, a, input, textarea { touch-action: manipulation; }
 @media (min-width: 48em) {
   .mobile-content { padding-bottom: 32px; }
   .issue-card:hover { transform: translateY(-1px); }
+  .map-shell { height: calc(100dvh - 190px); }
 }
 @media (max-width: 340px) { .touch-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) {
