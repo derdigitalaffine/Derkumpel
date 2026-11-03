@@ -8,12 +8,43 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
       - run: npm install
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Validate Compose
+        env:
+          REDMINE_BASE_URL: https://redmine.example.invalid
+          PUBLIC_BASE_URL: https://derkumpel.example.invalid
+          SESSION_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          APP_HOST: derkumpel.example.invalid
+        run: |
+          cp .env.example .env
+          printf '%s\n' 'SESSION_SECRET=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' >> .env
+          docker compose config --quiet
       - run: docker build -t derkumpel:ci .
+      - name: Smoke-test production image
+        env:
+          SESSION_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          docker run -d --name derkumpel-ci -p 18080:8080 \
+            -e NODE_ENV=production \
+            -e REDMINE_BASE_URL=https://redmine.example.invalid \
+            -e PUBLIC_BASE_URL=https://derkumpel.example.invalid \
+            -e SESSION_SECRET="$SESSION_SECRET" \
+            derkumpel:ci
+          trap 'docker logs derkumpel-ci || true; docker rm -f derkumpel-ci >/dev/null 2>&1 || true' EXIT
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18080/api/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Container did not become ready' >&2
+          exit 1
