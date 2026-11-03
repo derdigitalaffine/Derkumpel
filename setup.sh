@@ -78,7 +78,7 @@ EOF
     echo "Für integriertes Caddy: ./setup.sh caddy"
     ;;
   start) need docker; compose up -d app ;;
-  stop) need docker; compose stop app ;;
+  stop) need docker; compose stop ;;
   restart) need docker; compose restart app ;;
   status) need docker; compose ps ;;
   logs) need docker; compose logs -f --tail=200 app ;;
