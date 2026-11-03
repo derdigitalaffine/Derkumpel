@@ -1,0 +1,14 @@
+:root { color-scheme: light; background: #f4f6f8; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { background: #f4f6f8; overscroll-behavior-y: none; }
+* { box-sizing: border-box; }
+.safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.mobile-content { padding-bottom: 88px; }
+@media (min-width: 48em) { .mobile-content { padding-bottom: 24px; } }
+.issue-card { transition: transform 120ms ease, box-shadow 120ms ease; }
+.issue-card:active { transform: scale(.992); }
+.map-shell { height: calc(100dvh - 138px); min-height: 440px; border-radius: 16px; overflow: hidden; }
+.muted-label { letter-spacing: .02em; text-transform: uppercase; font-size: 11px; font-weight: 800; color: var(--mantine-color-dimmed); }
+.touch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 340px) { .touch-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }

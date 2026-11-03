@@ -1,0 +1,173 @@
+import { api, AuthRequiredError } from './api';
+import { db, getSetting, type OutboxRecord } from './db';
+import { prepareOfflinePreview } from './image';
+import { redminePatchValue, sameValue } from './issueUtils';
+import type { RedmineIssue } from './types';
+
+let activeSync: Promise<void> | undefined;
+
+async function setSync(key: string, value: unknown): Promise<void> { await db.syncState.put({ key, value }); }
+
+export async function queueIssueUpdate(issue: RedmineIssue, patch: Record<string, unknown>, optimistic?: (current: RedmineIssue) => RedmineIssue): Promise<string> {
+  const id = crypto.randomUUID();
+  const baseValues = Object.fromEntries(Object.keys(patch).map((key) => [key, redminePatchValue(issue, key)]));
+  await db.transaction('rw', db.outbox, db.issues, async () => {
+    await db.outbox.put({ id, issueId: issue.id, kind: 'update', createdAt: Date.now(), attempts: 0, state: 'pending', baseUpdatedOn: issue.updated_on, baseValues, payload: patch });
+    if (optimistic) {
+      const record = await db.issues.get(issue.id);
+      if (record) await db.issues.put({ ...record, data: optimistic(record.data) });
+    }
+  });
+  void syncNow();
+  return id;
+}
+
+export async function queueComment(issue: RedmineIssue, notes: string, privateNote: boolean): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.outbox.put({ id, issueId: issue.id, kind: 'comment', createdAt: Date.now(), attempts: 0, state: 'pending', baseUpdatedOn: issue.updated_on, payload: { notes, private: privateNote } });
+  void syncNow();
+  return id;
+}
+
+export async function queueAttachment(issue: RedmineIssue, blob: Blob, filename: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.outbox.put({ id, issueId: issue.id, kind: 'attachment', createdAt: Date.now(), attempts: 0, state: 'pending', baseUpdatedOn: issue.updated_on, payload: { filename, contentType: blob.type }, blob });
+  void syncNow();
+  return id;
+}
+
+async function replay(record: OutboxRecord): Promise<void> {
+  const remote = await api.issue(record.issueId);
+  if (record.kind === 'update') {
+    const conflicts = Object.entries(record.payload).filter(([key]) => !sameValue(redminePatchValue(remote, key), record.baseValues?.[key]));
+    if (conflicts.length > 0) {
+      await db.outbox.update(record.id, { state: 'conflict', conflict: { server: remote, local: record.payload, reason: `Parallel geändert: ${conflicts.map(([key]) => key).join(', ')}` } });
+      return;
+    }
+    await api.updateIssue(record.issueId, record.payload);
+  } else if (record.kind === 'comment') {
+    await api.comment(record.issueId, String(record.payload.notes ?? ''), Boolean(record.payload.private));
+  } else if (record.kind === 'attachment') {
+    if (!record.blob) throw new Error('Lokale Datei fehlt');
+    await api.uploadAttachment(record.issueId, record.blob, String(record.payload.filename ?? 'foto.jpg'));
+  }
+  await db.outbox.delete(record.id);
+  const fresh = await api.issue(record.issueId);
+  await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+}
+
+async function replayOutbox(): Promise<void> {
+  const queue = await db.outbox.where('state').anyOf('pending', 'retrying').sortBy('createdAt');
+  for (const record of queue) {
+    try {
+      await db.outbox.update(record.id, { state: 'retrying', attempts: record.attempts + 1, lastError: undefined });
+      await replay({ ...record, attempts: record.attempts + 1, state: 'retrying' });
+    } catch (error) {
+      if (error instanceof AuthRequiredError) throw error;
+      await db.outbox.update(record.id, { state: 'retrying', attempts: record.attempts + 1, lastError: error instanceof Error ? error.message : 'Unbekannter Fehler' });
+    }
+  }
+}
+
+async function withLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      if (item !== undefined) await fn(item);
+    }
+  }));
+}
+
+async function cacheAttachments(issue: RedmineIssue): Promise<void> {
+  const attachments = issue.attachments ?? [];
+  await withLimit(attachments, 3, async (attachment) => {
+    const existing = await db.attachments.get(attachment.id);
+    if (existing) return;
+    try {
+      let blob = await api.attachmentBlob(attachment.id);
+      if (blob.type.startsWith('image/')) blob = await prepareOfflinePreview(blob, attachment.filename);
+      await db.attachments.put({ id: attachment.id, issueId: issue.id, filename: attachment.filename, contentType: attachment.content_type || blob.type, size: blob.size, createdOn: attachment.created_on, blob, cachedAt: Date.now() });
+    } catch (error) {
+      console.warn('Attachment cache failed', attachment.id, error);
+    }
+  });
+}
+
+async function refreshMyWork(): Promise<void> {
+  const list = await api.myIssues();
+  const activeIds = new Set(list.issues.map((issue) => issue.id));
+  const existing = await db.issues.toArray();
+  const now = Date.now();
+  await db.transaction('rw', db.issues, async () => {
+    for (const record of existing) {
+      if (!activeIds.has(record.id) && record.active) await db.issues.update(record.id, { active: false, staleSince: now });
+    }
+  });
+  await withLimit(list.issues, 4, async (summary) => {
+    const detail = await api.issue(summary.id);
+    const old = await db.issues.get(detail.id);
+    await db.issues.put({ id: detail.id, data: detail, active: true, staleSince: undefined, syncedAt: now });
+    if (!old || old.data.updated_on !== detail.updated_on || (detail.attachments?.length ?? 0) !== (old.data.attachments?.length ?? 0)) await cacheAttachments(detail);
+  });
+  await db.settings.put({ key: 'lastUser', value: list.user });
+}
+
+async function purgeStale(): Promise<void> {
+  const retentionDays = await getSetting('retentionDays', 30);
+  const cutoff = Date.now() - retentionDays * 86_400_000;
+  const stale = await db.issues.where('active').equals(0).and((r) => (r.staleSince ?? Infinity) < cutoff).toArray();
+  for (const record of stale) {
+    if ((await db.outbox.where('issueId').equals(record.id).count()) > 0) continue;
+    await db.transaction('rw', db.issues, db.attachments, async () => {
+      await db.attachments.where('issueId').equals(record.id).delete();
+      await db.issues.delete(record.id);
+    });
+  }
+}
+
+async function doSync(): Promise<void> {
+  if (!navigator.onLine) { await setSync('status', { state: 'offline', at: Date.now() }); return; }
+  await setSync('status', { state: 'syncing', at: Date.now() });
+  try {
+    await replayOutbox();
+    await refreshMyWork();
+    await purgeStale();
+    await setSync('status', { state: 'idle', at: Date.now(), lastSuccess: Date.now() });
+    await setSync('authRequired', false);
+  } catch (error) {
+    if (error instanceof AuthRequiredError) await setSync('authRequired', true);
+    await setSync('status', { state: 'error', at: Date.now(), message: error instanceof Error ? error.message : 'Synchronisation fehlgeschlagen' });
+    throw error;
+  }
+}
+
+export function syncNow(): Promise<void> {
+  if (!activeSync) activeSync = doSync().finally(() => { activeSync = undefined; });
+  return activeSync;
+}
+
+export function startSyncLoop(onAuthRequired?: () => void): () => void {
+  const run = () => void syncNow().catch((error) => { if (error instanceof AuthRequiredError) onAuthRequired?.(); });
+  const onVisible = () => { if (document.visibilityState === 'visible') run(); };
+  window.addEventListener('online', run);
+  document.addEventListener('visibilitychange', onVisible);
+  const timer = window.setInterval(() => { if (document.visibilityState === 'visible') run(); }, 120_000);
+  run();
+  return () => { window.removeEventListener('online', run); document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
+}
+
+export async function resolveConflict(id: string, choice: 'server' | 'local'): Promise<void> {
+  const record = await db.outbox.get(id);
+  if (!record || record.state !== 'conflict') return;
+  if (choice === 'server') {
+    await db.outbox.delete(id);
+    const fresh = await api.issue(record.issueId);
+    await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+  } else {
+    await api.updateIssue(record.issueId, record.payload);
+    await db.outbox.delete(id);
+    const fresh = await api.issue(record.issueId);
+    await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+  }
+}
