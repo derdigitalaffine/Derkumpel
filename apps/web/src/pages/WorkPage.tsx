@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Center, Drawer, Group, Loader, Menu, MultiSelect, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Badge, Box, Button, Center, Drawer, Group, Loader, Menu, MultiSelect, Paper, ScrollArea, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
@@ -10,6 +10,13 @@ import type { NamedRef } from '../types';
 
 type SortKey = 'priority' | 'due' | 'updated' | 'subject';
 type SavedFilter = { id: string; name: string; search: string; sort: SortKey; statuses: string[]; priorities: string[]; trackers: string[] };
+
+const sortLabels: Record<SortKey, string> = {
+  priority: 'Priorität',
+  due: 'Fälligkeit',
+  updated: 'Zuletzt geändert',
+  subject: 'Titel',
+};
 
 export function WorkPage() {
   const query = useCallback(() => db.issues.where('active').equals(1).toArray(), []);
@@ -70,7 +77,8 @@ export function WorkPage() {
   }), [available, search, sort, statuses, priorities, trackers, priorityRank]);
 
   const activeFilterCount = statuses.length + priorities.length + trackers.length;
-  const clearFilters = () => { setSearch(''); setStatuses([]); setPriorities([]); setTrackers([]); };
+  const clearStructuredFilters = () => { setStatuses([]); setPriorities([]); setTrackers([]); };
+  const clearAll = () => { setSearch(''); clearStructuredFilters(); };
   const saveCurrentFilter = async () => {
     const name = filterName.trim();
     if (!name) return;
@@ -89,31 +97,96 @@ export function WorkPage() {
   };
 
   return <Stack gap="md" maw={900} mx="auto">
-    <Box><Title order={1} size="h2">Meine Arbeit</Title><Text c="dimmed">Persönlich und über deine Gruppen zugewiesene offene Aufträge</Text></Box>
-    <Paper withBorder radius="lg" p="sm" pos="sticky" top={72} style={{ zIndex: 10 }}>
+    <Group justify="space-between" align="flex-end" className="page-heading">
+      <Box>
+        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Meine Arbeit</Title>
+        <Text c="dimmed" size="sm" mt={3}>Persönlich und über deine Gruppen zugewiesen</Text>
+      </Box>
+      {available.length > 0 && <Badge variant="light" size="lg">{available.length} offen</Badge>}
+    </Group>
+
+    <Paper withBorder p="sm" pos="sticky" top={76} className="work-toolbar">
       <Stack gap="xs">
-        <Group align="end" wrap="nowrap">
-          <TextInput value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Aufträge durchsuchen" aria-label="Aufträge durchsuchen" style={{ flex: 1 }} />
-          <ActionIcon variant={activeFilterCount ? 'filled' : 'light'} size={46} aria-label="Filter" onClick={() => setFilterOpen(true)}>≡</ActionIcon>
-          <Menu position="bottom-end"><Menu.Target><ActionIcon variant="light" size={46} aria-label="Sortierung">↕</ActionIcon></Menu.Target><Menu.Dropdown>
-            {[['priority','Priorität'],['due','Fälligkeit'],['updated','Zuletzt geändert'],['subject','Titel']].map(([value,label]) => <Menu.Item key={value} onClick={() => { setSort(value as SortKey); void setSetting('workSort', value); }}>{sort === value ? '✓ ' : ''}{label}</Menu.Item>)}
-          </Menu.Dropdown></Menu>
+        <Group gap="xs" wrap="nowrap">
+          <TextInput
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            placeholder="Titel, Ort, Auftrag …"
+            aria-label="Aufträge durchsuchen"
+            leftSection={<Text aria-hidden="true" fw={800}>⌕</Text>}
+            rightSection={search ? <ActionIcon size={34} variant="subtle" color="gray" aria-label="Suche leeren" onClick={() => setSearch('')}>×</ActionIcon> : undefined}
+            style={{ flex: 1 }}
+          />
+          <ActionIcon
+            variant={activeFilterCount ? 'filled' : 'light'}
+            size={48}
+            aria-label={activeFilterCount ? `Filter, ${activeFilterCount} aktiv` : 'Filter'}
+            onClick={() => setFilterOpen(true)}
+          >
+            <Text fw={900} fz="lg">≡</Text>
+          </ActionIcon>
+          <Menu position="bottom-end" shadow="md" width={210}>
+            <Menu.Target><ActionIcon variant="light" size={48} aria-label={`Sortierung: ${sortLabels[sort]}`}>↕</ActionIcon></Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Sortieren nach</Menu.Label>
+              {(Object.entries(sortLabels) as [SortKey, string][]).map(([value, label]) => <Menu.Item key={value} onClick={() => { setSort(value); void setSetting('workSort', value); }}>
+                {sort === value ? '✓ ' : ''}{label}
+              </Menu.Item>)}
+            </Menu.Dropdown>
+          </Menu>
         </Group>
-        {(activeFilterCount > 0 || savedFilters.length > 0) && <Group gap="xs">
-          {activeFilterCount > 0 && <Badge variant="light" component="button" style={{ cursor: 'pointer' }} onClick={clearFilters}>{activeFilterCount} Filter · zurücksetzen</Badge>}
-          {savedFilters.map((saved) => <Menu key={saved.id}><Menu.Target><Badge variant="outline" component="button" style={{ cursor: 'pointer' }}>{saved.name}</Badge></Menu.Target><Menu.Dropdown><Menu.Item onClick={() => applySaved(saved)}>Anwenden</Menu.Item><Menu.Item color="red" onClick={() => void removeSaved(saved.id)}>Löschen</Menu.Item></Menu.Dropdown></Menu>)}
-        </Group>}
+
+        <Group justify="space-between" gap="xs">
+          <Text size="xs" c="dimmed" fw={650}>{issues.length === available.length ? `${issues.length} Aufträge` : `${issues.length} von ${available.length}`} · {sortLabels[sort]}</Text>
+          {(activeFilterCount > 0 || search) && <Button variant="subtle" size="compact-xs" color="gray" onClick={clearAll}>Zurücksetzen</Button>}
+        </Group>
+
+        {(activeFilterCount > 0 || savedFilters.length > 0) && <ScrollArea type="never" offsetScrollbars>
+          <Group gap={6} wrap="nowrap" pb={2}>
+            {activeFilterCount > 0 && <Badge variant="light" component="button" style={{ cursor: 'pointer', flex: '0 0 auto' }} onClick={clearStructuredFilters}>{activeFilterCount} aktive Filter ×</Badge>}
+            {savedFilters.map((saved) => <Menu key={saved.id} position="bottom-start">
+              <Menu.Target><Badge variant="outline" component="button" style={{ cursor: 'pointer', flex: '0 0 auto' }}>{saved.name}</Badge></Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => applySaved(saved)}>Anwenden</Menu.Item>
+                <Menu.Item color="red" onClick={() => void removeSaved(saved.id)}>Löschen</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>)}
+          </Group>
+        </ScrollArea>}
       </Stack>
     </Paper>
-    {records.length === 0 && syncStatus?.state === 'syncing' ? <Center py="xl"><Stack align="center"><Loader /><Text c="dimmed">Aufträge werden synchronisiert …</Text></Stack></Center> : issues.length === 0 ? <Center py="xl"><Stack align="center" gap="xs"><Text fw={700}>{records.length === 0 ? 'Keine offenen Aufträge' : 'Keine passenden Aufträge'}</Text><Text size="sm" c="dimmed" ta="center">{records.length === 0 ? 'Aktuell ist dir und deinen Gruppen nichts Offenes zugewiesen.' : 'Passe Suche oder Filter an.'}</Text></Stack></Center> : <Stack gap="sm">{issues.map((issue) => <IssueCard key={issue.id} issue={issue} />)}</Stack>}
+
+    {records.length === 0 && syncStatus?.state === 'syncing' ? <Center py="xl">
+      <Stack align="center"><Loader size="sm" /><Text c="dimmed">Aufträge werden synchronisiert …</Text></Stack>
+    </Center> : issues.length === 0 ? <Paper className="empty-state" p="xl">
+      <Stack align="center" gap="sm" ta="center">
+        <ThemeIcon size={52} radius="xl" variant="light" color={records.length === 0 ? 'green' : 'blue'}>{records.length === 0 ? '✓' : '⌕'}</ThemeIcon>
+        <Box>
+          <Text fw={800}>{records.length === 0 ? 'Keine offenen Aufträge' : 'Keine passenden Aufträge'}</Text>
+          <Text size="sm" c="dimmed" mt={4}>{records.length === 0 ? 'Aktuell ist dir und deinen Gruppen nichts Offenes zugewiesen.' : 'Passe Suche oder Filter an.'}</Text>
+        </Box>
+        {records.length > 0 && <Button variant="light" onClick={clearAll}>Filter zurücksetzen</Button>}
+      </Stack>
+    </Paper> : <Stack gap="sm">{issues.map((issue) => <IssueCard key={issue.id} issue={issue} />)}</Stack>}
 
     <Drawer opened={filterOpen} onClose={() => setFilterOpen(false)} title="Aufträge filtern" position="bottom" size="auto" padding="lg">
-      <Stack>
-        <MultiSelect label="Status" data={statusOptions} value={statuses} onChange={setStatuses} searchable clearable />
-        <MultiSelect label="Priorität" data={priorityOptions} value={priorities} onChange={setPriorities} searchable clearable />
-        <MultiSelect label="Tracker" data={trackerOptions} value={trackers} onChange={setTrackers} searchable clearable />
-        <Group grow><Button variant="default" onClick={clearFilters}>Zurücksetzen</Button><Button onClick={() => setFilterOpen(false)}>Übernehmen</Button></Group>
-        <Paper withBorder p="md" radius="md"><Stack gap="xs"><Text fw={700}>Aktuellen Filter speichern</Text><TextInput value={filterName} onChange={(event) => setFilterName(event.currentTarget.value)} placeholder="z. B. Grünpflege heute" /><Button variant="light" disabled={!filterName.trim()} onClick={() => void saveCurrentFilter()}>Speichern</Button></Stack></Paper>
+      <Stack gap="md" maw={700} mx="auto">
+        <Text size="sm" c="dimmed">Grenze die Arbeitsliste ein. Die Auswahl bleibt lokal auf diesem Gerät.</Text>
+        <MultiSelect label="Status" data={statusOptions} value={statuses} onChange={setStatuses} searchable clearable placeholder="Alle Status" />
+        <MultiSelect label="Priorität" data={priorityOptions} value={priorities} onChange={setPriorities} searchable clearable placeholder="Alle Prioritäten" />
+        <MultiSelect label="Tracker" data={trackerOptions} value={trackers} onChange={setTrackers} searchable clearable placeholder="Alle Tracker" />
+        <Group grow>
+          <Button variant="default" onClick={clearStructuredFilters}>Zurücksetzen</Button>
+          <Button onClick={() => setFilterOpen(false)}>{activeFilterCount ? `${activeFilterCount} Filter übernehmen` : 'Übernehmen'}</Button>
+        </Group>
+        <Paper withBorder p="md" className="surface-card">
+          <Stack gap="xs">
+            <Text fw={800}>Aktuelle Ansicht speichern</Text>
+            <Text size="xs" c="dimmed">Speichert Suche, Filter und Sortierung nur auf diesem Gerät.</Text>
+            <TextInput value={filterName} onChange={(event) => setFilterName(event.currentTarget.value)} placeholder="z. B. Grünpflege heute" />
+            <Button variant="light" disabled={!filterName.trim()} onClick={() => void saveCurrentFilter()}>Ansicht speichern</Button>
+          </Stack>
+        </Paper>
       </Stack>
     </Drawer>
   </Stack>;
