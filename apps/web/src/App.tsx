@@ -19,13 +19,24 @@ export function App() {
   const [state, setState] = useState<AuthState>('loading');
   const check = async () => {
     if (await getSetting('locallyLoggedOut', false)) { setState('login'); return; }
-    try { const user = await api.me(); await setSetting('lastUser', user); setState('ready'); }
-    catch (error) {
+
+    if (!navigator.onLine) {
+      const cached = await getSetting<CurrentUser | null>('lastUser', null);
+      setState(cached ? 'offline' : 'login');
+      return;
+    }
+
+    try {
+      const user = await api.me();
+      await setSetting('lastUser', user);
+      setState('ready');
+    } catch (error) {
       if (error instanceof AuthRequiredError) { setState('login'); return; }
       const cached = await getSetting<CurrentUser | null>('lastUser', null);
       setState(cached ? 'offline' : 'login');
     }
   };
+
   useEffect(() => { void check(); }, []);
   useEffect(() => {
     if (state !== 'ready' && state !== 'offline') return;
