@@ -1,4 +1,4 @@
-import { api, AuthRequiredError } from './api';
+import { api, ApiError, AuthRequiredError } from './api';
 import { db, getSetting, type OutboxRecord } from './db';
 import { prepareOfflinePreview } from './image';
 import { redminePatchValue, sameValue } from './issueUtils';
@@ -36,6 +36,20 @@ export async function queueAttachment(issue: RedmineIssue, blob: Blob, filename:
   return id;
 }
 
+function wasCommentAlreadyApplied(remote: RedmineIssue, record: OutboxRecord): boolean {
+  const notes = String(record.payload.notes ?? '').trim();
+  if (!notes) return false;
+  const threshold = record.createdAt - 2 * 60_000;
+  return (remote.journals ?? []).some((journal) => journal.notes?.trim() === notes && Boolean(journal.private_notes) === Boolean(record.payload.private) && Date.parse(journal.created_on) >= threshold);
+}
+
+function wasAttachmentAlreadyApplied(remote: RedmineIssue, record: OutboxRecord): boolean {
+  if (!record.blob) return false;
+  const filename = String(record.payload.filename ?? '');
+  const threshold = record.createdAt - 2 * 60_000;
+  return (remote.attachments ?? []).some((attachment) => attachment.filename === filename && attachment.filesize === record.blob!.size && Date.parse(attachment.created_on) >= threshold);
+}
+
 async function replay(record: OutboxRecord): Promise<void> {
   const remote = await api.issue(record.issueId);
   if (record.kind === 'update') {
@@ -46,14 +60,18 @@ async function replay(record: OutboxRecord): Promise<void> {
     }
     await api.updateIssue(record.issueId, record.payload);
   } else if (record.kind === 'comment') {
-    await api.comment(record.issueId, String(record.payload.notes ?? ''), Boolean(record.payload.private));
+    if (!wasCommentAlreadyApplied(remote, record)) await api.comment(record.issueId, String(record.payload.notes ?? ''), Boolean(record.payload.private));
   } else if (record.kind === 'attachment') {
     if (!record.blob) throw new Error('Lokale Datei fehlt');
-    await api.uploadAttachment(record.issueId, record.blob, String(record.payload.filename ?? 'foto.jpg'));
+    if (!wasAttachmentAlreadyApplied(remote, record)) await api.uploadAttachment(record.issueId, record.blob, String(record.payload.filename ?? 'foto.jpg'));
   }
   await db.outbox.delete(record.id);
   const fresh = await api.issue(record.issueId);
   await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
+}
+
+function isPermanentApiFailure(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 }
 
 async function replayOutbox(): Promise<void> {
@@ -64,7 +82,18 @@ async function replayOutbox(): Promise<void> {
       await replay({ ...record, attempts: record.attempts + 1, state: 'retrying' });
     } catch (error) {
       if (error instanceof AuthRequiredError) throw error;
-      await db.outbox.update(record.id, { state: 'retrying', attempts: record.attempts + 1, lastError: error instanceof Error ? error.message : 'Unbekannter Fehler' });
+      const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
+      if (isPermanentApiFailure(error)) {
+        const remote = await api.issue(record.issueId).catch(() => undefined);
+        await db.outbox.update(record.id, {
+          state: 'conflict',
+          attempts: record.attempts + 1,
+          lastError: message,
+          conflict: { server: remote ?? null, local: record.payload, reason: `Redmine hat die Änderung abgelehnt (${error.status}).` },
+        });
+      } else {
+        await db.outbox.update(record.id, { state: 'retrying', attempts: record.attempts + 1, lastError: message });
+      }
     }
   }
 }
@@ -116,7 +145,7 @@ async function refreshMyWork(): Promise<void> {
 async function purgeStale(): Promise<void> {
   const retentionDays = await getSetting('retentionDays', 30);
   const cutoff = Date.now() - retentionDays * 86_400_000;
-  const stale = await db.issues.where('active').equals(0).and((r) => (r.staleSince ?? Infinity) < cutoff).toArray();
+  const stale = await db.issues.where('active').equals(0).and((record) => (record.staleSince ?? Infinity) < cutoff).toArray();
   for (const record of stale) {
     if ((await db.outbox.where('issueId').equals(record.id).count()) > 0) continue;
     await db.transaction('rw', db.issues, db.attachments, async () => {
@@ -169,7 +198,9 @@ export async function resolveConflict(id: string, choice: 'server' | 'local'): P
     const fresh = await api.issue(record.issueId);
     await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
   } else {
-    await api.updateIssue(record.issueId, record.payload);
+    if (record.kind === 'update') await api.updateIssue(record.issueId, record.payload);
+    else if (record.kind === 'comment') await api.comment(record.issueId, String(record.payload.notes ?? ''), Boolean(record.payload.private));
+    else if (record.kind === 'attachment' && record.blob) await api.uploadAttachment(record.issueId, record.blob, String(record.payload.filename ?? 'foto.jpg'));
     await db.outbox.delete(id);
     const fresh = await api.issue(record.issueId);
     await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
