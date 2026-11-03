@@ -66,6 +66,14 @@ function numeric(value: string): number {
   return id;
 }
 
+function safeAttachmentContentUrl(id: number, value: string): string {
+  const url = new URL(value, config.redmineBaseUrl);
+  if (url.origin !== config.redmineBaseUrl.origin) throw new RedmineError(400, 'Invalid attachment URL');
+  const escaped = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`^/attachments/(?:download/)?${escaped}(?:/|$)`).test(url.pathname)) throw new RedmineError(400, 'Invalid attachment URL');
+  return url.toString();
+}
+
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof RedmineError) {
     if (error.status === 401) clearSession(reply);
@@ -149,11 +157,25 @@ app.post('/api/issues/:id/attachments', async (request, reply) => {
 
 app.get('/api/attachments/:id/content', async (request, reply) => {
   const { id } = request.params as { id: string };
+  const attachmentId = numeric(id);
+  const { url } = request.query as { url?: string };
   const creds = credentials(request);
-  const meta = await redmineJson<{ attachment: { content_url: string; filename: string; content_type?: string } }>(config, creds, `/attachments/${numeric(id)}.json`);
-  const file = await redmineBinary(config, creds, meta.attachment.content_url);
-  reply.header('Content-Type', meta.attachment.content_type || file.contentType);
-  reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(meta.attachment.filename)}`);
+  let filename: string | undefined;
+  let contentType: string | undefined;
+  let target: string | undefined;
+
+  if (url?.trim()) {
+    target = safeAttachmentContentUrl(attachmentId, url.trim());
+  } else {
+    const meta = await redmineJson<{ attachment: { content_url: string; filename: string; content_type?: string } }>(config, creds, `/attachments/${attachmentId}.json`);
+    target = meta.attachment.content_url;
+    filename = meta.attachment.filename;
+    contentType = meta.attachment.content_type;
+  }
+
+  const file = await redmineBinary(config, creds, target);
+  reply.header('Content-Type', contentType || file.contentType);
+  reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(filename || file.filename || `attachment-${attachmentId}`)}`);
   return reply.send(Buffer.from(file.body));
 });
 
