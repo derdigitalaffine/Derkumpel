@@ -6,7 +6,7 @@ Date: 2026-11-03
 
 The Derkumpel production baseline is implemented on `work/initial-production`. Automated release gates cover static typing, unit tests, production build, high/critical production dependency audit, Compose validation, Docker image build and a started production-container readiness smoke test.
 
-A code candidate must not be merged/released while the latest branch CI is red. Dependency resolution is committed in `package-lock.json`; CI and Docker both use `npm ci` so the tested and deployed dependency graph is reproducible.
+A code candidate must not be merged/released while the latest branch CI is red.
 
 ## Automated checks
 
@@ -58,16 +58,26 @@ Implemented:
 - field-level conflict detection against base values
 - normalized custom-field comparison
 - permanent Redmine 4xx rejection surfaces as conflict instead of retrying forever
-- incomplete attachment caching (quota/network/etc.) is visible in Sync Center and retried on subsequent sync
 - completed/unassigned issue cleanup after configurable retention, default 30 days
 - pending mutations prevent stale-cache removal
+- missing attachment cache entries remain visible in the Sync center and are retried
 
-## Redmine behavior verified by API contract
+## UI/UX polish verification
 
-- current-user responses support `groups`/`memberships`, which Derkumpel uses for personal + group assignment scope
-- issue details support `allowed_statuses` in Redmine 5.0.x, so workflow-valid status choices come from Redmine rather than a Derkumpel copy
-- issue priorities are loaded from Redmine enumeration order and displayed high-to-low for the `Priorität` sort
-- full custom-field definitions/options are not assumed for normal users; generic field editing remains permission-safe because Redmine validates every write
+The second Mantine polish pass adds and preserves these release expectations:
+
+- cached offline mode opens immediately when `navigator.onLine` is false and a prior user is available; no doomed Redmine round trip blocks startup
+- work-list first sync uses skeleton cards instead of an empty spinner-only state
+- last successful work-list sync time is visible without adding persistent visual noise
+- pending local mutations/conflicts are surfaced on the global Sync navigation item
+- screen-reader live regions announce meaningful connection/work-list changes
+- `prefers-reduced-motion` and `prefers-contrast: more` have explicit styling behavior
+- login disables unusable submit states and explains when connectivity is required
+- attachment cards clearly distinguish cached/offline versus not-yet-offline files; cached images are directly tappable
+- Sync queue entries link back to their issue and distinguish pending/retrying/conflict states
+- conflict resolution is guarded against repeated taps while a choice is being applied
+
+Final push and pull-request CI for head `b36b2095d018e7827cd3f9ba7123e2855b2c85f9` completed successfully, including the production Docker smoke test.
 
 ## Live acceptance still required before organization-wide rollout
 
@@ -81,7 +91,7 @@ These checks require the real `redmine.vgo-o.de` data/credentials, actual roles/
 6. Verify project membership/assignee lists contain expected users and groups for representative projects.
 7. Upload a real camera photo on Android; repeat offline -> airplane mode -> capture -> reopen app -> reconnect -> verify exactly one Redmine attachment.
 8. Repeat the critical offline workflow on iOS Safari/PWA if iPhones are deployed.
-9. Cache and open representative large image/PDF/office attachments offline; deliberately approach browser storage limits and verify Sync Center reports any missing offline file.
+9. Cache and open representative large image/PDF/office attachments offline; observe browser storage pressure on actual devices.
 10. Verify native navigation opens the expected installed map app.
 11. Verify basemap.de Web Vektor from the final HTTPS origin and optional offline-map download for the configured administrative boundary/radius.
 12. Verify external reverse-proxy headers/cookies/HTTPS on the final hostname; if Caddy is used, verify certificate issuance and renewal path.
