@@ -1,0 +1,14 @@
+{
+  "name": "derkumpel",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=24" },
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @derkumpel/api",
+    "start": "npm run start -w @derkumpel/api"
+  }
+}
