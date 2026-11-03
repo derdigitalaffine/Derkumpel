@@ -2,18 +2,18 @@
 
 ## Context
 
-Derkumpel is a specialized mobile-first client for `redmine.vgo-o.de` used by a municipal Bauhof. Roughly 120 people use Redmine; about 25 employees work in the field. Team composition changes by assignment. Redmine groups can be assignees and every group member must be able to see and edit group-assigned work according to Redmine permissions.
+DerKumpel is a specialized mobile-first client for `redmine.vgo-o.de` used by a municipal Bauhof. Roughly 120 people use Redmine; about 25 employees work in the field. Team composition changes by assignment. Redmine groups can be assignees and every group member must be able to see and edit group-assigned work according to Redmine permissions.
 
 Target Redmine environment:
 
 - Redmine 5.0.5.stable
 - REST API enabled
-- MySQL backend (Derkumpel does not access it directly)
+- MySQL backend (DerKumpel does not access it directly)
 - Plugins: `redmine_custom_workflows` 2.0.8, `redmine_issue_templates` 1.1.1, `view_customize` 3.3.0
 
 ## Product goal
 
-Field staff should rarely need the classic Redmine UI. Derkumpel provides a purpose-built touch UI while preserving Redmine behavior, permissions and workflows.
+Field staff should rarely need the classic Redmine UI. DerKumpel provides a purpose-built touch UI while preserving Redmine behavior, permissions and workflows.
 
 ## Authentication
 
@@ -24,6 +24,19 @@ Users sign in with their existing Redmine username/password. A stateless BFF val
 The home screen is `Meine Arbeit`, not a generic dashboard. It contains open issues assigned directly to the user plus open issues assigned to groups the user belongs to. Watcher-only issues are excluded.
 
 Sorting is user-configurable: priority, start/due date, distance when coordinates and local location are available, and last update. Users can save local filters. All trackers are supported; users can explicitly exclude trackers in settings.
+
+## Ticket browser / archive
+
+`Tickets` is a separate browse surface for work that is not necessarily part of `Meine Arbeit`. It must support:
+
+- `Offen`, `Geschlossen` and `Alle` status scopes;
+- tracker filtering;
+- project filtering;
+- text search across the currently loaded results;
+- paginated loading rather than downloading the complete Redmine history at once;
+- opening any issue Redmine allows the current user to see.
+
+The browser follows Redmine permissions and does not add its own authorization layer. Online, list results are loaded on demand from Redmine. Opening a result fetches the full issue and places it in the local cache. Offline, the browser falls back to tickets already cached on that device and clearly labels that limitation. Browsed/closed tickets use the normal configurable cache-retention policy; they are not promoted into the active `Meine Arbeit` set unless Redmine actually assigns them to the user/group and they are open.
 
 ## Issue detail
 
@@ -61,6 +74,9 @@ Support subissues and issue relations. Watcher management is intentionally out o
 
 - Existing images and non-image attachments are cached for offline use.
 - Image cache uses optimized copies to reduce storage/bandwidth.
+- Attachment downloads use the `content_url` already supplied by Redmine issue data; do not require a second attachment-metadata lookup when the URL is known.
+- A failed offline-cache download remains visible and can be retried explicitly from the issue while online.
+- Repeated failures use a bounded retry/backoff path rather than hammering the same missing resource continuously.
 - Camera flow: capture -> preview -> discard/use.
 - No mandatory photo caption.
 - Before upload, images are compressed/resized while preserving EXIF where the source/type permits.
@@ -68,7 +84,7 @@ Support subissues and issue relations. Watcher management is intentionally out o
 
 ## Offline requirements
 
-After one successful online login, the app can open and work during outages lasting minutes to several hours/roughly half a workday.
+After one successful online login, the app can open and work during outages lasting minutes to several hours/roughly half a workday. Installation to the home screen is not required for IndexedDB/offline work: the same web app may be used in a normal browser tab, provided it has previously loaded and synchronized successfully. Installation remains recommended for the best standalone UX.
 
 On startup/foreground, sync all currently open personal/group-assigned issues plus necessary details and attachments. Existing issues can be edited offline except initial new-issue creation. Offline operations are stored in an IndexedDB outbox. Photos must be persisted locally immediately before sync.
 
@@ -93,9 +109,14 @@ Each active client may poll through the BFF for Redmine changes. Do not build a 
 - basemap.de Web Vektor default online basemap.
 - Ticket markers use lat/lng when available.
 - Filters allow own/group work and optionally all visible open issues.
+- If the current map scope contains no valid ticket coordinates, keep the map useful by centering it on the Verbandsgemeinde Otterbach-Otterberg instead of presenting a blank/undefined geographic state.
 - Current employee position is optional and local-only.
 - `Navigation` opens the native maps/navigation app.
 - Optional offline map caching is disabled by default. Preferred download extent is a configured municipality/administrative boundary; fallback is configurable radius.
+
+## Brand and PWA identity
+
+The product name is written **DerKumpel** in all user-facing UI and documentation. Technical identifiers that would break stored sessions/caches when renamed may remain lowercase/internal. Branding uses PNG assets: a full DerKumpel word/logo lockup for prominent surfaces and square 192/512/maskable variants for favicon, Apple touch icon and PWA installation.
 
 ## Push
 
