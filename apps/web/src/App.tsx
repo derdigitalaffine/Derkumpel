@@ -1,4 +1,4 @@
-import { Center, Loader, Stack, Text } from '@mantine/core';
+import { Box, Center, Loader, Paper, Stack, Text, ThemeIcon } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, AuthRequiredError } from './api';
@@ -31,8 +31,22 @@ export function App() {
     if (state !== 'ready' && state !== 'offline') return;
     return startSyncLoop(() => { if (navigator.onLine) setState('login'); });
   }, [state]);
-  if (state === 'loading') return <Center mih="100dvh"><Stack align="center"><Loader /><Text c="dimmed">Derkumpel startet …</Text></Stack></Center>;
+
+  if (state === 'loading') return <Center mih="100dvh" p="xl" role="status" aria-live="polite">
+    <Paper p="xl" maw={360} w="100%" ta="center" className="startup-card">
+      <Stack align="center" gap="md">
+        <ThemeIcon size={62} radius={20} variant="gradient" gradient={{ from: 'blue.7', to: 'cyan.6', deg: 145 }} fz={27} fw={900}>D</ThemeIcon>
+        <Box>
+          <Text fw={850} fz="xl" style={{ letterSpacing: '-0.03em' }}>Derkumpel</Text>
+          <Text size="sm" c="dimmed" mt={4}>Lokale Aufträge werden vorbereitet</Text>
+        </Box>
+        <Loader size="sm" />
+      </Stack>
+    </Paper>
+  </Center>;
+
   if (state === 'login') return <LoginPage onLoggedIn={() => setState('ready')} />;
+
   return <Layout><Routes>
     <Route path="/" element={<WorkPage />} />
     <Route path="/issues/:id" element={<IssuePage />} />
