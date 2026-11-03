@@ -53,7 +53,7 @@ async function replay(record: OutboxRecord): Promise<void> {
   }
   await db.outbox.delete(record.id);
   const fresh = await api.issue(record.issueId);
-  await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+  await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
 }
 
 async function replayOutbox(): Promise<void> {
@@ -101,13 +101,13 @@ async function refreshMyWork(): Promise<void> {
   const now = Date.now();
   await db.transaction('rw', db.issues, async () => {
     for (const record of existing) {
-      if (!activeIds.has(record.id) && record.active) await db.issues.update(record.id, { active: false, staleSince: now });
+      if (!activeIds.has(record.id) && record.active === 1) await db.issues.update(record.id, { active: 0, staleSince: now });
     }
   });
   await withLimit(list.issues, 4, async (summary) => {
     const detail = await api.issue(summary.id);
     const old = await db.issues.get(detail.id);
-    await db.issues.put({ id: detail.id, data: detail, active: true, staleSince: undefined, syncedAt: now });
+    await db.issues.put({ id: detail.id, data: detail, active: 1, staleSince: undefined, syncedAt: now });
     if (!old || old.data.updated_on !== detail.updated_on || (detail.attachments?.length ?? 0) !== (old.data.attachments?.length ?? 0)) await cacheAttachments(detail);
   });
   await db.settings.put({ key: 'lastUser', value: list.user });
@@ -148,13 +148,17 @@ export function syncNow(): Promise<void> {
 }
 
 export function startSyncLoop(onAuthRequired?: () => void): () => void {
+  let disposed = false;
+  let timer: number | undefined;
   const run = () => void syncNow().catch((error) => { if (error instanceof AuthRequiredError) onAuthRequired?.(); });
   const onVisible = () => { if (document.visibilityState === 'visible') run(); };
   window.addEventListener('online', run);
   document.addEventListener('visibilitychange', onVisible);
-  const timer = window.setInterval(() => { if (document.visibilityState === 'visible') run(); }, 120_000);
+  void api.config().then((cfg) => {
+    if (!disposed) timer = window.setInterval(() => { if (document.visibilityState === 'visible') run(); }, Math.max(120_000, cfg.pollIntervalMs));
+  }).catch(() => { if (!disposed) timer = window.setInterval(() => { if (document.visibilityState === 'visible') run(); }, 120_000); });
   run();
-  return () => { window.removeEventListener('online', run); document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
+  return () => { disposed = true; window.removeEventListener('online', run); document.removeEventListener('visibilitychange', onVisible); if (timer) window.clearInterval(timer); };
 }
 
 export async function resolveConflict(id: string, choice: 'server' | 'local'): Promise<void> {
@@ -163,11 +167,11 @@ export async function resolveConflict(id: string, choice: 'server' | 'local'): P
   if (choice === 'server') {
     await db.outbox.delete(id);
     const fresh = await api.issue(record.issueId);
-    await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+    await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
   } else {
     await api.updateIssue(record.issueId, record.payload);
     await db.outbox.delete(id);
     const fresh = await api.issue(record.issueId);
-    await db.issues.put({ id: fresh.id, data: fresh, active: true, syncedAt: Date.now() });
+    await db.issues.put({ id: fresh.id, data: fresh, active: 1, syncedAt: Date.now() });
   }
 }

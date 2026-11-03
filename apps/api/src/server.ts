@@ -34,9 +34,7 @@ function setSession(reply: FastifyReply, token: string): void {
   });
 }
 
-function clearSession(reply: FastifyReply): void {
-  reply.clearCookie(SESSION_COOKIE, { path: '/' });
-}
+function clearSession(reply: FastifyReply): void { reply.clearCookie(SESSION_COOKIE, { path: '/' }); }
 
 function credentials(request: FastifyRequest): CredentialEnvelope {
   const token = request.cookies[SESSION_COOKIE];
@@ -62,6 +60,7 @@ app.setErrorHandler((error, _request, reply) => {
 
 app.get('/api/health/live', async () => ({ ok: true }));
 app.get('/api/health/ready', async () => ({ ok: true, redmine: config.redmineBaseUrl.origin }));
+app.get('/api/config', async () => ({ mapStyleUrl: config.mapStyleUrl, mapCenter: config.mapCenter, offlineMapBounds: config.offlineMapBounds, offlineMapRadiusKm: config.offlineMapRadiusKm, pollIntervalMs: config.pollIntervalMs }));
 
 app.post('/api/auth/login', async (request, reply) => {
   const body = request.body as { username?: string; password?: string } | undefined;
@@ -133,13 +132,6 @@ app.get('/api/attachments/:id/content', async (request, reply) => {
   reply.header('Content-Type', meta.attachment.content_type || file.contentType);
   reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(meta.attachment.filename)}`);
   return reply.send(Buffer.from(file.body));
-});
-
-app.post('/api/time-entries', async (request, reply) => {
-  const body = request.body as { time_entry?: Record<string, unknown> } | undefined;
-  if (!body?.time_entry) return reply.code(400).send({ error: 'invalid_time_entry' });
-  const result = await redmineJson(config, credentials(request), '/time_entries.json', { method: 'POST', body: JSON.stringify(body) });
-  return reply.code(201).send(result);
 });
 
 const metaRoutes: Record<string, string> = {
