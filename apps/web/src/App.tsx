@@ -1,0 +1,69 @@
+import { Box, Center, Loader, Paper, Stack, Text, ThemeIcon } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { api, AuthRequiredError } from './api';
+import { getSetting, setSetting } from './db';
+import { startSyncLoop } from './sync';
+import type { CurrentUser } from './types';
+import { Layout } from './components/Layout';
+import { LoginPage } from './pages/LoginPage';
+import { WorkPage } from './pages/WorkPage';
+import { IssuePage } from './pages/IssuePage';
+import { MapPage } from './pages/MapPage';
+import { SyncPage } from './pages/SyncPage';
+import { SettingsPage } from './pages/SettingsPage';
+
+type AuthState = 'loading' | 'ready' | 'offline' | 'login';
+
+export function App() {
+  const [state, setState] = useState<AuthState>('loading');
+  const check = async () => {
+    if (await getSetting('locallyLoggedOut', false)) { setState('login'); return; }
+
+    if (!navigator.onLine) {
+      const cached = await getSetting<CurrentUser | null>('lastUser', null);
+      setState(cached ? 'offline' : 'login');
+      return;
+    }
+
+    try {
+      const user = await api.me();
+      await setSetting('lastUser', user);
+      setState('ready');
+    } catch (error) {
+      if (error instanceof AuthRequiredError) { setState('login'); return; }
+      const cached = await getSetting<CurrentUser | null>('lastUser', null);
+      setState(cached ? 'offline' : 'login');
+    }
+  };
+
+  useEffect(() => { void check(); }, []);
+  useEffect(() => {
+    if (state !== 'ready' && state !== 'offline') return;
+    return startSyncLoop(() => { if (navigator.onLine) setState('login'); });
+  }, [state]);
+
+  if (state === 'loading') return <Center mih="100dvh" p="xl" role="status" aria-live="polite">
+    <Paper p="xl" maw={360} w="100%" ta="center" className="startup-card">
+      <Stack align="center" gap="md">
+        <ThemeIcon size={62} radius={20} variant="gradient" gradient={{ from: 'blue.7', to: 'cyan.6', deg: 145 }} fz={27} fw={900}>D</ThemeIcon>
+        <Box>
+          <Text fw={850} fz="xl" style={{ letterSpacing: '-0.03em' }}>Derkumpel</Text>
+          <Text size="sm" c="dimmed" mt={4}>Lokale Aufträge werden vorbereitet</Text>
+        </Box>
+        <Loader size="sm" />
+      </Stack>
+    </Paper>
+  </Center>;
+
+  if (state === 'login') return <LoginPage onLoggedIn={() => setState('ready')} />;
+
+  return <Layout><Routes>
+    <Route path="/" element={<WorkPage />} />
+    <Route path="/issues/:id" element={<IssuePage />} />
+    <Route path="/map" element={<MapPage />} />
+    <Route path="/sync" element={<SyncPage />} />
+    <Route path="/settings" element={<SettingsPage />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes></Layout>;
+}

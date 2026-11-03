@@ -1,0 +1,46 @@
+name: derkumpel
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 8080
+      HOST: 0.0.0.0
+    ports:
+      - target: 8080
+        published: '${APP_PORT:-8080}'
+        host_ip: '${BIND_ADDRESS:-127.0.0.1}'
+        protocol: tcp
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+  caddy:
+    image: caddy:2-alpine
+    profiles: [caddy]
+    restart: unless-stopped
+    environment:
+      APP_HOST: ${APP_HOST:-localhost}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+volumes:
+  caddy_data:
+  caddy_config:
