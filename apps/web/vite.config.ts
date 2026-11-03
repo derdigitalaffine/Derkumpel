@@ -7,17 +7,27 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['derkumpel.svg'],
+      includeAssets: [
+        'derkumpel-logo.png',
+        'derkumpel-icon-192.png',
+        'derkumpel-icon-512.png',
+        'derkumpel-icon-maskable-512.png',
+      ],
       manifest: {
-        name: 'Derkumpel',
-        short_name: 'Derkumpel',
+        id: '/',
+        name: 'DerKumpel',
+        short_name: 'DerKumpel',
         description: 'Offline-fähiger mobiler Redmine-Client für den Bauhof',
         theme_color: '#1c5d99',
         background_color: '#f8f9fa',
         display: 'standalone',
         orientation: 'portrait-primary',
         start_url: '/',
-        icons: [{ src: '/derkumpel.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+        icons: [
+          { src: '/derkumpel-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/derkumpel-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/derkumpel-icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
       },
       workbox: {
         navigateFallback: '/index.html',
