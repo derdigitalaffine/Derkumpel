@@ -1,4 +1,4 @@
-import { AppShell, Badge, Box, Group, NavLink, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core';
+import { AppShell, Badge, Box, Group, Image, NavLink, Stack, Text, UnstyledButton } from '@mantine/core';
 import { useNetwork } from '@mantine/hooks';
 import { Link, useLocation } from 'react-router-dom';
 import { useCallback, type ReactNode } from 'react';
@@ -7,6 +7,7 @@ import { useDexieLive } from '../live';
 
 const items = [
   { to: '/', label: 'Arbeit', icon: '▣' },
+  { to: '/tickets', label: 'Tickets', icon: '☷' },
   { to: '/map', label: 'Karte', icon: '⌖' },
   { to: '/sync', label: 'Sync', icon: '↻' },
   { to: '/settings', label: 'Mehr', icon: '☰' },
@@ -27,9 +28,9 @@ export function Layout({ children }: { children: ReactNode }) {
     <AppShell.Header px={{ base: 'md', sm: 'lg' }} className="app-header">
       <Group h="100%" justify="space-between" wrap="nowrap">
         <Group gap="sm" wrap="nowrap">
-          <ThemeIcon size={42} radius={13} variant="gradient" gradient={{ from: 'blue.7', to: 'cyan.6', deg: 145 }} fw={900}>D</ThemeIcon>
+          <Image src="/derkumpel-icon-192.png" alt="" w={44} h={44} radius={13} />
           <Box>
-            <Text fw={850} lh={1.05} fz="md" style={{ letterSpacing: '-0.02em' }}>Derkumpel</Text>
+            <Text fw={850} lh={1.05} fz="md" style={{ letterSpacing: '-0.02em' }}>DerKumpel</Text>
             <Text size="xs" c="dimmed" mt={2}>Bauhof · Redmine</Text>
           </Box>
         </Group>
@@ -75,7 +76,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <AppShell.Main className="mobile-content">{children}</AppShell.Main>
 
     <Box hiddenFrom="sm" pos="fixed" bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
-      <Group grow gap={4} px={6} pt={6} align="stretch">
+      <Group grow gap={2} px={4} pt={6} align="stretch">
         {items.map((item) => {
           const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
           const isSync = item.to === '/sync';
@@ -89,8 +90,8 @@ export function Layout({ children }: { children: ReactNode }) {
             aria-label={isSync && pendingCount > 0 ? `Synchronisation, ${queueLabel}` : item.label}
           >
             <Stack gap={1} align="center">
-              <Group gap={4} wrap="nowrap" justify="center">
-                <Text fz={20} fw={850} lh={1.05}>{item.icon}</Text>
+              <Group gap={3} wrap="nowrap" justify="center">
+                <Text fz={19} fw={850} lh={1.05}>{item.icon}</Text>
                 {isSync && syncBadge}
               </Group>
               <Text size="xs" fw={active ? 850 : 650} lh={1.15}>{item.label}</Text>
