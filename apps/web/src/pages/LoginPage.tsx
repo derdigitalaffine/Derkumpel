@@ -1,4 +1,4 @@
-import { Alert, Badge, Box, Button, Center, Group, Paper, PasswordInput, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
+import { Alert, Badge, Box, Button, Center, Group, Image, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useNetwork } from '@mantine/hooks';
 import { useState } from 'react';
 import { api } from '../api';
@@ -35,10 +35,10 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
     <Paper component="form" onSubmit={submit} withBorder shadow="md" p={{ base: 'xl', sm: 36 }} w="100%" maw={440} className="surface-card">
       <Stack gap="xl">
         <Stack align="center" gap="sm">
-          <ThemeIcon size={70} radius={22} variant="gradient" gradient={{ from: 'blue.7', to: 'cyan.6', deg: 145 }} fz={30} fw={900}>D</ThemeIcon>
+          <Image src="/derkumpel-logo.png" alt="DerKumpel – Bauhof-App" w="100%" maw={310} fit="contain" />
+          <Title order={1} className="sr-only">DerKumpel</Title>
           <Box ta="center">
-            <Title order={1} style={{ letterSpacing: '-0.035em' }}>Derkumpel</Title>
-            <Text c="dimmed" mt={5}>Deine Bauhof-Aufträge. Schnell, mobil und offline.</Text>
+            <Text c="dimmed">Deine Bauhof-Aufträge. Schnell, mobil und offline.</Text>
           </Box>
           <Group gap={6} justify="center">
             <Badge variant="light" color="blue">Redmine</Badge>
@@ -47,7 +47,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
         </Stack>
 
         {!network.online && <Alert color="orange" title="Keine Verbindung" variant="light">
-          Für die Anmeldung muss Redmine erreichbar sein. Wenn du auf diesem Gerät bereits angemeldet warst, öffnet Derkumpel den Offline-Modus automatisch, sobald die gespeicherte Sitzung erkannt wird.
+          Für die Anmeldung muss Redmine erreichbar sein. Wenn du auf diesem Gerät bereits angemeldet warst, öffnet DerKumpel den Offline-Modus automatisch, sobald die gespeicherte Sitzung erkannt wird.
         </Alert>}
         {error && <Alert color="red" title="Anmeldung nicht möglich">{error}</Alert>}
 
