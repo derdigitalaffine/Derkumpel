@@ -9,6 +9,7 @@ import { issueCoordinates } from '../issueUtils';
 import type { RedmineIssue } from '../types';
 
 const DEFAULT_STYLE = 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json';
+const OTTERBACH_OTTERBERG_CENTER: [number, number] = [7.7667, 49.5];
 type MapScope = 'mine' | 'visible';
 
 export function MapPage() {
@@ -50,7 +51,7 @@ export function MapPage() {
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
     let disposed = false;
-    void api.config().catch(() => ({ mapStyleUrl: DEFAULT_STYLE, mapCenter: [7.77, 49.5] as [number, number] })).then((config) => {
+    void api.config().catch(() => ({ mapStyleUrl: DEFAULT_STYLE, mapCenter: OTTERBACH_OTTERBERG_CENTER })).then((config) => {
       if (disposed || !mapNode.current || mapRef.current) return;
       const map = new Map({ container: mapNode.current, style: config.mapStyleUrl || DEFAULT_STYLE, center: config.mapCenter, zoom: 11, attributionControl: {} });
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
@@ -81,6 +82,7 @@ export function MapPage() {
       el.onclick = () => navigate(`/issues/${issue.id}`);
       markers.push(new Marker({ element: el }).setLngLat(coords).addTo(map));
     }
+    if (markers.length === 0) map.easeTo({ center: OTTERBACH_OTTERBERG_CENTER, zoom: 10.5, duration: 500 });
     return () => markers.forEach((marker) => marker.remove());
   }, [issues, navigate, mapReady]);
 
@@ -123,7 +125,7 @@ export function MapPage() {
     </Paper>
 
     {error && <Alert color="orange" variant="light">{error}</Alert>}
-    {mappedCount === 0 && <Alert color="blue" variant="light">In dieser Auswahl haben aktuell keine Aufträge verwertbare Koordinaten.</Alert>}
+    {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Ticket-Koordinaten">Die Karte ist auf die Verbandsgemeinde Otterbach-Otterberg zentriert. Sobald Tickets Koordinaten enthalten, erscheinen sie hier automatisch.</Alert>}
 
     <Paper withBorder p={0} className="map-shell"><div ref={mapNode} style={{ width: '100%', height: '100%' }} /></Paper>
     <Text size="xs" c="dimmed" ta="center">Deine aktuelle Position bleibt ausschließlich auf diesem Gerät und wird nicht an Redmine übertragen.</Text>
