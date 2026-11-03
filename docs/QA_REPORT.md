@@ -6,7 +6,7 @@ Date: 2026-11-03
 
 The Derkumpel production baseline is implemented on `work/initial-production`. Automated release gates cover static typing, unit tests, production build, high/critical production dependency audit, Compose validation, Docker image build and a started production-container readiness smoke test.
 
-A code candidate must not be merged/released while the latest branch CI is red.
+A code candidate must not be merged/released while the latest branch CI is red. Dependency resolution is committed in `package-lock.json`; CI and Docker both use `npm ci` so the tested and deployed dependency graph is reproducible.
 
 ## Automated checks
 
@@ -58,8 +58,16 @@ Implemented:
 - field-level conflict detection against base values
 - normalized custom-field comparison
 - permanent Redmine 4xx rejection surfaces as conflict instead of retrying forever
+- incomplete attachment caching (quota/network/etc.) is visible in Sync Center and retried on subsequent sync
 - completed/unassigned issue cleanup after configurable retention, default 30 days
 - pending mutations prevent stale-cache removal
+
+## Redmine behavior verified by API contract
+
+- current-user responses support `groups`/`memberships`, which Derkumpel uses for personal + group assignment scope
+- issue details support `allowed_statuses` in Redmine 5.0.x, so workflow-valid status choices come from Redmine rather than a Derkumpel copy
+- issue priorities are loaded from Redmine enumeration order and displayed high-to-low for the `Priorität` sort
+- full custom-field definitions/options are not assumed for normal users; generic field editing remains permission-safe because Redmine validates every write
 
 ## Live acceptance still required before organization-wide rollout
 
@@ -73,7 +81,7 @@ These checks require the real `redmine.vgo-o.de` data/credentials, actual roles/
 6. Verify project membership/assignee lists contain expected users and groups for representative projects.
 7. Upload a real camera photo on Android; repeat offline -> airplane mode -> capture -> reopen app -> reconnect -> verify exactly one Redmine attachment.
 8. Repeat the critical offline workflow on iOS Safari/PWA if iPhones are deployed.
-9. Cache and open representative large image/PDF/office attachments offline; observe browser storage pressure on actual devices.
+9. Cache and open representative large image/PDF/office attachments offline; deliberately approach browser storage limits and verify Sync Center reports any missing offline file.
 10. Verify native navigation opens the expected installed map app.
 11. Verify basemap.de Web Vektor from the final HTTPS origin and optional offline-map download for the configured administrative boundary/radius.
 12. Verify external reverse-proxy headers/cookies/HTTPS on the final hostname; if Caddy is used, verify certificate issuance and renewal path.
