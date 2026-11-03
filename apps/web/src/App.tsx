@@ -1,4 +1,4 @@
-import { Box, Center, Loader, Paper, Stack, Text, ThemeIcon } from '@mantine/core';
+import { Box, Center, Image, Loader, Paper, Stack, Text } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, AuthRequiredError } from './api';
@@ -8,7 +8,8 @@ import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { WorkPage } from './pages/WorkPage';
-import { IssuePage } from './pages/IssuePage';
+import { IssueRoute } from './pages/IssueRoute';
+import { TicketsPage } from './pages/TicketsPage';
 import { MapPage } from './pages/MapPage';
 import { SyncPage } from './pages/SyncPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -46,9 +47,9 @@ export function App() {
   if (state === 'loading') return <Center mih="100dvh" p="xl" role="status" aria-live="polite">
     <Paper p="xl" maw={360} w="100%" ta="center" className="startup-card">
       <Stack align="center" gap="md">
-        <ThemeIcon size={62} radius={20} variant="gradient" gradient={{ from: 'blue.7', to: 'cyan.6', deg: 145 }} fz={27} fw={900}>D</ThemeIcon>
+        <Image src="/derkumpel-icon-192.png" alt="" w={70} h={70} radius={20} />
         <Box>
-          <Text fw={850} fz="xl" style={{ letterSpacing: '-0.03em' }}>Derkumpel</Text>
+          <Text fw={850} fz="xl" style={{ letterSpacing: '-0.03em' }}>DerKumpel</Text>
           <Text size="sm" c="dimmed" mt={4}>Lokale Aufträge werden vorbereitet</Text>
         </Box>
         <Loader size="sm" />
@@ -60,7 +61,8 @@ export function App() {
 
   return <Layout><Routes>
     <Route path="/" element={<WorkPage />} />
-    <Route path="/issues/:id" element={<IssuePage />} />
+    <Route path="/tickets" element={<TicketsPage />} />
+    <Route path="/issues/:id" element={<IssueRoute />} />
     <Route path="/map" element={<MapPage />} />
     <Route path="/sync" element={<SyncPage />} />
     <Route path="/settings" element={<SettingsPage />} />
