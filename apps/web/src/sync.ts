@@ -138,14 +138,14 @@ async function cacheAttachments(issue: RedmineIssue, warnings: AttachmentCacheWa
     }
 
     try {
-      let blob = await api.attachmentBlob(attachment.id, attachment.content_url);
+      let blob = await api.attachmentBlob(attachment.content_url);
       if (blob.type.startsWith('image/')) blob = await prepareOfflinePreview(blob, attachment.filename);
       await db.attachments.put({ id: attachment.id, issueId: issue.id, filename: attachment.filename, contentType: attachment.content_type || blob.type, size: blob.size, createdOn: attachment.created_on, blob, cachedAt: Date.now() });
       await db.syncState.delete(attachmentFailureKey(attachment.id));
     } catch (error) {
       if (error instanceof AuthRequiredError) throw error;
       const message = error instanceof Error ? error.message : 'Anhang konnte nicht offline gespeichert werden';
-      const retryAfter = Date.now() + (error instanceof ApiError && error.status === 404 ? 6 * 60 * 60_000 : 10 * 60_000);
+      const retryAfter = Date.now() + 10 * 60_000;
       await db.syncState.put({ key: attachmentFailureKey(attachment.id), value: { retryAfter, message } satisfies AttachmentFailure });
       warnings.push({ attachmentId: attachment.id, issueId: issue.id, filename: attachment.filename, message });
     }
