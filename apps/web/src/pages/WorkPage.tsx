@@ -1,10 +1,12 @@
 import { ActionIcon, Badge, Box, Button, Center, Drawer, Group, Loader, Menu, MultiSelect, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { IssueCard } from '../components/IssueCard';
 import { issueAddress } from '../issueUtils';
+import type { NamedRef } from '../types';
 
 type SortKey = 'priority' | 'due' | 'updated' | 'subject';
 type SavedFilter = { id: string; name: string; search: string; sort: SortKey; statuses: string[]; priorities: string[]; trackers: string[] };
@@ -20,22 +22,36 @@ export function WorkPage() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [trackers, setTrackers] = useState<string[]>([]);
+  const [priorityOrder, setPriorityOrder] = useState<NamedRef[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterName, setFilterName] = useState('');
 
   useEffect(() => {
+    let disposed = false;
     void Promise.all([
       getSetting<SortKey>('workSort', 'priority'),
       getSetting<number[]>('excludedTrackers', []),
       getSetting<SavedFilter[]>('savedFilters', []),
-    ]).then(([savedSort, excluded, saved]) => { setSort(savedSort); setExcludedTrackers(excluded); setSavedFilters(saved); });
+      getSetting<NamedRef[]>('issuePriorities', []),
+    ]).then(([savedSort, excluded, saved, cachedPriorities]) => {
+      if (disposed) return;
+      setSort(savedSort); setExcludedTrackers(excluded); setSavedFilters(saved); setPriorityOrder(cachedPriorities);
+    });
+    if (navigator.onLine) {
+      void api.meta<{ issue_priorities: NamedRef[] }>('priorities').then(async (result) => {
+        if (!disposed) setPriorityOrder(result.issue_priorities);
+        await setSetting('issuePriorities', result.issue_priorities);
+      }).catch(() => undefined);
+    }
+    return () => { disposed = true; };
   }, []);
 
   const available = useMemo(() => records.map((record) => record.data).filter((issue) => !excludedTrackers.includes(issue.tracker.id)), [records, excludedTrackers]);
   const statusOptions = useMemo(() => [...new Set(available.map((issue) => issue.status.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
   const priorityOptions = useMemo(() => [...new Set(available.map((issue) => issue.priority.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
   const trackerOptions = useMemo(() => [...new Set(available.map((issue) => issue.tracker.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
+  const priorityRank = useMemo(() => new Map(priorityOrder.map((priority, index) => [priority.id, index])), [priorityOrder]);
 
   const issues = useMemo(() => available.filter((issue) => {
     if (statuses.length && !statuses.includes(issue.status.name)) return false;
@@ -48,8 +64,10 @@ export function WorkPage() {
     if (sort === 'due') return (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999');
     if (sort === 'updated') return b.updated_on.localeCompare(a.updated_on);
     if (sort === 'subject') return a.subject.localeCompare(b.subject, 'de');
-    return a.priority.id - b.priority.id || (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999');
-  }), [available, search, sort, statuses, priorities, trackers]);
+    const aRank = priorityRank.get(a.priority.id) ?? a.priority.id;
+    const bRank = priorityRank.get(b.priority.id) ?? b.priority.id;
+    return bRank - aRank || (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999');
+  }), [available, search, sort, statuses, priorities, trackers, priorityRank]);
 
   const activeFilterCount = statuses.length + priorities.length + trackers.length;
   const clearFilters = () => { setSearch(''); setStatuses([]); setPriorities([]); setTrackers([]); };
