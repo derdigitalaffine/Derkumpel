@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Center, Drawer, Group, Loader, Menu, MultiSelect, Paper, ScrollArea, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
+import { ActionIcon, Badge, Box, Button, Drawer, Group, Menu, MultiSelect, Paper, ScrollArea, Skeleton, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
@@ -10,6 +10,7 @@ import type { NamedRef } from '../types';
 
 type SortKey = 'priority' | 'due' | 'updated' | 'subject';
 type SavedFilter = { id: string; name: string; search: string; sort: SortKey; statuses: string[]; priorities: string[]; trackers: string[] };
+type SyncStatus = { state?: string; lastSuccess?: number };
 
 const sortLabels: Record<SortKey, string> = {
   priority: 'Priorität',
@@ -18,9 +19,23 @@ const sortLabels: Record<SortKey, string> = {
   subject: 'Titel',
 };
 
+function LoadingCards() {
+  return <Stack gap="sm" aria-label="Aufträge werden geladen">
+    {[0, 1, 2].map((index) => <Paper key={index} withBorder p="md" className="surface-card skeleton-card">
+      <Stack gap="sm">
+        <Group justify="space-between"><Skeleton h={22} w={118} radius="xl" /><Skeleton h={14} w={70} /></Group>
+        <Skeleton h={22} w={`${82 - index * 8}%`} />
+        <Skeleton h={38} radius="md" />
+        <Group><Skeleton h={13} w={92} /><Skeleton h={13} w={118} /></Group>
+        <Skeleton h={8} radius="xl" />
+      </Stack>
+    </Paper>)}
+  </Stack>;
+}
+
 export function WorkPage() {
   const query = useCallback(() => db.issues.where('active').equals(1).toArray(), []);
-  const statusQuery = useCallback(async () => (await db.syncState.get('status'))?.value as { state?: string } | undefined, []);
+  const statusQuery = useCallback(async () => (await db.syncState.get('status'))?.value as SyncStatus | undefined, []);
   const records = useDexieLive(query, []);
   const syncStatus = useDexieLive(statusQuery, undefined);
   const [search, setSearch] = useState('');
@@ -96,13 +111,18 @@ export function WorkPage() {
     setSavedFilters(next); await setSetting('savedFilters', next);
   };
 
-  return <Stack gap="md" maw={900} mx="auto">
+  const firstSyncLoading = records.length === 0 && syncStatus?.state === 'syncing';
+
+  return <Stack gap="md" maw={900} mx="auto" aria-busy={firstSyncLoading}>
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
         <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Meine Arbeit</Title>
         <Text c="dimmed" size="sm" mt={3}>Persönlich und über deine Gruppen zugewiesen</Text>
       </Box>
-      {available.length > 0 && <Badge variant="light" size="lg">{available.length} offen</Badge>}
+      <Stack gap={2} align="flex-end">
+        {available.length > 0 && <Badge variant="light" size="lg">{available.length} offen</Badge>}
+        {syncStatus?.lastSuccess && <Text size="xs" c="dimmed">Stand {new Date(syncStatus.lastSuccess).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</Text>}
+      </Stack>
     </Group>
 
     <Paper withBorder p="sm" pos="sticky" top={76} className="work-toolbar">
@@ -156,9 +176,11 @@ export function WorkPage() {
       </Stack>
     </Paper>
 
-    {records.length === 0 && syncStatus?.state === 'syncing' ? <Center py="xl">
-      <Stack align="center"><Loader size="sm" /><Text c="dimmed">Aufträge werden synchronisiert …</Text></Stack>
-    </Center> : issues.length === 0 ? <Paper className="empty-state" p="xl">
+    <Text component="span" className="sr-only" aria-live="polite">
+      {firstSyncLoading ? 'Aufträge werden synchronisiert.' : `${issues.length} Aufträge werden angezeigt.`}
+    </Text>
+
+    {firstSyncLoading ? <LoadingCards /> : issues.length === 0 ? <Paper className="empty-state" p="xl">
       <Stack align="center" gap="sm" ta="center">
         <ThemeIcon size={52} radius="xl" variant="light" color={records.length === 0 ? 'green' : 'blue'}>{records.length === 0 ? '✓' : '⌕'}</ThemeIcon>
         <Box>
