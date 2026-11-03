@@ -15,14 +15,14 @@ function dueState(value?: string): { label?: string; color: string } {
   return { label: `Fällig ${dateLabel(value)}`, color: 'gray' };
 }
 
-export function IssueCard({ issue }: { issue: RedmineIssue }) {
+export function IssueCard({ issue, to }: { issue: RedmineIssue; to?: string }) {
   const address = issueAddress(issue);
   const due = dueState(issue.due_date);
   const done = issue.done_ratio ?? 0;
 
   return <Card
     component={Link}
-    to={`/issues/${issue.id}`}
+    to={to ?? `/issues/${issue.id}`}
     withBorder
     padding="md"
     className="issue-card"
