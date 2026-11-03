@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { issueAddress, issueCoordinates, scalarField, statusColor } from './issueUtils';
+import { issueAddress, issueCoordinates, redminePatchValue, scalarField, statusColor } from './issueUtils';
 import type { RedmineIssue } from './types';
 
 function issue(custom_fields: RedmineIssue['custom_fields'] = []): RedmineIssue {
@@ -41,6 +41,17 @@ describe('issue field projection', () => {
   it('joins multi-value custom fields', () => {
     const value = issue([{ id: 1, name: 'Tags', value: ['A', 'B'] }]);
     expect(scalarField(value, 'tags')).toBe('A, B');
+  });
+
+  it('normalizes custom fields to Redmine update shape for conflict snapshots', () => {
+    const value = issue([
+      { id: 9, name: 'Ort', value: 'Otterberg' },
+      { id: 3, name: 'Tags', value: ['A', 'B'] },
+    ]);
+    expect(redminePatchValue(value, 'custom_fields')).toEqual([
+      { id: 3, value: ['A', 'B'] },
+      { id: 9, value: 'Otterberg' },
+    ]);
   });
 });
 
