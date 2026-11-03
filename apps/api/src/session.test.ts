@@ -15,7 +15,11 @@ describe('credential envelope', () => {
   it('rejects tampering', () => {
     const key = randomBytes(32);
     const token = encryptCredentials({ version: 1, username: 'a', password: 'b', issuedAt: 1 }, key);
-    const tampered = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
+    const [iv, ciphertext, tag] = token.split('.');
+    expect(iv && ciphertext && tag).toBeTruthy();
+    const bytes = Buffer.from(ciphertext!, 'base64url');
+    bytes[0] = (bytes[0] ?? 0) ^ 0x01;
+    const tampered = `${iv}.${bytes.toString('base64url')}.${tag}`;
     expect(() => decryptCredentials(tampered, key)).toThrow();
   });
 });
