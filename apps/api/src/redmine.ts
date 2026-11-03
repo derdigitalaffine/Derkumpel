@@ -25,8 +25,7 @@ async function request(config: AppConfig, creds: CredentialEnvelope, path: strin
     const headers = new Headers(init.headers);
     headers.set('Authorization', authHeader(creds));
     headers.set('Accept', 'application/json');
-    const response = await fetch(buildUrl(config, path), { ...init, headers, signal: controller.signal });
-    return response;
+    return await fetch(buildUrl(config, path), { ...init, headers, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -63,7 +62,7 @@ export async function redmineBinary(config: AppConfig, creds: CredentialEnvelope
   };
 }
 
-export async function uploadToRedmine(config: AppConfig, creds: CredentialEnvelope, filename: string, contentType: string, bytes: Buffer): Promise<{ token: string }> {
+export async function uploadToRedmine(config: AppConfig, creds: CredentialEnvelope, filename: string, _contentType: string, bytes: Buffer): Promise<{ token: string }> {
   const path = `/uploads.json?filename=${encodeURIComponent(filename)}`;
   const response = await request(config, creds, path, {
     method: 'POST',
@@ -85,11 +84,11 @@ export async function fetchCurrentUser(config: AppConfig, creds: CredentialEnvel
   return redmineJson(config, creds, '/users/current.json?include=groups,memberships');
 }
 
-async function listAssigned(config: AppConfig, creds: CredentialEnvelope, assignee: string, status: string): Promise<Array<Record<string, unknown>>> {
+async function listIssues(config: AppConfig, creds: CredentialEnvelope, params: Record<string, string>): Promise<Array<Record<string, unknown>>> {
   const result: Array<Record<string, unknown>> = [];
   let offset = 0;
   for (;;) {
-    const qs = new URLSearchParams({ assigned_to_id: assignee, status_id: status, limit: '100', offset: String(offset), include: 'attachments,relations', sort: 'updated_on:desc' });
+    const qs = new URLSearchParams({ ...params, limit: '100', offset: String(offset), sort: 'updated_on:desc' });
     const page = await redmineJson<RedmineIssueList>(config, creds, `/issues.json?${qs.toString()}`);
     result.push(...page.issues);
     const total = page.total_count ?? result.length;
@@ -99,9 +98,13 @@ async function listAssigned(config: AppConfig, creds: CredentialEnvelope, assign
   return result;
 }
 
+async function listAssigned(config: AppConfig, creds: CredentialEnvelope, assignee: string, status: string): Promise<Array<Record<string, unknown>>> {
+  return listIssues(config, creds, { assigned_to_id: assignee, status_id: status, include: 'attachments,relations' });
+}
+
 export async function fetchMyWork(config: AppConfig, creds: CredentialEnvelope, status = 'open'): Promise<{ issues: Array<Record<string, unknown>>; user: RedmineUserResponse['user'] }> {
   const current = await fetchCurrentUser(config, creds);
-  const scopes = ['me', ...(current.user.groups ?? []).map((g) => String(g.id))];
+  const scopes = ['me', ...(current.user.groups ?? []).map((group) => String(group.id))];
   const pages = await Promise.all(scopes.map((scope) => listAssigned(config, creds, scope, status)));
   const byId = new Map<number, Record<string, unknown>>();
   for (const issue of pages.flat()) {
@@ -109,4 +112,9 @@ export async function fetchMyWork(config: AppConfig, creds: CredentialEnvelope, 
     if (Number.isInteger(id)) byId.set(id, issue);
   }
   return { issues: [...byId.values()], user: current.user };
+}
+
+export async function fetchVisibleIssues(config: AppConfig, creds: CredentialEnvelope, status = 'open'): Promise<{ issues: Array<Record<string, unknown>> }> {
+  const issues = await listIssues(config, creds, { status_id: status });
+  return { issues };
 }
