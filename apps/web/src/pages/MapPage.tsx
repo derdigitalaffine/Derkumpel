@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Box, Group, Paper, SegmentedControl, Stack, Text, Title } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Box, Group, Paper, SegmentedControl, Stack, Text, Title } from '@mantine/core';
 import { Map, Marker, NavigationControl } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -45,6 +45,7 @@ export function MapPage() {
   }, [scope]);
 
   const issues = useMemo(() => scope === 'visible' && visibleLoaded ? visibleIssues : records.map((record) => record.data), [scope, visibleLoaded, visibleIssues, records]);
+  const mappedCount = useMemo(() => issues.filter((issue) => Boolean(issueCoordinates(issue))).length, [issues]);
 
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
@@ -74,9 +75,9 @@ export function MapPage() {
       if (!coords) continue;
       const el = document.createElement('button');
       el.type = 'button';
+      el.className = 'issue-map-marker';
       el.ariaLabel = `Auftrag ${issue.id}: ${issue.subject}`;
       el.textContent = String(issue.id);
-      el.style.cssText = 'min-width:40px;height:40px;border:3px solid white;border-radius:20px;background:#1c5d99;color:white;font-weight:800;box-shadow:0 2px 8px #0005;padding:0 8px;cursor:pointer;';
       el.onclick = () => navigate(`/issues/${issue.id}`);
       markers.push(new Marker({ element: el }).setLngLat(coords).addTo(map));
     }
@@ -97,8 +98,8 @@ export function MapPage() {
       const coords: [number, number] = [position.coords.longitude, position.coords.latitude];
       userMarkerRef.current?.remove();
       const el = document.createElement('div');
+      el.className = 'user-map-marker';
       el.setAttribute('aria-label', 'Meine Position');
-      el.style.cssText = 'width:22px;height:22px;border:4px solid white;border-radius:50%;background:#228be6;box-shadow:0 0 0 5px #228be633,0 2px 8px #0005;';
       userMarkerRef.current = new Marker({ element: el }).setLngLat(coords).addTo(map);
       map.flyTo({ center: coords, zoom: 15 });
       setError('');
@@ -106,10 +107,25 @@ export function MapPage() {
   };
 
   return <Stack gap="md">
-    <Group justify="space-between"><Box><Title order={1} size="h2">Karte</Title><Text c="dimmed">Offene Aufträge mit Koordinaten</Text></Box><ActionIcon size={48} variant="light" onClick={locate} aria-label="Meine Position">⌖</ActionIcon></Group>
-    <SegmentedControl fullWidth value={scope} onChange={changeScope} data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
-    {error && <Alert color="orange">{error}</Alert>}
-    <Paper withBorder radius="lg" p={0} className="map-shell"><div ref={mapNode} style={{ width: '100%', height: '100%' }} /></Paper>
-    <Text size="xs" c="dimmed">Deine aktuelle Position bleibt ausschließlich auf diesem Gerät.</Text>
+    <Group justify="space-between" align="flex-end" className="page-heading">
+      <Box>
+        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Karte</Title>
+        <Text c="dimmed" size="sm" mt={3}>Offene Aufträge mit hinterlegten Koordinaten</Text>
+      </Box>
+      <Group gap="xs" wrap="nowrap">
+        <Badge variant="light" color="blue" size="lg">{mappedCount} Orte</Badge>
+        <ActionIcon size={48} variant="filled" onClick={locate} aria-label="Meine Position anzeigen">⌖</ActionIcon>
+      </Group>
+    </Group>
+
+    <Paper p={4} withBorder className="surface-card">
+      <SegmentedControl fullWidth value={scope} onChange={changeScope} data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
+    </Paper>
+
+    {error && <Alert color="orange" variant="light">{error}</Alert>}
+    {mappedCount === 0 && <Alert color="blue" variant="light">In dieser Auswahl haben aktuell keine Aufträge verwertbare Koordinaten.</Alert>}
+
+    <Paper withBorder p={0} className="map-shell"><div ref={mapNode} style={{ width: '100%', height: '100%' }} /></Paper>
+    <Text size="xs" c="dimmed" ta="center">Deine aktuelle Position bleibt ausschließlich auf diesem Gerät und wird nicht an Redmine übertragen.</Text>
   </Stack>;
 }
