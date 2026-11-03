@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { RedmineIssue } from './types';
 
-export type IssueRecord = { id: number; data: RedmineIssue; syncedAt: number; active: boolean; staleSince?: number };
+export type IssueRecord = { id: number; data: RedmineIssue; syncedAt: number; active: 0 | 1; staleSince?: number };
 export type AttachmentRecord = { id: number; issueId: number; filename: string; contentType: string; size: number; createdOn: string; blob: Blob; cachedAt: number };
 export type OutboxKind = 'update' | 'comment' | 'attachment';
 export type OutboxState = 'pending' | 'retrying' | 'conflict';
