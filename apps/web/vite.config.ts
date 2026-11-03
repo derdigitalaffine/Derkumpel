@@ -12,6 +12,8 @@ export default defineConfig({
         'derkumpel-icon-192.png',
         'derkumpel-icon-512.png',
         'derkumpel-icon-maskable-512.png',
+        'favicon-32.png',
+        'favicon-64.png',
       ],
       manifest: {
         id: '/',
