@@ -17,6 +17,8 @@ Before changing code, read in order:
 7. `docs/ROADMAP.md`
 8. `docs/ACCEPTANCE_TESTS.md`
 9. `docs/IMPLEMENTATION_DECISIONS.md`
+10. `docs/DEVELOPMENT.md`
+11. `docs/QA_REPORT.md`
 
 If code and specification conflict, do not silently invent product behavior. Prefer Redmine semantics and the safer offline behavior, document the conflict, then update tests/specification together.
 
@@ -26,7 +28,8 @@ If code and specification conflict, do not silently invent product behavior. Pre
 - Do not introduce a parallel issue database.
 - The backend/BFF is stateless; durable application state belongs in Redmine or the user's local PWA cache.
 - The PWA must remain usable offline for existing synchronized issues for several hours/up to roughly half a workday.
-- Offline editing covers existing issues: fields, status, assignee, comments/private notes, attachments/photos and Redmine time entries where supported. New issue creation is online-only for the initial product.
+- Offline editing covers existing issues: fields, status, assignee, comments/private notes and attachments/photos. New issue creation is online-only future scope.
+- The `Zeit buchen` action is a deliberate integration seam only. Do not implement a partial timekeeping/Rapportzettel subsystem until its separate product specification exists.
 - Never silently discard an offline mutation. Every queued mutation reaches `synced`, `retrying`, or `conflict` state.
 - Auto-merge safe changes. Surface only material conflicts that cannot be safely replayed.
 - All Redmine permissions/workflow decisions are authoritative. Derkumpel must not grant operations Redmine would reject.
@@ -42,7 +45,7 @@ If code and specification conflict, do not silently invent product behavior. Pre
 - Primary actions are at least 48px high; important controls target 52–56px.
 - No hover-only interaction.
 - Simple issue mode always shows title, status, priority, assignee, start/due date, location/address, percent done, description and primary actions when available.
-- Primary issue actions: In Arbeit, unterbrochen, Erledigt, Kommentar, Foto, Zeit buchen and Navigation. Actions must be permission/workflow aware.
+- Primary issue actions: In Arbeit, unterbrochen, Erledigt, Kommentar, Foto, Zeit buchen and Navigation. Actions must be permission/workflow aware; `Zeit buchen` remains a clearly labeled future-module entry point until the Rapportzettel specification exists.
 - Less important history and technical field changes are collapsed under an advanced expander.
 - Sync details live in a dedicated subview, not as constant visual noise.
 - Offline/online state must be understandable without alarming the user.
@@ -60,15 +63,18 @@ If code and specification conflict, do not silently invent product behavior. Pre
 - Same-origin `/api` BFF in production.
 - No Redmine password/API secret in localStorage or IndexedDB.
 - Production secrets are environment variables, never committed.
+- `package-lock.json` is authoritative; CI and Docker builds use `npm ci`.
 
 ## Tests and definition of done
 
 A change is done only when:
 
 - acceptance criteria for the changed flow pass;
-- `npm run build` succeeds;
-- automated tests succeed;
-- the Docker image builds;
+- `npm run typecheck`, `npm test` and `npm run build` succeed;
+- production dependency audit has no high/critical findings;
+- Compose configuration validates;
+- the Docker image builds and starts successfully;
+- `/api/health/ready` passes from the running production image;
 - mobile UI remains usable at 360px width;
 - offline mutations are durable across reload;
 - new configuration is documented;
