@@ -6,6 +6,8 @@ import type { RedmineIssue } from './types';
 
 let activeSync: Promise<void> | undefined;
 
+type AttachmentCacheWarning = { attachmentId: number; issueId: number; filename: string; message: string };
+
 async function setSync(key: string, value: unknown): Promise<void> { await db.syncState.put({ key, value }); }
 
 export async function queueIssueUpdate(issue: RedmineIssue, patch: Record<string, unknown>, optimistic?: (current: RedmineIssue) => RedmineIssue): Promise<string> {
@@ -108,7 +110,7 @@ async function withLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<
   }));
 }
 
-async function cacheAttachments(issue: RedmineIssue): Promise<void> {
+async function cacheAttachments(issue: RedmineIssue, warnings: AttachmentCacheWarning[]): Promise<void> {
   const attachments = issue.attachments ?? [];
   await withLimit(attachments, 3, async (attachment) => {
     const existing = await db.attachments.get(attachment.id);
@@ -118,7 +120,13 @@ async function cacheAttachments(issue: RedmineIssue): Promise<void> {
       if (blob.type.startsWith('image/')) blob = await prepareOfflinePreview(blob, attachment.filename);
       await db.attachments.put({ id: attachment.id, issueId: issue.id, filename: attachment.filename, contentType: attachment.content_type || blob.type, size: blob.size, createdOn: attachment.created_on, blob, cachedAt: Date.now() });
     } catch (error) {
-      console.warn('Attachment cache failed', attachment.id, error);
+      if (error instanceof AuthRequiredError) throw error;
+      warnings.push({
+        attachmentId: attachment.id,
+        issueId: issue.id,
+        filename: attachment.filename,
+        message: error instanceof Error ? error.message : 'Anhang konnte nicht offline gespeichert werden',
+      });
     }
   });
 }
@@ -128,6 +136,7 @@ async function refreshMyWork(): Promise<void> {
   const activeIds = new Set(list.issues.map((issue) => issue.id));
   const existing = await db.issues.toArray();
   const now = Date.now();
+  const attachmentWarnings: AttachmentCacheWarning[] = [];
   await db.transaction('rw', db.issues, async () => {
     for (const record of existing) {
       if (!activeIds.has(record.id) && record.active === 1) await db.issues.update(record.id, { active: 0, staleSince: now });
@@ -135,10 +144,10 @@ async function refreshMyWork(): Promise<void> {
   });
   await withLimit(list.issues, 4, async (summary) => {
     const detail = await api.issue(summary.id);
-    const old = await db.issues.get(detail.id);
     await db.issues.put({ id: detail.id, data: detail, active: 1, staleSince: undefined, syncedAt: now });
-    if (!old || old.data.updated_on !== detail.updated_on || (detail.attachments?.length ?? 0) !== (old.data.attachments?.length ?? 0)) await cacheAttachments(detail);
+    await cacheAttachments(detail, attachmentWarnings);
   });
+  await setSync('attachmentWarnings', attachmentWarnings);
   await db.settings.put({ key: 'lastUser', value: list.user });
 }
 
