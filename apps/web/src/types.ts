@@ -1,0 +1,51 @@
+export type NamedRef = { id: number; name: string };
+export type RedmineCustomField = { id: number; name: string; value: string | string[] | null };
+export type RedmineAttachment = {
+  id: number;
+  filename: string;
+  filesize: number;
+  content_type: string;
+  description?: string;
+  content_url: string;
+  created_on: string;
+  author?: NamedRef;
+};
+export type JournalDetail = { property: string; name: string; old_value?: string; new_value?: string };
+export type RedmineJournal = {
+  id: number;
+  user?: NamedRef;
+  notes?: string;
+  created_on: string;
+  private_notes?: boolean;
+  details?: JournalDetail[];
+};
+export type RedmineIssue = {
+  id: number;
+  project: NamedRef;
+  tracker: NamedRef;
+  status: NamedRef;
+  priority: NamedRef;
+  author?: NamedRef;
+  assigned_to?: NamedRef;
+  parent?: { id: number };
+  subject: string;
+  description?: string;
+  start_date?: string;
+  due_date?: string;
+  done_ratio?: number;
+  is_private?: boolean;
+  estimated_hours?: number;
+  spent_hours?: number;
+  created_on: string;
+  updated_on: string;
+  closed_on?: string;
+  custom_fields?: RedmineCustomField[];
+  attachments?: RedmineAttachment[];
+  journals?: RedmineJournal[];
+  allowed_statuses?: NamedRef[];
+  children?: Array<{ id: number; subject: string; tracker?: NamedRef; status?: NamedRef }>;
+  relations?: Array<{ id: number; issue_id: number; issue_to_id: number; relation_type: string; delay?: number }>;
+};
+
+export type CurrentUser = { id: number; login: string; firstname: string; lastname: string; mail?: string; groups?: NamedRef[] };
+export type PublicConfig = { mapStyleUrl: string; mapCenter: [number, number]; offlineMapBounds?: [number, number, number, number]; offlineMapRadiusKm: number; pollIntervalMs: number };
