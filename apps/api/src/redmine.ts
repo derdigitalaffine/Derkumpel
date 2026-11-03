@@ -24,7 +24,7 @@ async function request(config: AppConfig, creds: CredentialEnvelope, path: strin
   try {
     const headers = new Headers(init.headers);
     headers.set('Authorization', authHeader(creds));
-    headers.set('Accept', 'application/json');
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
     return await fetch(buildUrl(config, path), { ...init, headers, signal: controller.signal });
   } finally {
     clearTimeout(timer);
@@ -51,7 +51,7 @@ export async function redmineBinary(config: AppConfig, creds: CredentialEnvelope
     if (url.origin !== config.redmineBaseUrl.origin) throw new Error('Refusing attachment from foreign origin');
     path = `${url.pathname}${url.search}`;
   }
-  const response = await request(config, creds, path);
+  const response = await request(config, creds, path, { headers: { Accept: '*/*' } });
   if (!response.ok) throw new RedmineError(response.status, `Redmine attachment failed (${response.status})`);
   const disposition = response.headers.get('content-disposition') ?? '';
   const match = /filename\*?=(?:UTF-8''|\")?([^\";]+)/i.exec(disposition);
@@ -115,6 +115,30 @@ export async function fetchMyWork(config: AppConfig, creds: CredentialEnvelope, 
 }
 
 export async function fetchVisibleIssues(config: AppConfig, creds: CredentialEnvelope, status = 'open'): Promise<{ issues: Array<Record<string, unknown>> }> {
-  const issues = await listIssues(config, creds, { status_id: status });
+  const issues = await listIssues(config, creds, { status_id: status, include: 'attachments,relations' });
   return { issues };
+}
+
+export async function fetchIssueBrowser(
+  config: AppConfig,
+  creds: CredentialEnvelope,
+  options: { status: string; trackerId?: number; projectId?: number; offset: number; limit: number },
+): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number }> {
+  const params: Record<string, string> = {
+    status_id: options.status,
+    offset: String(options.offset),
+    limit: String(options.limit),
+    sort: 'updated_on:desc',
+    include: 'attachments,relations',
+  };
+  if (options.trackerId) params.tracker_id = String(options.trackerId);
+  if (options.projectId) params.project_id = String(options.projectId);
+  const qs = new URLSearchParams(params);
+  const page = await redmineJson<RedmineIssueList>(config, creds, `/issues.json?${qs.toString()}`);
+  return {
+    issues: page.issues,
+    total_count: page.total_count ?? page.issues.length,
+    offset: page.offset ?? options.offset,
+    limit: page.limit ?? options.limit,
+  };
 }

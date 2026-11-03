@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
-import { fetchCurrentUser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
@@ -66,6 +66,28 @@ function numeric(value: string): number {
   return id;
 }
 
+function boundedInt(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function safeAttachmentUrl(value: string, expectedId?: number): string {
+  const url = new URL(value, config.redmineBaseUrl);
+  if (url.origin !== config.redmineBaseUrl.origin) throw new RedmineError(400, 'Invalid attachment URL');
+  const match = /^\/attachments\/(?:download\/)?(\d+)(?:\/|$)/.exec(url.pathname);
+  if (!match) throw new RedmineError(400, 'Invalid attachment URL');
+  if (expectedId && Number(match[1]) !== expectedId) throw new RedmineError(400, 'Attachment URL does not match id');
+  return url.toString();
+}
+
+function sendBinary(reply: FastifyReply, file: { body: ArrayBuffer; contentType: string; filename?: string }, filename?: string) {
+  reply.header('Content-Type', file.contentType || 'application/octet-stream');
+  const finalName = filename || file.filename;
+  if (finalName) reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(finalName)}`);
+  return reply.send(Buffer.from(file.body));
+}
+
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof RedmineError) {
     if (error.status === 401) clearSession(reply);
@@ -110,6 +132,18 @@ app.get('/api/issues/visible', async (request) => {
   return fetchVisibleIssues(config, credentials(request), status);
 });
 
+app.get('/api/issues/browse', async (request) => {
+  const query = request.query as { status?: string; tracker_id?: string; project_id?: string; offset?: string; limit?: string };
+  const status = query.status && ['open', 'closed', '*'].includes(query.status) ? query.status : '*';
+  return fetchIssueBrowser(config, credentials(request), {
+    status,
+    trackerId: query.tracker_id ? numeric(query.tracker_id) : undefined,
+    projectId: query.project_id ? numeric(query.project_id) : undefined,
+    offset: boundedInt(query.offset, 0, 0, 1_000_000),
+    limit: boundedInt(query.limit, 50, 1, 100),
+  });
+});
+
 app.get('/api/issues/:id', async (request) => {
   const { id } = request.params as { id: string };
   return redmineJson(config, credentials(request), `/issues/${numeric(id)}.json?include=children,attachments,relations,journals,allowed_statuses`);
@@ -147,14 +181,23 @@ app.post('/api/issues/:id/attachments', async (request, reply) => {
   return reply.code(201).send({ ok: true });
 });
 
+app.get('/api/attachments/content', async (request, reply) => {
+  const query = request.query as { url?: string; filename?: string };
+  if (!query.url?.trim()) return reply.code(400).send({ error: 'attachment_url_required' });
+  const file = await redmineBinary(config, credentials(request), safeAttachmentUrl(query.url.trim()));
+  return sendBinary(reply, file, query.filename);
+});
+
+// Compatibility for already-installed clients. Supplying ?url= avoids an extra metadata lookup.
 app.get('/api/attachments/:id/content', async (request, reply) => {
   const { id } = request.params as { id: string };
+  const attachmentId = numeric(id);
+  const { url } = request.query as { url?: string };
   const creds = credentials(request);
-  const meta = await redmineJson<{ attachment: { content_url: string; filename: string; content_type?: string } }>(config, creds, `/attachments/${numeric(id)}.json`);
-  const file = await redmineBinary(config, creds, meta.attachment.content_url);
-  reply.header('Content-Type', meta.attachment.content_type || file.contentType);
-  reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(meta.attachment.filename)}`);
-  return reply.send(Buffer.from(file.body));
+  if (url?.trim()) return sendBinary(reply, await redmineBinary(config, creds, safeAttachmentUrl(url.trim(), attachmentId)));
+  const meta = await redmineJson<{ attachment: { content_url: string; filename: string; content_type?: string } }>(config, creds, `/attachments/${attachmentId}.json`);
+  const file = await redmineBinary(config, creds, safeAttachmentUrl(meta.attachment.content_url, attachmentId));
+  return sendBinary(reply, { ...file, contentType: meta.attachment.content_type || file.contentType }, meta.attachment.filename);
 });
 
 const metaRoutes: Record<string, string> = {

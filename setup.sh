@@ -3,7 +3,7 @@ set -eu
 
 usage() {
   cat <<'EOF'
-Derkumpel Setup
+DerKumpel Setup
 
   ./setup.sh install --base-url https://derkumpel.example.org [--redmine-url https://redmine.vgo-o.de] [--bind 127.0.0.1] [--port 8080]
   ./setup.sh start
@@ -73,7 +73,7 @@ APP_HOST=$app_host
 EOF
     chmod 600 .env
     compose up -d --build app
-    echo "Derkumpel läuft intern auf $bind:$port"
+    echo "DerKumpel läuft intern auf $bind:$port"
     echo "Öffentliche URL: $base_url"
     echo "Für integriertes Caddy: ./setup.sh caddy"
     ;;

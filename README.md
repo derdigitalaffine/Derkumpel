@@ -1,25 +1,28 @@
-# Derkumpel
+# DerKumpel
 
-Derkumpel ist ein **offline-first, touch-optimierter PWA-Client für Redmine** im kommunalen Bauhof. Redmine bleibt das führende System für Benutzer, Gruppen, Rollen, Workflows, Tracker, Issues, Kommentare und Anhänge; Derkumpel macht diese Abläufe auf Diensthandys deutlich komfortabler und mehrere Stunden ohne Netz arbeitsfähig.
+DerKumpel ist ein **offline-first, touch-optimierter PWA-Client für Redmine** im kommunalen Bauhof. Redmine bleibt das führende System für Benutzer, Gruppen, Rollen, Workflows, Tracker, Issues, Kommentare und Anhänge; DerKumpel macht diese Abläufe auf Diensthandys deutlich komfortabler und mehrere Stunden ohne Netz arbeitsfähig.
 
-## Was Derkumpel kann
+## Was DerKumpel kann
 
 - `Meine Arbeit`: offene persönliche **und Gruppen-Zuweisungen** aus Redmine
+- `Tickets`: Redmine-Browser für offene, geschlossene oder alle sichtbaren Tickets mit Tracker-, Projekt- und Textfilter
 - Smartphone-first Mantine UI mit großen Touch-Zielen
 - einfacher Ticketmodus plus aufklappbares `Alle Angaben`
 - Redmine-Statuswechsel inklusive `In Arbeit`, `unterbrochen`, `Erledigt` soweit der Workflow sie erlaubt
 - Kommentare und private Notizen
 - dynamische Custom Fields, Priorität, Zuweisung, Beginn/Fälligkeit und `% erledigt`
 - Kamera -> Vorschau -> Verwenden/Verwerfen; Upload wird komprimiert und EXIF wird nicht absichtlich entfernt
-- Bilder und sonstige Anhänge im Offline-Cache
+- Bilder und sonstige Anhänge im Offline-Cache; fehlende Dateien können online gezielt nachgeladen werden
 - moderne Timeline; technische Feldänderungen separat aufklappbar
 - MapLibre + basemap.de Web Vektor, native Navigation über die Karten-App des Handys
+- Karten-Fallback auf die Verbandsgemeinde Otterbach-Otterberg, wenn die aktuelle Auswahl keine Ticket-Koordinaten enthält
 - eigene GPS-Position ausschließlich lokal auf dem Gerät
 - optionale Offline-Karte, standardmäßig deaktiviert
 - lokale gespeicherte Filter und Tracker-Ausschlüsse
 - automatische Synchronisation bei Rückkehr ins Netz sowie manueller `Jetzt synchronisieren`-Button
 - sichere Auto-Merges und sichtbare Konflikte bei echten Paralleländerungen
 - Cache-Bereinigung standardmäßig nach 30 Tagen, einstellbar
+- eigenes DerKumpel-PNG-Branding für App, Favicon, Apple-Touch-Icon und PWA-Manifest
 
 Das geplante elektronische **Rapportzettel-/Zeiterfassungssystem** wird bewusst noch nicht implementiert. Die Architektur hält dafür eine separate Backend-/Service-Grenze frei.
 
@@ -50,7 +53,7 @@ Voraussetzungen: Docker Engine, Docker Compose v2 und `openssl`.
   --redmine-url https://redmine.vgo-o.de
 ```
 
-Standardmäßig lauscht Derkumpel nur auf `127.0.0.1:8080`. Der vorhandene Reverse Proxy terminiert HTTPS und leitet auf diesen Port weiter.
+Standardmäßig lauscht DerKumpel nur auf `127.0.0.1:8080`. Der vorhandene Reverse Proxy terminiert HTTPS und leitet auf diesen Port weiter.
 
 Das Setup erzeugt eine `.env` mit restriktiven Rechten und einem zufälligen 256-Bit-Session-Key, baut den Container und startet ihn. Es wird **keine zusätzliche Datenbank** benötigt.
 
@@ -62,7 +65,7 @@ sh setup.sh install --base-url https://derkumpel.example.org
 
 ### Optional mit Caddy
 
-Wenn Derkumpel selbst HTTPS terminieren soll und DNS bereits auf den Host zeigt:
+Wenn DerKumpel selbst HTTPS terminieren soll und DNS bereits auf den Host zeigt:
 
 ```sh
 ./setup.sh caddy
@@ -95,7 +98,7 @@ Update:
 ## Wichtige Konfiguration
 
 - `REDMINE_BASE_URL` – Redmine-Origin, standardmäßig `https://redmine.vgo-o.de`
-- `PUBLIC_BASE_URL` – öffentliche HTTPS-URL von Derkumpel
+- `PUBLIC_BASE_URL` – öffentliche HTTPS-URL von DerKumpel
 - `SESSION_SECRET` – exakt 32 zufällige Bytes als Base64
 - `BIND_ADDRESS` – Default `127.0.0.1`
 - `APP_PORT` – Default `8080`
@@ -111,9 +114,9 @@ Healthchecks:
 - `/api/health/live`
 - `/api/health/ready`
 
-Derkumpel hat serverseitig keine zu sichernde Fachdatenbank. Redmine bleibt das Backup-System für Geschäftsdaten. Lokale PWA-Caches sind Arbeitskopien, keine Backups.
+DerKumpel hat serverseitig keine zu sichernde Fachdatenbank. Redmine bleibt das Backup-System für Geschäftsdaten. Lokale PWA-Caches sind Arbeitskopien, keine Backups.
 
-Die PWA darf nach einer einmaligen erfolgreichen Anmeldung im Funkloch mit bereits synchronisierten Daten weiterarbeiten. Offline-Änderungen werden zuerst dauerhaft in der lokalen Outbox gespeichert und später gegen den aktuellen Redmine-Stand abgeglichen.
+Die PWA darf nach einer einmaligen erfolgreichen Anmeldung im Funkloch mit bereits synchronisierten Daten weiterarbeiten. Offline-Änderungen werden zuerst dauerhaft in der lokalen Outbox gespeichert und später gegen den aktuellen Redmine-Stand abgeglichen. Geschlossene bzw. andere nur über den Ticketbrowser geöffnete Tickets werden bei Bedarf in den lokalen Cache übernommen und unterliegen derselben Aufbewahrungslogik.
 
 ## Web Push
 

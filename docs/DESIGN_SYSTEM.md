@@ -2,7 +2,15 @@
 
 ## Direction
 
-Derkumpel is a municipal field tool: calm, strong, modern, highly legible in daylight, and comfortable with one hand. Avoid dense Redmine tables and desktop metaphors.
+DerKumpel is a municipal field tool: calm, strong, modern, highly legible in daylight, and comfortable with one hand. Avoid dense Redmine tables and desktop metaphors.
+
+## Brand
+
+- User-facing spelling is always **DerKumpel**.
+- Prominent identity surfaces may use the full PNG logo lockup.
+- Header, startup state, favicon and install surfaces use the square PNG brand mark.
+- PWA installation uses dedicated 192x192, 512x512 and maskable PNG assets.
+- Internal technical identifiers may remain lowercase where renaming would invalidate sessions/caches.
 
 ## Mantine strategy
 
@@ -13,7 +21,7 @@ Use Mantine components and theme tokens, not ad-hoc component libraries. Prefer 
 - Primary design range 360–430px portrait.
 - Technical lower bound 320px.
 - No horizontal scrolling in core flows.
-- Bottom navigation on mobile: Arbeit, Karte, Sync, Mehr.
+- Bottom navigation on mobile: Arbeit, Tickets, Karte, Sync, Mehr.
 - Desktop/tablet may use a side navigation and two-column detail layout.
 - Primary controls >= 52px where practical; minimum touch target 48px.
 - Form text >= 16px.
@@ -31,9 +39,11 @@ Issue cards emphasize in this order:
 
 Issue detail simple mode uses sections: Auftrag, Ort & Termin, Aktionen, Beschreibung, Anhänge, Verlauf. `Alle Angaben & Bearbeiten` remains collapsed by default on every open.
 
+`Tickets` is a browse/archive surface, not a second dashboard. Keep status scope, tracker, project and search controls together in a sticky filter surface; reuse the same issue cards as `Meine Arbeit` so scanning behavior stays consistent.
+
 ## Perceived performance
 
-- Prefer skeleton content over empty spinners for first-load work lists.
+- Prefer skeleton content over empty spinners for first-load work/ticket lists.
 - Cached offline state should open immediately when the browser is clearly offline; do not wait for a doomed network round trip first.
 - Show the last successful sync time where it helps establish trust in cached data.
 - Local mutations must feel instant, while sync state remains visible in the dedicated navigation/status surfaces.
@@ -89,7 +99,8 @@ Use avatar/icon rail + cards. Comments and photos are visually prominent. Techni
 - Every attachment card communicates whether it is already stored offline.
 - Non-image files show a recognizable file-type cue and a large `Mit Gerät öffnen` action.
 - Missing offline copies use a calm dashed state rather than looking like a failed upload.
+- If online, a missing copy offers an explicit `Jetzt offline speichern` recovery action on the attachment itself.
 
 ## Map
 
-Map is a secondary work view, never the only way to reach an issue. Marker clustering is allowed. A bottom sheet/card may present selected issue details. Markers must remain comfortably tappable on phones.
+Map is a secondary work view, never the only way to reach an issue. Marker clustering is allowed. A bottom sheet/card may present selected issue details. Markers must remain comfortably tappable on phones. With no valid coordinates in the selected scope, center the basemap on Otterbach-Otterberg and explain why no issue markers are visible.
