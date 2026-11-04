@@ -302,6 +302,6 @@ app.setNotFoundHandler((request, reply) => {
   return reply.type('text/html').sendFile('index.html');
 });
 
+app.addHook('onClose', async () => { pushService?.stop(); });
 await app.listen({ host: config.host, port: config.port });
 pushService?.start();
-app.addHook('onClose', async () => { pushService?.stop(); });
