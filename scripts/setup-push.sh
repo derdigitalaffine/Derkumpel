@@ -23,9 +23,14 @@ Web Push auf Linux mit nur einem Befehl aktivieren:
   ./setup.sh push --redmine-compose-dir /opt/redmine-docker [--redmine-service redmine]
   ./setup.sh push --redmine-ssh admin@redmine-host --redmine-path /opt/redmine
   ./setup.sh push --redmine-ssh admin@redmine-host --redmine-compose-dir /opt/redmine
+  ./setup.sh push --push-mode polling --redmine-api-key-file /root/redmine-admin.key
+  ./setup.sh push --push-mode plugin --redmine-ssh admin@redmine-host --redmine-compose-dir /opt/redmine
   ./setup.sh push --app-only
 
 Optionen:
+  --push-mode MODE           plugin (Redmine-Bridge) oder polling (ohne Plugin)
+  --redmine-api-key-file P   Nur polling: Datei mit Redmine-Admin-API-Key (chmod 600)
+  --push-poll-interval SEC   Nur polling: 30–3600 Sekunden (Default: 90)
   --redmine-path DIR          Native Redmine-Installation mit systemd
   --redmine-compose-dir DIR   Docker-Compose-Projekt von Redmine
   --redmine-ssh USER@HOST     Redmine auf anderem Linux-Server via SSH
@@ -39,6 +44,9 @@ Ohne Redmine-Ziel wird eine eindeutige lokale native Installation erkannt.
 Bei mehreren/keinen Treffern ist eine explizite Angabe nötig. Auf dem Remote-
 Host ist passwortloses sudo erforderlich.
 
+Ohne --push-mode erfolgt interaktiv eine Auswahl. Bei automatischen Aufrufen
+bitte --push-mode ausdrücklich angeben.
+
 Bestehende Schlüssel, SESSION_SECRET und alle anderen .env-Werte bleiben erhalten.
 HELP
 }
@@ -48,12 +56,18 @@ REDMINE_SERVICE='redmine'
 PLUGIN_DIR='/usr/src/redmine/plugins/derkumpel_push'
 SUBJECT=''
 APP_ONLY=false
+PUSH_MODE=''
+API_KEY_FILE=''
+POLL_INTERVAL=''
 
 while (($#)); do
   case "$1" in
-    --redmine-path|--redmine-compose-dir|--redmine-ssh|--redmine-service|--redmine-plugin-dir|--subject)
+    --push-mode|--redmine-api-key-file|--push-poll-interval|--redmine-path|--redmine-compose-dir|--redmine-ssh|--redmine-service|--redmine-plugin-dir|--subject)
       (($# >= 2)) || die "Wert fehlt für $1"
       case "$1" in
+        --push-mode) PUSH_MODE=$2 ;;
+        --redmine-api-key-file) API_KEY_FILE=$2 ;;
+        --push-poll-interval) POLL_INTERVAL=$2 ;;
         --redmine-path)
           [[ -z $MODE ]] || die '--redmine-path und --redmine-compose-dir nicht kombinieren.'
           MODE=native; REDMINE_PATH=$2 ;;
@@ -85,6 +99,26 @@ if [[ -n $REDMINE_SSH ]]; then
     die 'Ungültiger SSH-Host, erwartet USER@HOST ohne Shell-Metazeichen.'
   need ssh; need scp; need tar
 fi
+if [[ -z $PUSH_MODE && $APP_ONLY == true ]]; then PUSH_MODE=plugin; fi
+if [[ -z $PUSH_MODE ]]; then
+  [[ -t 0 ]] || die 'Bitte --push-mode polling oder --push-mode plugin angeben.'
+  printf '\nPush-Quelle auswählen:\n  1) Backend-Polling ohne Redmine-Plugin\n  2) Ereignis-Plugin direkt auf dem Redmine-Server\nAuswahl [1/2]: ' >&2
+  IFS= read -r selection
+  case "$selection" in
+    1) PUSH_MODE=polling ;;
+    2) PUSH_MODE=plugin ;;
+    *) die 'Ungültige Auswahl.' ;;
+  esac
+fi
+[[ $PUSH_MODE == polling || $PUSH_MODE == plugin ]] ||
+  die '--push-mode muss plugin oder polling sein.'
+if [[ $PUSH_MODE == polling ]]; then
+  [[ -z $MODE && -z $REDMINE_SSH && $APP_ONLY == false ]] ||
+    die 'Polling benötigt weder Redmine-Plugin noch SSH; Redmine-Ziel und --app-only entfallen.'
+else
+  [[ -z $API_KEY_FILE && -z $POLL_INTERVAL ]] ||
+    die 'API-Key-Datei und Polling-Intervall nur für --push-mode polling.'
+fi
 if [[ $APP_ONLY == true ]]; then
   [[ -z $MODE && -z $REDMINE_SSH ]] ||
     die '--app-only nicht mit einem Redmine-Ziel kombinieren.'
@@ -98,7 +132,7 @@ PUBLIC_URL=$(read_env PUBLIC_BASE_URL)
 [[ $PUBLIC_URL =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
   die 'PUBLIC_BASE_URL muss eine HTTPS-URL ohne Pfad sein.'
 
-if [[ $APP_ONLY != true ]]; then
+if [[ $PUSH_MODE == plugin && $APP_ONLY != true ]]; then
   if [[ -z $MODE ]]; then
     [[ -z $REDMINE_SSH ]] || die 'Bei --redmine-ssh ist --redmine-path oder --redmine-compose-dir nötig.'
     candidates=()
