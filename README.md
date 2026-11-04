@@ -5,7 +5,7 @@ DerKumpel ist ein **offline-first, touch-optimierter PWA-Client für Redmine** i
 ## Was DerKumpel kann
 
 - `Meine Arbeit`: offene persönliche **und Gruppen-Zuweisungen** aus Redmine
-- `Tickets`: Redmine-Browser für offene, geschlossene oder alle sichtbaren Tickets mit Tracker-, Projekt- und Textfilter
+- `Tickets`: Redmine-Browser für offene, geschlossene oder alle sichtbaren Tickets mit kompakter oder großer Kartenansicht, schlanker Suche und aufklappbaren Tracker-/Projektfiltern
 - Smartphone-first Mantine UI mit großen Touch-Zielen
 - einfacher Ticketmodus plus aufklappbares `Alle Angaben`
 - Redmine-Statuswechsel inklusive `In Arbeit`, `unterbrochen`, `Erledigt` soweit der Workflow sie erlaubt
@@ -14,7 +14,7 @@ DerKumpel ist ein **offline-first, touch-optimierter PWA-Client für Redmine** i
 - Kamera -> Vorschau -> Verwenden/Verwerfen; Upload wird komprimiert und EXIF wird nicht absichtlich entfernt
 - Bilder und sonstige Anhänge im Offline-Cache; fehlende Dateien können online gezielt nachgeladen werden
 - moderne Timeline; technische Feldänderungen separat aufklappbar
-- MapLibre + basemap.de Web Vektor, native Navigation über die Karten-App des Handys
+- MapLibre + basemap.de Web Raster, native Navigation über die Karten-App des Handys, aufklappbare Kartenfilter für Umfang, Status, Priorität, Tracker und Projekt
 - Karten-Fallback auf die Verbandsgemeinde Otterbach-Otterberg, wenn die aktuelle Auswahl keine Ticket-Koordinaten enthält
 - eigene GPS-Position ausschließlich lokal auf dem Gerät
 - optionale Offline-Karte, standardmäßig deaktiviert
@@ -23,6 +23,7 @@ DerKumpel ist ein **offline-first, touch-optimierter PWA-Client für Redmine** i
 - sichere Auto-Merges und sichtbare Konflikte bei echten Paralleländerungen
 - Cache-Bereinigung standardmäßig nach 30 Tagen, einstellbar
 - eigenes DerKumpel-PNG-Branding für App, Favicon, Apple-Touch-Icon und PWA-Manifest
+- optionales Web Push mit individuell erlaubten Ereignisarten, VAPID, geschlossener PWA und direktem Ticket-Link
 
 Das geplante elektronische **Rapportzettel-/Zeiterfassungssystem** wird bewusst noch nicht implementiert. Die Architektur hält dafür eine separate Backend-/Service-Grenze frei.
 
@@ -41,7 +42,7 @@ Smartphone/PWA
   Redmine REST API
 ```
 
-Der BFF hat **keine Datenbank und keinen Redis**. Er isoliert die Redmine-Zugangsdaten vom JavaScript-Client, übersetzt mobile API-Aufrufe und reicht nur explizit freigegebene Redmine-Funktionen durch. Benutzername/Passwort werden nach erfolgreicher Prüfung ausschließlich in einer AES-256-GCM-verschlüsselten, `HttpOnly`/`Secure` Session-Cookie transportiert; sie landen nicht in IndexedDB oder localStorage.
+Der Kern-BFF hat **keine Datenbank und keinen Redis**. Wird Web Push aktiviert, speichert ein optionaler Adapter ausschließlich Geräte-Abonnements in einem kleinen privaten Docker-Volume. Er isoliert die Redmine-Zugangsdaten vom JavaScript-Client, übersetzt mobile API-Aufrufe und reicht nur explizit freigegebene Redmine-Funktionen durch. Benutzername/Passwort werden nach erfolgreicher Prüfung ausschließlich in einer AES-256-GCM-verschlüsselten, `HttpOnly`/`Secure` Session-Cookie transportiert; sie landen nicht in IndexedDB oder localStorage.
 
 ## Schnellinstallation mit externem Reverse Proxy
 
@@ -106,6 +107,7 @@ Update:
 - `MAP_DEFAULT_CENTER` – `lon,lat`
 - `MAP_OFFLINE_BOUNDS` – optional `west,south,east,north`; bevorzugt für die Verwaltungsgrenze
 - `MAP_OFFLINE_RADIUS_KM` – Fallback, wenn keine feste Grenze konfiguriert ist
+- `PUSH_ENABLED` und `PUSH_VAPID_*` – optionaler Push-Dienst, siehe `docs/PUSH_NOTIFICATIONS.md`
 
 ## Betrieb
 
@@ -120,7 +122,7 @@ Die PWA darf nach einer einmaligen erfolgreichen Anmeldung im Funkloch mit berei
 
 ## Web Push
 
-Die gewünschten Benachrichtigungskategorien sind in den Nutzereinstellungen vorbereitet. **Echtes Web Push bei vollständig geschlossener PWA** benötigt jedoch dauerhaft gespeicherte Push-Subscriptions und einen Event-Sender. Da der Kernserver auf ausdrücklichen Wunsch zustandslos bleibt und Redmine 5.0.5 keinen vorausgesetzten Push-Eventstream liefert, ist dieser Sender als separater Integrationsadapter vorgesehen und nicht heimlich in den Kernserver eingebaut. Bei geöffneter PWA werden Redmine-Änderungen spätestens über den konfigurierten Client-Sync erkannt.
+**Implementiert als opt-in Integration:** VAPID Web Push, Push-Abos nur für das authentifizierte Redmine-Konto, private JSON-Persistenz für Endpunkte, ein installierbares Redmine-5.x-Plugin als Ereignisquelle, pro Gerät einstellbare Ereignisarten sowie Service-Worker-Benachrichtigungen mit Direktlink zum Ticket. Der Redmine-Event-Adapter muss **separat auf dem Redmine-Server installiert und konfiguriert** werden. Ohne ihn werden keine Hintergrundbenachrichtigungen verschickt. Details, Secrets und Kompatibilitätsprüfung: [Push-Deployment](docs/PUSH_NOTIFICATIONS.md).
 
 ## Entwicklungsorganisation
 
