@@ -32,7 +32,9 @@ function urgentPriority(name: string): boolean {
 export function IssueCard({ issue, to }: { issue: RedmineIssue; to?: string }) {
   const status = statusColor(issue.status.name);
   const address = issueAddress(issue);
-  const due = dueInfo(issue.due_date);
+  const due = issue.closed_on
+    ? { label: `Geschlossen · ${dateLabel(issue.closed_on.slice(0, 10))}`, color: 'gray', urgent: false }
+    : dueInfo(issue.due_date);
   const done = issue.done_ratio ?? 0;
 
   return <Card component={Link} to={to ?? `/issues/${issue.id}`} withBorder
