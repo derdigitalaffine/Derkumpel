@@ -41,6 +41,12 @@ module DerkumpelPush
 
     def derkumpel_notify_issue_changes
       changed = saved_changes.keys
+      # On creation, assignment is the only meaningful notification. Do not
+      # flood phones with an initial status/priority/start-date push as well.
+      if changed.include?('id')
+        DerkumpelPush::Notifications.enqueue(self, 'assignment') if assigned_to_id.present?
+        return
+      end
       if changed.include?('assigned_to_id')
         DerkumpelPush::Notifications.enqueue(self, 'assignment')
       end
