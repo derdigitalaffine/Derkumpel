@@ -162,3 +162,21 @@ Not part of the current production baseline by explicit product decision:
 ## Go-live decision rule
 
 Repository/CI readiness is necessary but not sufficient for municipal field deployment. Organization-wide rollout is approved only after the live acceptance items above are completed without a P0 data-loss, authorization, login, offline-replay or camera/attachment defect. A small field pilot should precede the full rollout.
+
+
+## UI/UX overhaul — November 4, 2026
+
+Branch: `ux/field-app-overhaul`. Mantine 9 / React 19 field-service redesign, no Redmine API schema change.
+
+- DerKumpel navy/green theme, consistent responsive typography, accessible vector icon vocabulary, modern mobile dock and desktop navigation.
+- Clear work overview with all/today/overdue quick filters, improved status/urgency cards and semantic date-only calculations.
+- Ticket browser controls adapted for narrow screens; stale asynchronous search results guarded by request tokens; additional pages can be loaded even when searching the current result set.
+- Simplified action hierarchy for ticket field workers, inline route affordance, timeline styling and explicit on-device save feedback.
+- Offline mutation buttons (status, comments, photo, expanded editor) protected against repeated submissions; drafts remain intact when local queue persistence fails.
+- Sync Center with clearer status/error/queue hierarchy and guarded manual sync action.
+- Settings cache-clear and logout disabled with pending outbox edits, also within destructive confirmations.
+- Map fits all available pins and communicates local-only geolocation privacy.
+- HTTPS guard on the login form prevents password entry on nonlocal HTTP origins.
+- New due-date classification unit tests and extended visual/UX acceptance checklist.
+
+**Automated CI:** Typecheck, unit tests, PNG asset checks, production PWA build, npm audit, Compose validation, Docker image and running-container smoke test. A passing pipeline does not prove pixel-level rendering on every mobile browser; physical-device checks (320/360/390/430 px, sunlight, phone keyboard, offline/online and iOS standalone where used) remain required before a fleet-wide release.
