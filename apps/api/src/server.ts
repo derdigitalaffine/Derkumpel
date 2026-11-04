@@ -146,6 +146,7 @@ app.post('/api/push/events', async (request, reply) => {
   const event = safeEvent(request.body);
   if (!event) return reply.code(400).send({ error: 'invalid_event' });
   const result = await pushRegistry.dispatch(event);
+  if (result.failed > 0) return reply.code(503).send({ error: 'push_delivery_retry', ...result });
   return { ok: true, ...result };
 });
 
