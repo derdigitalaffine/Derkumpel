@@ -1,0 +1,28 @@
+name: Regenerate push package lock (one-time)
+on:
+  push:
+    branches: [feature/push-compact-tickets-map-filters]
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - name: Commit locked dependencies
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo 'Lock already current'
+          else
+            git commit -m 'build(push): lock web-push runtime dependency'
+            git push origin HEAD:feature/push-compact-tickets-map-filters
+          fi
