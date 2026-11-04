@@ -71,7 +71,7 @@ export function loadConfig(): AppConfig {
     redmineTimeoutMs: positiveInt('REDMINE_TIMEOUT_MS', 15_000),
     maxUploadBytes: positiveInt('MAX_UPLOAD_MB', 25) * 1024 * 1024,
     production,
-    mapStyleUrl: process.env.MAP_STYLE_URL ?? 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json',
+    mapStyleUrl: 'basemap-raster', // Legacy MAP_STYLE_URL is intentionally ignored: raster is always the default.
     mapCenter: tuple('MAP_DEFAULT_CENTER', [7.77, 49.5]),
     offlineMapBounds: bounds('MAP_OFFLINE_BOUNDS'),
     offlineMapRadiusKm: positiveNumber('MAP_OFFLINE_RADIUS_KM', 12),

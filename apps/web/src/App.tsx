@@ -47,7 +47,7 @@ export function App() {
   if (state === 'loading') return <Center mih="100dvh" p="xl" role="status" aria-live="polite">
     <Paper p="xl" maw={360} w="100%" ta="center" className="startup-card">
       <Stack align="center" gap="md">
-        <Image src="/derkumpel-icon-192.png" alt="" w={70} h={70} radius={20} />
+        <Image src="/derkumpel-icon-192-v2.png" alt="" w={70} h={70} radius={20} />
         <Box>
           <Text fw={850} fz="xl" style={{ letterSpacing: '-0.03em' }}>DerKumpel</Text>
           <Text size="sm" c="dimmed" mt={4}>Lokale Aufträge werden vorbereitet</Text>

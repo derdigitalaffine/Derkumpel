@@ -11,7 +11,7 @@ import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, r
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
 const SESSION_COOKIE = 'derkumpel_session';
-const mapOrigin = new URL(config.mapStyleUrl).origin;
+const mapOrigin = 'https://sgx.geodatenzentrum.de'; // Raster tiles are fetched directly by the client.
 
 await app.register(cookie);
 await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });

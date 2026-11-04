@@ -54,10 +54,12 @@
 - watcher-only issues are absent from `Meine Arbeit`
 - user-facing product name is `DerKumpel`
 - login uses the full PNG logo; header/start state use the square brand mark
-- manifest contains PNG 192x192, 512x512 and maskable icons and does not depend on the removed generic SVG icon
+- manifest contains *valid* versioned PNG 192x192, 512x512 and maskable icons, plus 180x180 Apple touch and favicons; release validation checks PNG headers, dimensions and IEND bytes, and the removed generic SVG icon is not referenced
 
 ## Map/privacy
 
+- map uses basemap.de Web Raster by default, without requiring a vector-style network request; browser CSP and service-worker caching allow its WMTS PNG tiles
+- optional Offline-Karte prefetch downloads exactly the same raster PNG tile URLs used by the visible map
 - map uses ticket coordinates
 - when current scope has no valid ticket coordinates, map centers on Otterbach-Otterberg and explains the empty marker state
 - requesting device location does not send it to `/api`

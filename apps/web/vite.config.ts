@@ -8,12 +8,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [
-        'derkumpel-logo.png',
-        'derkumpel-icon-192.png',
-        'derkumpel-icon-512.png',
-        'derkumpel-icon-maskable-512.png',
-        'favicon-32.png',
-        'favicon-64.png',
+        'derkumpel-logo-v2.png',
+        'derkumpel-icon-192-v2.png',
+        'derkumpel-icon-512-v2.png',
+        'derkumpel-icon-maskable-512-v2.png',
+        'favicon-32-v2.png',
+        'favicon-64-v2.png',
+        'apple-touch-icon-v2.png',
       ],
       manifest: {
         id: '/',
@@ -26,9 +27,9 @@ export default defineConfig({
         orientation: 'portrait-primary',
         start_url: '/',
         icons: [
-          { src: '/derkumpel-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/derkumpel-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/derkumpel-icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/derkumpel-icon-192-v2.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/derkumpel-icon-512-v2.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/derkumpel-icon-maskable-512-v2.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
@@ -36,7 +37,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/sgx\.geodatenzentrum\.de\/gdz_basemapde_vektor\//,
+            urlPattern: /^https:\/\/sgx\.geodatenzentrum\.de\/wmts_basemapde\/tile\//,
             handler: 'CacheFirst',
             options: {
               cacheName: 'derkumpel-map',

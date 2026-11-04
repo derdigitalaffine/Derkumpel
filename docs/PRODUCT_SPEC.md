@@ -106,7 +106,7 @@ Each active client may poll through the BFF for Redmine changes. Do not build a 
 ## Maps
 
 - MapLibre GL map.
-- basemap.de Web Vektor default online basemap.
+- basemap.de Web Raster is the default online basemap, rendered directly as MapLibre raster tiles without requesting the unreliable vector-style JSON. Legacy MAP_STYLE_URL values must not override this default.
 - Ticket markers use lat/lng when available.
 - Filters allow own/group work and optionally all visible open issues.
 - If the current map scope contains no valid ticket coordinates, keep the map useful by centering it on the Verbandsgemeinde Otterbach-Otterberg instead of presenting a blank/undefined geographic state.
