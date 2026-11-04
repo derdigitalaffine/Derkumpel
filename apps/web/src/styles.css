@@ -317,3 +317,36 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .quick-stat, .issue-card, .mantine-Button-root { transition: none !important; }
 }
+
+
+/* Ticket explorer: search never overlays the scrollable results. */
+.ticket-browser-bar {
+  position: static;
+  z-index: auto;
+  background: #fff;
+  border: 1px solid var(--dk-border);
+  border-radius: 15px;
+  box-shadow: 0 4px 14px rgba(22, 55, 79, .045);
+}
+.ticket-browser-bar .mantine-SegmentedControl-root { min-height: 37px; }
+.ticket-browser-bar .mantine-Input-input { min-height: 44px; }
+.ticket-list-tools { min-height: 38px; padding: 0 1px; }
+.ticket-list-tools .mantine-SegmentedControl-root { flex-shrink: 0; }
+.compact-ticket-list { background: #fff; border: 1px solid var(--dk-border); border-radius: 16px; overflow: hidden; }
+.compact-issue { display: flex; width: 100%; padding: 11px 14px 10px 16px; text-align: left; color: var(--dk-ink); min-height: 91px; align-items: center; justify-content: space-between; gap: 6px; border-bottom: 1px solid #e9f0f2; transition: background .13s ease; }
+.compact-issue:last-of-type { border-bottom: 0; }
+.compact-issue:hover, .compact-issue:focus-visible { background: #edf7f5; }
+.compact-issue:active { background: #e2f0ee; }
+.compact-issue-main { min-width: 0; flex: 1; }
+.compact-issue-title { color: #163a51; overflow-wrap: anywhere; }
+.compact-issue-arrow { color: #7b9eac; flex-shrink: 0; }
+.map-toolbar { border-radius: 16px; background: #fff; border: 1px solid var(--dk-border); }
+.map-toolbar .mantine-MultiSelect-input { min-height: 45px; }
+@media (max-width: 390px) {
+  .compact-issue { padding: 10px 11px 9px 13px; }
+  .ticket-browser-bar { padding: 8px !important; }
+  .ticket-browser-bar .mantine-Button-root { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-issue { transition: none; }
+}
