@@ -45,6 +45,17 @@ app.addHook('onSend', async (request, reply, payload) => {
   reply.header('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=()');
   reply.header('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ${mapOrigin}; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`);
   if (request.url.startsWith('/api/') && !request.url.startsWith('/api/health/')) reply.header('Cache-Control', 'no-store');
+  // HTML navigations and service-worker bootstrap must revalidate after a
+  // deployment. Fingerprinted JS/CSS and offline business data remain intact.
+  // Otherwise browsers can keep presenting an old vector-map error long after
+  // the raster-only version has shipped.
+  const type = String(reply.getHeader('content-type') ?? '');
+  const pathname = request.url.split('?')[0];
+  if (type.includes('text/html') ||
+      pathname === '/sw.js' || pathname === '/registerSW.js' ||
+      /^\/workbox-[A-Za-z0-9_.-]+\.js$/.test(pathname)) {
+    reply.header('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  }
   return payload;
 });
 
