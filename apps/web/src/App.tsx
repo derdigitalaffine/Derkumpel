@@ -2,8 +2,10 @@ import { Box, Center, Image, Loader, Paper, Stack, Text } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, AuthRequiredError } from './api';
-import { getSetting, setSetting } from './db';
+import { clearBusinessData, getSetting, setSetting } from './db';
 import { startSyncLoop } from './sync';
+import { disablePush, updatePushPreferences } from './push';
+import type { PushPreferences } from './api';
 import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
@@ -29,6 +31,14 @@ export function App() {
 
     try {
       const user = await api.me();
+      const prior = await getSetting<CurrentUser | null>('lastUser', null);
+      if (prior && prior.id !== user.id) {
+        void disablePush().catch(() => undefined);
+        await clearBusinessData();
+      } else {
+        const preferences = await getSetting<PushPreferences>('notificationPreferences', { assignment: true, status: true, comment: true, priority: true, dates: true });
+        void updatePushPreferences(preferences).catch(() => undefined);
+      }
       await setSetting('lastUser', user);
       setState('ready');
     } catch (error) {

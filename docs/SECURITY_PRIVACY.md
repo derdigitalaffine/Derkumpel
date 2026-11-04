@@ -14,6 +14,12 @@ Derkumpel holds work-order content and attachments on personally assigned munici
 - Login errors must not reveal whether a username exists.
 - Password changes/invalid credentials result in HTTP 401 and local reauthentication prompt on next online sync.
 
+## Optional Web Push state boundary
+
+Push explicitly adds a small server-side persistent **device subscription registry**, not a business database or Redmine credential store. It stores browser push endpoint and public encryption key material, owning Redmine user ID, per-event preferences, and bounded event deduplication identifiers. File permissions are restricted to the app user and the named Docker volume should be protected as private server data.
+
+Push endpoints are validated against browser push-provider hostnames to avoid SSRF. A separate high-entropy event secret authenticates the Redmine bridge and must never be exposed to JavaScript, source control or browser logs. Only Redmine computes actual recipients and visibility, including group assignments and private notes. The payload includes issue number/type but not ticket text, coordinates, requester data or attachments; browser push providers still process encrypted notifications. Disabled/unsubscribed or changed-account devices must not continue receiving old-account pushes. Expired endpoints are deleted after 404/410 responses.
+
 ## Stateless BFF
 
 - No generic arbitrary URL proxy.

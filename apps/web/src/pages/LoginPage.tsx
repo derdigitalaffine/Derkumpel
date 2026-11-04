@@ -1,7 +1,8 @@
 import { Alert, Badge, Box, Button, Center, Group, Image, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useNetwork } from '@mantine/hooks';
 import { useState } from 'react';
-import { api } from '../api';
+import { api, type PushPreferences } from '../api';
+import { disablePush, updatePushPreferences } from '../push';
 import { clearBusinessData, getSetting, setSetting } from '../db';
 import type { CurrentUser } from '../types';
 import { UIIcon } from '../components/UIIcon';
@@ -22,7 +23,13 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result = await api.login(username.trim(), password);
       const previous = await getSetting<CurrentUser | null>('lastUser', null);
-      if (previous && previous.id !== result.user.id) await clearBusinessData();
+      if (previous && previous.id !== result.user.id) {
+        await disablePush().catch(() => undefined);
+        await clearBusinessData();
+      } else {
+        const preferences = await getSetting<PushPreferences>('notificationPreferences', { assignment: true, status: true, comment: true, priority: true, dates: true });
+        await updatePushPreferences(preferences).catch(() => undefined);
+      }
       await setSetting('lastUser', result.user);
       await setSetting('locallyLoggedOut', false);
       setPassword(''); onLoggedIn();

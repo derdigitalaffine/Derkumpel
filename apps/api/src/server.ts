@@ -7,10 +7,16 @@ import fastifyStatic from '@fastify/static';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
 import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
 const SESSION_COOKIE = 'derkumpel_session';
+const pushRegistry = config.push.enabled ? new PushRegistry(config.push.storeFile, {
+  subject: config.push.vapidSubject,
+  publicKey: config.push.vapidPublicKey,
+  privateKey: config.push.vapidPrivateKey,
+}) : undefined;
 const mapOrigin = 'https://sgx.geodatenzentrum.de'; // Raster tiles are fetched directly by the client.
 
 await app.register(cookie);
@@ -100,6 +106,50 @@ app.setErrorHandler((error, _request, reply) => {
 app.get('/api/health/live', async () => ({ ok: true }));
 app.get('/api/health/ready', async () => ({ ok: true, redmine: config.redmineBaseUrl.origin }));
 app.get('/api/config', async () => ({ mapStyleUrl: config.mapStyleUrl, mapCenter: config.mapCenter, offlineMapBounds: config.offlineMapBounds, offlineMapRadiusKm: config.offlineMapRadiusKm, pollIntervalMs: config.pollIntervalMs }));
+
+app.get('/api/push/config', async () => ({
+  enabled: Boolean(pushRegistry),
+  publicKey: pushRegistry ? config.push.vapidPublicKey : null,
+}));
+
+app.get('/api/push/status', async (request) => {
+  const creds = credentials(request);
+  const user = (await fetchCurrentUser(config, creds)).user;
+  return { enabled: Boolean(pushRegistry), userId: user.id };
+});
+
+app.post('/api/push/subscriptions', async (request, reply) => {
+  if (!pushRegistry) return reply.code(503).send({ error: 'push_not_configured' });
+  const body = request.body as { subscription?: unknown; preferences?: unknown } | undefined;
+  if (!validSubscription(body?.subscription)) return reply.code(400).send({ error: 'invalid_subscription' });
+  const user = (await fetchCurrentUser(config, credentials(request))).user;
+  pushRegistry.register(user.id, body!.subscription, normalizePreferences(body?.preferences));
+  return reply.code(201).send({ ok: true });
+});
+
+app.post('/api/push/unsubscribe', async (request, reply) => {
+  if (!pushRegistry) return reply.code(503).send({ error: 'push_not_configured' });
+  const body = request.body as { endpoint?: string } | undefined;
+  if (typeof body?.endpoint !== 'string' || body.endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
+  const user = (await fetchCurrentUser(config, credentials(request))).user;
+  pushRegistry.unregister(user.id, body.endpoint);
+  return { ok: true };
+});
+
+// Only the Redmine-side event bridge knows this token. Browser sessions cannot post events.
+// Recipients are computed by Redmine's assignment/group rules, never by the PWA.
+app.post('/api/push/events', async (request, reply) => {
+  if (!pushRegistry) return reply.code(503).send({ error: 'push_not_configured' });
+  const token = request.headers['x-derkumpel-event-token'];
+  if (!verifyEventToken(typeof token === 'string' ? token : undefined, config.push.eventToken))
+    return reply.code(403).send({ error: 'forbidden' });
+  const event = safeEvent(request.body);
+  if (!event) return reply.code(400).send({ error: 'invalid_event' });
+  const result = await pushRegistry.dispatch(event);
+  if (result.failed > 0) return reply.code(503).send({ error: 'push_delivery_retry', ...result });
+  return { ok: true, ...result };
+});
+
 
 app.post('/api/auth/login', async (request, reply) => {
   const body = request.body as { username?: string; password?: string } | undefined;

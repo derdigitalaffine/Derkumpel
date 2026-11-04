@@ -13,6 +13,7 @@ export type AppConfig = {
   offlineMapBounds?: [number, number, number, number];
   offlineMapRadiusKm: number;
   pollIntervalMs: number;
+  push: { enabled: boolean; vapidPublicKey: string; vapidPrivateKey: string; vapidSubject: string; eventToken: string; storeFile: string };
 };
 
 function positiveInt(name: string, fallback: number): number {
@@ -61,7 +62,22 @@ export function loadConfig(): AppConfig {
   const sessionKey = Buffer.from(secret, 'base64');
   if (sessionKey.length !== 32) throw new Error('SESSION_SECRET must be exactly 32 random bytes encoded as base64');
 
+  const pushEnabled = process.env.PUSH_ENABLED === 'true';
+  const push = {
+    enabled: pushEnabled,
+    vapidPublicKey: process.env.PUSH_VAPID_PUBLIC_KEY ?? '',
+    vapidPrivateKey: process.env.PUSH_VAPID_PRIVATE_KEY ?? '',
+    vapidSubject: process.env.PUSH_VAPID_SUBJECT ?? '',
+    eventToken: process.env.PUSH_EVENT_TOKEN ?? '',
+    storeFile: process.env.PUSH_STORE_FILE ?? '/app/push-data/subscriptions.json',
+  };
+  if (pushEnabled && (!push.vapidPublicKey || !push.vapidPrivateKey ||
+    !/^mailto:.+@.+|^https:\/\//.test(push.vapidSubject) || push.eventToken.length < 32)) {
+    throw new Error('PUSH_ENABLED requires VAPID public/private keys, VAPID subject and PUSH_EVENT_TOKEN (32+ characters)');
+  }
+
   return {
+    push,
     host: process.env.HOST ?? '0.0.0.0',
     port: positiveInt('PORT', 8080),
     redmineBaseUrl: requiredUrl('REDMINE_BASE_URL', 'https://redmine.vgo-o.de'),

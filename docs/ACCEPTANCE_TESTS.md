@@ -18,12 +18,30 @@
 - repeated attachment download failures do not cause a tight repeated-request loop
 - completed/unassigned cache older than retention is removed only when no pending mutation exists
 
+## Push notifications (with configured Redmine bridge and HTTPS)
+
+- push disabled on a fresh unconfigured server, normal offline-first behavior is unchanged
+- user manually enables push in settings and grants browser permission; no automatic permission prompt on page load
+- Android and installed iOS PWA receive notification for other user assignment/status/comment/priority/date updates
+- group issue assignment notifies eligible members; watcher-only or unauthorized users receive none
+- private notes never go to users lacking Redmine `view_private_notes`
+- lock-screen notification contains event kind + issue number, never subject, location, phone, photo or notes
+- tapping push opens the affected issue and obeys current Redmine authentication/visibility
+- disabling push, logging out and switching Redmine accounts prevent stale device subscriptions from delivering another account's events
+- subscription endpoints must be HTTPS URLs at approved browser push providers; arbitrary URLs are rejected
+- duplicate event IDs do not generate duplicate pushes and push endpoint expiration is handled
+- VAPID keys persist through deployment; subscriber volume persists across app image upgrades
+- the existing service worker keeps offline shell, cached attachments and map tiles functional with push handlers installed
+
 ## Ticket browser / archive
 
 - navigation exposes a dedicated `Tickets` surface separate from `Meine Arbeit`
 - browser can switch between open, closed and all visible Redmine tickets
 - tracker and project filters are passed to Redmine and affect results
 - text search filters the currently loaded result set
+- compact list and spacious card view toggle on the same results, remembered per device
+- tracker/project search filters are hidden in the bottom drawer until asked for, leaving the ticket list visible
+- no permanently sticky multi-row browser toolbar obscures the list at 320px
 - result loading is paginated and exposes a clear load-more action while more results exist
 - opening a visible result not yet in IndexedDB fetches its complete issue detail and stores it locally
 - browsing a closed ticket does not incorrectly make it an active `Meine Arbeit` ticket
@@ -70,6 +88,8 @@
 
 - map uses basemap.de Web Raster by default, without requiring a vector-style network request; browser CSP and service-worker caching allow its WMTS PNG tiles
 - optional Offline-Karte prefetch downloads exactly the same raster PNG tile URLs used by the visible map
+- map filters expand/collapse by user action and offer local tracker, status, priority, project and own/all scope
+- map filters persist on the device, can reset and are applied before rendering pins
 - map uses ticket coordinates
 - when current scope has no valid ticket coordinates, map centers on Otterbach-Otterberg and explains the empty marker state
 - requesting device location does not send it to `/api`

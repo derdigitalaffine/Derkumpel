@@ -15,6 +15,7 @@ export default defineConfig({
         'favicon-32-v2.png',
         'favicon-64-v2.png',
         'apple-touch-icon-v2.png',
+        'push-sw.js',
       ],
       manifest: {
         id: '/',
@@ -33,6 +34,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
