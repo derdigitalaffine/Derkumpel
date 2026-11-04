@@ -136,7 +136,7 @@ export function IssuePage() {
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing={{ base: 'md', sm: 'lg' }}>
           <Field label="Zugewiesen" value={issue.assigned_to?.name ?? '—'} />
           <Field label="Beginn" value={dateLabel(issue.start_date) ?? '—'} />
-          <Field label="Fällig" value={due.label ? <Text c={due.urgent ? 'red' : undefined} fw={800}>{dateLabel(issue.due_date)}</Text> : '—'} />
+          <Field label="Fällig" value={due.label ? <span style={{ color: due.urgent ? '#bb4b3d' : undefined, fontWeight: 800 }}>{dateLabel(issue.due_date)}</span> : '—'} />
           <Field label="Projekt" value={issue.project.name} />
         </SimpleGrid>
 
