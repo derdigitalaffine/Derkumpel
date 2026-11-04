@@ -66,7 +66,7 @@ export function SettingsPage() {
         setPushStatus('not-subscribed');
         notifications.show({ color: 'green', message: 'Push auf diesem Gerät deaktiviert' });
       } else {
-        await enablePush(notificationPrefs);
+        await enablePush(notificationPrefs, pushConfig.publicKey ?? '');
         setPushStatus('subscribed');
         notifications.show({ color: 'green', message: 'Push auf diesem Gerät aktiviert' });
       }
