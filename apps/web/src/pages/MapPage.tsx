@@ -8,6 +8,7 @@ import { useDexieLive } from '../live';
 import { issueCoordinates } from '../issueUtils';
 import { BASEMAP_RASTER_STYLE, OTTERBACH_OTTERBERG_CENTER } from '../mapStyle';
 import type { RedmineIssue } from '../types';
+import { UIIcon } from '../components/UIIcon';
 
 type MapScope = 'mine' | 'visible';
 
@@ -133,6 +134,13 @@ export function MapPage() {
       map.easeTo({ center: OTTERBACH_OTTERBERG_CENTER, zoom: 11, duration: 350 });
     } else if (bounds.length === 1) {
       map.easeTo({ center: bounds[0], zoom: 15, duration: 350 });
+    } else {
+      // When there are several jobs, show all of them, rather than only the last map center.
+      const west = Math.min(...bounds.map(([lon]) => lon));
+      const east = Math.max(...bounds.map(([lon]) => lon));
+      const south = Math.min(...bounds.map(([, lat]) => lat));
+      const north = Math.max(...bounds.map(([, lat]) => lat));
+      map.fitBounds([[west, south], [east, north]], { padding: 54, maxZoom: 14, duration: 350 });
     }
     window.requestAnimationFrame(() => map.resize());
     return () => markers.forEach((marker) => marker.remove());
@@ -163,16 +171,17 @@ export function MapPage() {
   return <Stack gap="md">
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
-        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Karte</Title>
-        <Text c="dimmed" size="sm" mt={3}>basemap.de Web Raster · Otterbach–Otterberg</Text>
+        <Text className="page-kicker">Aufträge in deiner Nähe</Text>
+        <Title order={1} size="h2">Einsatzkarte</Title>
+        <Text className="page-subtitle" mt={4}>Otterbach–Otterberg · basemap.de Raster</Text>
       </Box>
       <Group gap="xs" wrap="nowrap">
-        <Badge variant="light" color="blue" size="lg">{mappedCount} Orte</Badge>
-        <ActionIcon size={48} variant="filled" onClick={locate} aria-label="Meine Position anzeigen">⌖</ActionIcon>
+        <Badge variant="light" color="brand" size="lg" leftSection={<UIIcon name="pin" size={13} />}>{mappedCount} Orte</Badge>
+        <ActionIcon size={48} variant="filled" onClick={locate} aria-label="Meine Position anzeigen"><UIIcon name="pin" size={22} /></ActionIcon>
       </Group>
     </Group>
 
-    <Paper p={4} withBorder className="surface-card">
+    <Paper p={4} withBorder className="map-toolbar">
       <SegmentedControl fullWidth value={scope} onChange={changeScope} data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
     </Paper>
 
@@ -180,14 +189,14 @@ export function MapPage() {
     {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Ticket-Koordinaten">Die Karte bleibt sichtbar und ist auf Otterbach–Otterberg zentriert. Sobald Tickets Koordinaten enthalten, erscheinen sie hier automatisch.</Alert>}
 
     <Paper withBorder p={0} className="map-shell" pos="relative">
-      {mapLoading && <Box pos="absolute" inset={0} style={{ zIndex: 2, pointerEvents: 'none' }}>
+      {mapLoading && <Box pos="absolute" inset={0} style={{ zIndex: 2, pointerEvents: 'none', background: 'linear-gradient(140deg,#e7f1f1,#eef5f7)' }}>
         <Stack h="100%" align="center" justify="center" gap="xs">
           <Loader size="sm" />
-          <Text size="sm" c="dimmed">Karte wird geladen …</Text>
+          <Text size="sm" fw={700} c="brand.8">Kartenmaterial wird geladen …</Text>
         </Stack>
       </Box>}
       <div ref={mapNode} style={{ width: '100%', height: '100%', minHeight: 430 }} />
     </Paper>
-    <Text size="xs" c="dimmed" ta="center">Deine aktuelle Position bleibt ausschließlich auf diesem Gerät und wird nicht an Redmine übertragen.</Text>
+    <Group justify="center" gap={6} c="dimmed"><UIIcon name="shield" size={15} /><Text size="xs">Dein Standort bleibt auf diesem Gerät und wird nicht an Redmine übertragen.</Text></Group>
   </Stack>;
 }
