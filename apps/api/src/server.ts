@@ -50,7 +50,7 @@ app.addHook('onSend', async (request, reply, payload) => {
   // Otherwise browsers can keep presenting an old vector-map error long after
   // the raster-only version has shipped.
   const type = String(reply.getHeader('content-type') ?? '');
-  const pathname = request.url.split('?')[0];
+  const pathname = request.url.split('?')[0] ?? '';
   if (type.includes('text/html') ||
       pathname === '/sw.js' || pathname === '/registerSW.js' ||
       /^\/workbox-[A-Za-z0-9_.-]+\.js$/.test(pathname)) {
