@@ -8,9 +8,10 @@ import { boundsAround, prefetchOfflineMap } from '../mapOffline';
 import type { NamedRef, PublicConfig } from '../types';
 import { Link } from 'react-router-dom';
 import { UIIcon, type IconName } from '../components/UIIcon';
+import { DEFAULT_PUSH_PREFERENCES, canUsePush, disableDevicePush, enableDevicePush, readDevicePush, requiresHomeScreenInstall, testDevicePush, updateDevicePushPreferences, type DevicePushStatus, type PushPreferences } from '../push';
 
-type NotificationPreferences = { assignment: boolean; status: boolean; comment: boolean; priority: boolean; dates: boolean };
-const DEFAULT_NOTIFICATIONS: NotificationPreferences = { assignment: true, status: true, comment: true, priority: true, dates: true };
+type NotificationPreferences = PushPreferences;
+const DEFAULT_NOTIFICATIONS = DEFAULT_PUSH_PREFERENCES;
 
 function SectionHeading({ icon, title, description }: { icon: IconName; title: string; description: string }) {
   return <Group gap="sm" align="flex-start" wrap="nowrap">
@@ -29,6 +30,9 @@ export function SettingsPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATIONS);
+  const [pushServerEnabled, setPushServerEnabled] = useState(false);
+  const [pushState, setPushState] = useState<DevicePushStatus>();
+  const [pushBusy, setPushBusy] = useState(false);
   const [config, setConfig] = useState<PublicConfig>({ mapStyleUrl: '', mapCenter: [7.77, 49.5], offlineMapRadiusKm: 12, pollIntervalMs: 120000 });
 
   useEffect(() => { void (async () => {
@@ -40,6 +44,8 @@ export function SettingsPage() {
     if (navigator.onLine) {
       try { const meta = await api.meta<{ trackers: NamedRef[] }>('trackers'); setTrackers(meta.trackers); await setSetting('cachedTrackers', meta.trackers); } catch { /* cache remains */ }
       try { setConfig(await api.config()); } catch { /* defaults */ }
+      try { setPushServerEnabled((await api.pushConfig()).enabled); } catch { /* remains disabled */ }
+      try { setPushState(await readDevicePush()); } catch { /* browser may reject permission calls */ }
     }
   })(); }, []);
 
@@ -47,6 +53,38 @@ export function SettingsPage() {
   const setNotification = async (key: keyof NotificationPreferences, value: boolean) => {
     const next = { ...notificationPrefs, [key]: value };
     setNotificationPrefs(next); await setSetting('notificationPreferences', next);
+    if (pushState?.registered && navigator.onLine) {
+      try { await updateDevicePushPreferences(next); }
+      catch { notifications.show({ message: 'Push-Auswahl lokal gespeichert. Zum Abgleichen erneut verbinden.', color: 'orange' }); }
+    }
+  };
+  const enablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      const state = await enableDevicePush(notificationPrefs);
+      setPushState(state);
+      notifications.show({ message: 'Push für dieses Gerät aktiviert', color: 'green' });
+    } catch (error) {
+      notifications.show({ message: error instanceof Error ? error.message : 'Push konnte nicht aktiviert werden', color: 'red' });
+    } finally { setPushBusy(false); }
+  };
+  const disablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      await disableDevicePush();
+      setPushState(await readDevicePush());
+      notifications.show({ message: 'Push auf diesem Gerät deaktiviert' });
+    } catch (error) {
+      notifications.show({ message: error instanceof Error ? error.message : 'Push konnte nicht deaktiviert werden', color: 'red' });
+    } finally { setPushBusy(false); }
+  };
+  const testPush = async () => {
+    setPushBusy(true);
+    try { await testDevicePush(); notifications.show({ message: 'Testbenachrichtigung angefordert', color: 'green' }); }
+    catch (error) { notifications.show({ message: error instanceof Error ? error.message : 'Test fehlgeschlagen', color: 'red' }); }
+    finally { setPushBusy(false); }
   };
   const downloadMap = async () => {
     const bounds = config.offlineMapBounds ?? boundsAround(config.mapCenter, config.offlineMapRadiusKm);
@@ -55,6 +93,7 @@ export function SettingsPage() {
     finally { setMapProgress(undefined); }
   };
   const logout = async () => {
+    if (pushState?.subscribed) await disableDevicePush().catch(() => undefined);
     if (navigator.onLine) await api.logout().catch(() => undefined);
     await setSetting('locallyLoggedOut', true);
     await setSetting('lastUser', null);
@@ -103,15 +142,54 @@ export function SettingsPage() {
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="info" title="Benachrichtigungen" description="Lege fest, welche Änderungen ein späterer Push-Dienst melden soll." />
+        <SectionHeading icon="info" title="Push-Benachrichtigungen"
+          description="Erhalte Meldungen zu deinen Redmine-Aufträgen – auf Wunsch auch bei geschlossener App." />
+        <Box className="push-optin-panel">
+          <Group justify="space-between" align="center" gap="xs">
+            <Box>
+              <Text fw={800} size="sm">Benachrichtigungen auf diesem Gerät</Text>
+              <Text size="xs" c="dimmed" mt={3}>
+                {!pushServerEnabled ? 'Push-Server muss einmal eingerichtet werden.'
+                  : !canUsePush() ? 'Browser/HTTPS unterstützt Push hier nicht.'
+                    : pushState?.registered ? 'Aktiviert – Aufträge werden automatisch beobachtet.'
+                      : 'Aus – du entscheidest, ob du Push erhalten möchtest.'}
+              </Text>
+            </Box>
+            <Badge variant="light" color={pushState?.registered ? 'green' : 'gray'}>
+              {pushState?.registered ? 'Aktiv' : 'Aus'}
+            </Badge>
+          </Group>
+          {requiresHomeScreenInstall() && <Alert color="blue" variant="light" mt="sm">
+            Auf iPhone/iPad: DerKumpel zuerst über „Zum Home-Bildschirm“ installieren, dort öffnen und dann Push einschalten.
+          </Alert>}
+          {pushState?.permission === 'denied' && <Alert color="orange" variant="light" mt="sm">
+            Der Browser blockiert Mitteilungen. Erlaube sie in den Website-/Systemeinstellungen.
+          </Alert>}
+          <Group mt="md" gap="sm">
+            {pushState?.registered
+              ? <Button variant="light" color="red" loading={pushBusy} disabled={!navigator.onLine}
+                  onClick={() => void disablePush()}>Deaktivieren</Button>
+              : <Button variant="filled" loading={pushBusy}
+                  disabled={!pushServerEnabled || !canUsePush() || requiresHomeScreenInstall() || !navigator.onLine}
+                  leftSection={<UIIcon name="info" size={18} />} onClick={() => void enablePush()}>
+                  Push aktivieren
+                </Button>}
+            {pushState?.registered && <Button variant="default" loading={pushBusy} disabled={!navigator.onLine}
+              onClick={() => void testPush()}>Test senden</Button>}
+          </Group>
+        </Box>
+        <Text size="sm" fw={750}>Worüber möchtest du informiert werden?</Text>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-          <Switch checked={notificationPrefs.assignment} onChange={(event) => void setNotification('assignment', event.currentTarget.checked)} label="Neue Zuweisungen" />
+          <Switch checked={notificationPrefs.assignment} onChange={(event) => void setNotification('assignment', event.currentTarget.checked)} label="Neue Zuweisungen (auch Gruppen)" />
           <Switch checked={notificationPrefs.status} onChange={(event) => void setNotification('status', event.currentTarget.checked)} label="Statusänderungen" />
           <Switch checked={notificationPrefs.comment} onChange={(event) => void setNotification('comment', event.currentTarget.checked)} label="Neue Kommentare" />
           <Switch checked={notificationPrefs.priority} onChange={(event) => void setNotification('priority', event.currentTarget.checked)} label="Prioritätsänderungen" />
           <Switch checked={notificationPrefs.dates} onChange={(event) => void setNotification('dates', event.currentTarget.checked)} label="Termin-/Fälligkeitsänderungen" />
         </SimpleGrid>
-        <Alert color="yellow" variant="light">Bei geöffneter App erkennt der regelmäßige Sync Änderungen. Push bei vollständig geschlossener App benötigt den vorgesehenen separaten Push-/Event-Adapter.</Alert>
+        <Text size="xs" c="dimmed">
+          Push ist freiwillig. Der Server speichert dafür verschlüsselte Redmine-Zugangsdaten und Geräte-Abos;
+          bei Deaktivierung werden die Push-Daten dieses Geräts entfernt. Nachrichtenvorschauen enthalten keine Ticket-Titel.
+        </Text>
       </Stack>
     </Card>
 
