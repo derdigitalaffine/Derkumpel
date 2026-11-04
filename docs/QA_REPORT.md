@@ -154,7 +154,7 @@ These checks require the real `redmine.vgo-o.de` data/credentials, actual roles/
 Not part of the current production baseline by explicit product decision:
 
 - full electronic Rapportzettel/timekeeping backend
-- true Web Push while the PWA is completely closed (requires a separate durable subscription/event adapter because the core BFF is intentionally stateless)
+- Web Push now has an optional device-subscription adapter and a separate Redmine 5.x bridge. It remains opt-in, and staging/live Redmine + real-device verification is required before claiming production delivery.
 - online new-issue creation
 - richer editing of issue relations/subissues
 - imported Redmine saved queries
@@ -180,3 +180,15 @@ Branch: `ux/field-app-overhaul`. Mantine 9 / React 19 field-service redesign, no
 - New due-date classification unit tests and extended visual/UX acceptance checklist.
 
 **Automated CI:** Typecheck, unit tests, PNG asset checks, production PWA build, npm audit, Compose validation, Docker image and running-container smoke test. A passing pipeline does not prove pixel-level rendering on every mobile browser; physical-device checks (320/360/390/430 px, sunlight, phone keyboard, offline/online and iOS standalone where used) remain required before a fleet-wide release.
+
+
+## Opt-in Web Push and ticket/map refinement — November 2026
+
+Branch: `feature/push-ticket-map-ux`.
+
+- Ticket browser toolbar no longer sticks over the scrolling list; search and view switch are compact. Per-device compact list vs cards. Tracker/project filters available only on demand in a bottom drawer.
+- Map filter accordion/Collapse persists scope, status, tracker, priority and project, without hiding the map behind a permanent form.
+- Optional VAPID Web Push with a private 0600 on-disk device registry persisted through Docker volume, session-bound subscription API, host allowlist and secret-protected event ingestion.
+- Workbox service worker imports push click/notification handlers while keeping existing offline shell and map caching. Notification payload intentionally contains only issue ID and event category.
+- Redmine 5.x plugin emits events through after-commit Issue/Journal callbacks via ActiveJob. It enforces Redmine visibility, current assignee/group membership and private-note roles. Notifications are opt-in and do not replace normal offline/client sync.
+- Node CI tests input validation and builds the delivery code; Ruby static syntax checks run. **Cannot verify real push delivery, Redmine plugin registration/role model or iOS PWA behavior without deployment + pilot**; see `docs/PUSH_NOTIFICATIONS.md`.
