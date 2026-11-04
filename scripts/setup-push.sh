@@ -146,7 +146,7 @@ if [[ -z $SUBJECT ]]; then
     SUBJECT=$PUBLIC_URL
   fi
 fi
-[[ $SUBJECT =~ ^mailto:[^[:space:]@]+@[^[:space:]@]+$ || $SUBJECT =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
+[[ $SUBJECT =~ ^mailto:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ || $SUBJECT =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
   die 'VAPID-Subject muss eine mailto:-Adresse oder HTTPS-URL sein.'
 
 cleanup() {
