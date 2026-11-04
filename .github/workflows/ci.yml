@@ -13,6 +13,10 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Test Linux Push one-command installer
+        run: |
+          for file in setup.sh scripts/setup-push.sh scripts/install-redmine-push-target.sh scripts/test-setup-push.sh; do bash -n "$file"; done
+          bash scripts/test-setup-push.sh
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
