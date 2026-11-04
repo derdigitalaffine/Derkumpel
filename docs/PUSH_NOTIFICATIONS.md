@@ -1,6 +1,62 @@
 # Push-Benachrichtigungen für DerKumpel
 
-Web Push ist **optional**. Ohne Konfiguration arbeitet DerKumpel weiterhin wie bisher ohne Push. Der Hauptserver benötigt weder Redmine-Datenbankkopie noch Poller/Broker: Nur die Geräte-Abonnements werden im benannten Docker-Volume `push_data` gespeichert. Die Event-Quelle ist Redmine selbst.
+Web Push ist **optional**. Die Abonnements werden ausschließlich im benannten Docker-Volume `push_data` gespeichert. Für Hintergrundbenachrichtigungen stehen **zwei alternative Ereignisquellen** zur Verfügung: Redmine-Plugin oder ein kleiner REST-Poller im bereits laufenden DerKumpel-Backend. Nur einer dieser Modi ist gleichzeitig aktiv, beide verwenden dieselbe PWA-/VAPID-Infrastruktur.
+
+| | Backend-Polling (ohne Plugin) | Redmine-Plugin |
+|---|---|---|
+| Installation auf Redmine | Keine | Plugin + Ereignis-Job |
+| Voraussetzungen | HTTPS-REST-API, **Redmine-Administrator-API-Key** auf DerKumpel | SSH/Admin-Zugriff auf Redmine-Docker |
+| Meldungsverzögerung | Regelmäßig, standardmäßig 90 Sekunden | In der Regel kurz nach Redmine-Änderung |
+| Berechtigungen | Redmine-API-Impersonation je Empfänger; private Journale separat geprüft | Native Issue-/Journal-Berechtigungen |
+| Betriebsaufwand | REST-API-Last, serverseitiger Cursor | Redmine-Plugin-Pflege |
+| Datenschutz/Sicherheit | Admin-API-Key mit hohen Rechten muss besonders geschützt werden | Kein Admin-API-Key im DerKumpel-Backend |
+
+**Für getrennte Server mit Redmine in Docker ist Polling am einfachsten**, sofern ein sicher verwalteter Redmine-Administrator-API-Key vorhanden ist. Falls keine hochprivilegierten Redmine-Schlüssel auf dem DerKumpel-Server liegen sollen, ist die Plugin-Methode vorzuziehen.
+
+## Automatische Linux-Installation (empfohlen)
+
+Nach der normalen DerKumpel-Installation auf dem **DerKumpel-Linux-Server** aus dem Repository heraus ausführen.
+
+**Weg A – ohne Redmine-Plugin, auch wenn Redmine auf einem anderen Docker-Server liegt:**
+
+```bash
+# Interaktiv: DerKumpel fragt den Admin-API-Key verdeckt ab.
+./setup.sh push --push-mode polling
+
+# Für automatisiertes Setup: Admin-API-Key zuvor in einer 0600-Datei
+# im geschützten Home-Verzeichnis ablegen (nicht im Shell-Verlauf).
+./setup.sh push --push-mode polling \
+  --redmine-api-key-file "$HOME/.config/derkumpel/redmine-admin.key"
+```
+
+Der API-Key stammt aus „Mein Konto“ der Redmine-Administratoranmeldung und muss in Redmine die REST-API verwenden können. Das Skript validiert die Berechtigung über den Administrator-Endpunkt `/users.json` und bricht **vor jeder Konfigurationsänderung** ab, wenn sie fehlt. Der Schlüssel wird nur in der geschützten `.env` gespeichert. Standardmäßig fragt der Backend-Poller alle 90 Sekunden nach geänderten Tickets und Journals; alternativ `--push-poll-interval 60`. Die Redmine-Instanz selbst wird hierbei **überhaupt nicht geändert**.
+
+**Weg B – mit dem ursprünglichen Redmine-Plugin, auch auf anderem Docker-Server:**
+
+```bash
+./setup.sh push --push-mode plugin \
+  --redmine-ssh admin@redmine-host \
+  --redmine-compose-dir /opt/redmine \
+  --redmine-service redmine
+```
+
+Für klassisches Redmine unter systemd ist `--push-mode plugin --redmine-path /opt/redmine` möglich; für lokales Docker-Redmine `--push-mode plugin --redmine-compose-dir /opt/redmine`. Alle Hosts und Pfade sind Beispiele und müssen zur wirklichen Installation passen.
+
+Bei interaktiver Ausführung von `./setup.sh push` zeigt das Skript ein Auswahlmenü und fragt anschließend den API-Key (Polling) oder das Docker-/SSH-Ziel (Plugin) ab. Für automatisierte Deployments `--push-mode` ausdrücklich angeben.
+
+Wird für den Plugin-Weg keine Redmine-Installation angegeben, fragt das interaktive Setup das Ziel ab. Bei nicht-interaktiver Ausführung ist ein Ziel erforderlich oder eine eindeutig erkennbare lokale Installation. Die Pfade und SSH-Namen oben sind **Beispiele** und müssen zur tatsächlichen Installation passen. Bei uneindeutiger oder unbekannter Installation bricht das Skript bewusst ab, statt den falschen Dienst zu ändern.
+
+Das Skript erledigt automatisch: Docker-Image bauen, VAPID-Schlüssel erzeugen oder **unverändert wiederverwenden**, starkes Webhook-Token erzeugen, ausschließlich Push-Variablen in der bestehenden `.env` sicher aktualisieren (Berechtigung `0600`), DerKumpel neu erstellen und den aktiven Push-Konfigurationsendpunkt prüfen. **Nur im Plugin-Modus** wird anschließend das Plugin auf dem Redmine-Server installiert, sein Token über eine root-geschützte Environment-Datei konfiguriert und der Redmine-Dienst neu gestartet. **Im Polling-Modus** bleibt der Redmine-Host unverändert. Bei Docker Compose erstellt es eine dauerhaft automatisch berücksichtigte `compose.override.yaml` und eine persistente Host-Einbindung für das Plugin.
+
+**Voraussetzungen:** Linux mit Docker Engine/Compose v2 und OpenSSL; die DerKumpel-`.env` muss bereits existieren und `PUBLIC_BASE_URL` auf HTTPS zeigen. Für native Redmine-Installationen sind `sudo` und ein systemd-Service nötig. Für den Plugin-Modus auf einem anderen Server benötigt der ausführende Benutzer SSH-Zugang mit **passwortlosem sudo** auf dem Zielhost. Ein vorhandenes fremdes Redmine-`compose.override.*` wird nicht überschrieben: in diesem Fall muss der Override vorab kontrolliert und zusammengeführt werden. Der Docker-Container nutzt standardmäßig `/usr/src/redmine/plugins/derkumpel_push`; bei anderen Images lässt sich dies mit `--redmine-plugin-dir` ändern.
+
+Wenn die Redmine-Installation anders verwaltet wird, kann mit `./setup.sh push --app-only` nur DerKumpel aktiviert werden; die Plugin-Integration aus Abschnitt 2 erfolgt dann getrennt. **`--app-only` bedeutet ausdrücklich: keine Push-Ereignisse aus Redmine**, solange dort kein Event-Adapter eingerichtet ist.
+
+Das Skript ist wiederholt ausführbar und **rotiert weder vorhandene VAPID-Schlüssel noch das Event-Token**. Ein Wechsel von Polling zurück zum Plugin entfernt den hochprivilegierten Redmine-API-Key aus der aktiven `.env`; einen bereits erzeugten externen Schlüssel danach bei Redmine widerrufen, wenn er nicht mehr benötigt wird. Es berührt `SESSION_SECRET` nicht. VAPID-Schlüssel dürfen nicht regelmäßig erneuert werden, sonst verlieren zuvor registrierte Geräte die Funktion. Die Schlüssel werden nicht im Terminal ausgegeben. Aus Sicherheitsgründen wird weder ein fremder Compose-Override automatisch ersetzt noch der Inhalt fremder `.env`-Dateien als Shell-Code ausgeführt. Vor der Installation eine Sicherung der Serverkonfiguration erstellen.
+
+**Nach der Installation:** Auf dem Handy in DerKumpel unter „Mehr → Push-Benachrichtigungen“ aktivieren und mit zwei Redmine-Konten testen. GitHub-CI prüft beide Setup-Pfade mit simuliertem Docker, API-Preflight und Geheimnissen; sie kann weder produktiven Redmine-Zugriff noch echte Geräte-Pushs bestätigen.
+
+---
 
 ## 1. DerKumpel konfigurieren
 

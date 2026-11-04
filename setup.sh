@@ -13,6 +13,7 @@ DerKumpel Setup
   ./setup.sh logs
   ./setup.sh update
   ./setup.sh caddy
+  ./setup.sh push [--redmine-path /opt/redmine | --redmine-compose-dir /opt/redmine | --redmine-ssh user@host ...]
 
 `install` writes .env with a random session key and starts the app behind the
 expected external reverse proxy. `caddy` starts the optional Caddy profile.
@@ -84,6 +85,7 @@ EOF
   logs) need docker; compose logs -f --tail=200 app ;;
   update) need docker; compose build --pull app; compose up -d app ;;
   caddy) need docker; [ -f .env ] || { echo 'Zuerst install ausführen.' >&2; exit 2; }; compose --profile caddy up -d --build ;;
+  push) need bash; exec bash "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/scripts/setup-push.sh" "$@" ;;
   help|-h|--help) usage ;;
   *) echo "Unbekannter Befehl: $command" >&2; usage; exit 2 ;;
 esac

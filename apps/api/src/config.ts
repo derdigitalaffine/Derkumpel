@@ -13,7 +13,7 @@ export type AppConfig = {
   offlineMapBounds?: [number, number, number, number];
   offlineMapRadiusKm: number;
   pollIntervalMs: number;
-  push: { enabled: boolean; vapidPublicKey: string; vapidPrivateKey: string; vapidSubject: string; eventToken: string; storeFile: string };
+  push: { enabled: boolean; mode: 'plugin' | 'polling'; vapidPublicKey: string; vapidPrivateKey: string; vapidSubject: string; eventToken: string; storeFile: string; pollingApiKey: string; pollingIntervalSeconds: number; pollingStateFile: string };
 };
 
 function positiveInt(name: string, fallback: number): number {
@@ -63,8 +63,14 @@ export function loadConfig(): AppConfig {
   if (sessionKey.length !== 32) throw new Error('SESSION_SECRET must be exactly 32 random bytes encoded as base64');
 
   const pushEnabled = process.env.PUSH_ENABLED === 'true';
+  const pushMode = process.env.PUSH_MODE ?? 'plugin';
+  if (pushEnabled && !['plugin', 'polling'].includes(pushMode)) throw new Error('PUSH_MODE must be plugin or polling');
   const push = {
     enabled: pushEnabled,
+    mode: pushMode as 'plugin' | 'polling',
+    pollingApiKey: process.env.PUSH_POLL_API_KEY ?? '',
+    pollingIntervalSeconds: Math.max(30, positiveInt('PUSH_POLL_INTERVAL_SECONDS', 90)),
+    pollingStateFile: process.env.PUSH_POLL_STATE_FILE ?? '/app/push-data/polling-state.json',
     vapidPublicKey: process.env.PUSH_VAPID_PUBLIC_KEY ?? '',
     vapidPrivateKey: process.env.PUSH_VAPID_PRIVATE_KEY ?? '',
     vapidSubject: process.env.PUSH_VAPID_SUBJECT ?? '',
@@ -72,15 +78,23 @@ export function loadConfig(): AppConfig {
     storeFile: process.env.PUSH_STORE_FILE ?? '/app/push-data/subscriptions.json',
   };
   if (pushEnabled && (!push.vapidPublicKey || !push.vapidPrivateKey ||
-    !/^mailto:.+@.+|^https:\/\//.test(push.vapidSubject) || push.eventToken.length < 32)) {
+    !/^mailto:.+@.+|^https:\/\//.test(push.vapidSubject) || (push.mode === 'plugin' && push.eventToken.length < 32))) {
     throw new Error('PUSH_ENABLED requires VAPID public/private keys, VAPID subject and PUSH_EVENT_TOKEN (32+ characters)');
+  }
+
+  const redmineBaseUrl = requiredUrl('REDMINE_BASE_URL', 'https://redmine.vgo-o.de');
+  if (pushEnabled && push.mode === 'polling' && redmineBaseUrl.protocol !== 'https:') {
+    throw new Error('PUSH_MODE=polling requires REDMINE_BASE_URL to use HTTPS');
+  }
+  if (pushEnabled && push.mode === 'polling' && !/^[A-Za-z0-9_-]{32,128}$/.test(push.pollingApiKey)) {
+    throw new Error('PUSH_MODE=polling requires a 32+ character Redmine administrator API key in PUSH_POLL_API_KEY');
   }
 
   return {
     push,
     host: process.env.HOST ?? '0.0.0.0',
     port: positiveInt('PORT', 8080),
-    redmineBaseUrl: requiredUrl('REDMINE_BASE_URL', 'https://redmine.vgo-o.de'),
+    redmineBaseUrl,
     publicBaseUrl: requiredUrl('PUBLIC_BASE_URL', production ? undefined : 'http://localhost:8080'),
     sessionKey,
     sessionMaxAgeSeconds: positiveInt('SESSION_MAX_AGE_DAYS', 30) * 86_400,

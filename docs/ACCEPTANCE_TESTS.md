@@ -18,6 +18,32 @@
 - repeated attachment download failures do not cause a tight repeated-request loop
 - completed/unassigned cache older than retention is removed only when no pending mutation exists
 
+## Plugin-free Redmine REST polling push
+
+- setup offers a clearly selected `--push-mode polling` and `--push-mode plugin`, with interactive choice when a terminal is present
+- polling mode requires HTTPS and validates an administrator Redmine REST API key without leaking it in shell arguments or logs
+- plugin mode still installs the existing Redmine bridge (including remote Docker via SSH) and never launches the REST poller
+- first polling run creates a durable cursor in the push volume and **does not send historic issue notifications**
+- polling detects assigned group issues, status, priority, date and comment changes through Redmine issue journals
+- before sending, administrator API impersonation must resolve to the target user and that user must see the issue; fail closed otherwise
+- a private note is sent only if the impersonated user sees its exact journal ID; no note text, subjects or coordinates enter the notification payload
+- polling skips events authored by the recipient, does not notify watchers-only recipients and handles inactive/deleted accounts conservatively
+- polling mode refuses direct plugin event webhook delivery, preventing two sources from running at once
+- on transient Redmine errors, existing cursor is not advanced; stale multi-day backlog is intentionally discarded rather than replaying old notifications
+- switching polling → plugin clears `PUSH_POLL_API_KEY` from active environment; push subscriptions and VAPID keys remain intact
+- REST polling is best effort and needs testing against actual Redmine 5.x with its third-party workflows
+
+## Linux automated Push setup
+
+- `./setup.sh push --help` documents local native Redmine, Docker Compose, SSH remote and app-only modes
+- Linux install reuses VAPID keys and webhook secret on rerun, preserving SESSION_SECRET and every non-Push `.env` value
+- `.env` stays owner-only (`0600`); no private VAPID key or webhook token appears in console logs or checked-in files
+- unsafe `PUBLIC_BASE_URL=http://...`, incomplete keys and malformed SSH targets are rejected without overwriting stored secrets
+- native Redmine systemd installer creates a root-readable EnvironmentFile, copies the plugin and restarts the selected unit
+- Redmine Compose installer adds a persistent plugin bind mount and root-protected env file without overwriting unrelated existing Compose overrides
+- SSH remote mode transfers the plugin and token only over SSH and requires an authorized remote sudo account; temporary upload files are removed
+- `--app-only` explicitly reports that Redmine events are not enabled until the separate Redmine adapter is installed
+
 ## Push notifications (with configured Redmine bridge and HTTPS)
 
 - push disabled on a fresh unconfigured server, normal offline-first behavior is unchanged

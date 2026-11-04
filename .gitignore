@@ -5,3 +5,7 @@ dist/
 .DS_Store
 coverage/
 .vite/
+
+# Never commit temporary Push setup files containing VAPID secrets.
+.env.push.tmp.*
+.env.push-backup.*

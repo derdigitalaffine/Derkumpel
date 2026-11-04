@@ -8,6 +8,7 @@ import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
 import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
+import { createRedminePollApi, RedminePushPoller } from './pushPoller.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
@@ -17,6 +18,11 @@ const pushRegistry = config.push.enabled ? new PushRegistry(config.push.storeFil
   publicKey: config.push.vapidPublicKey,
   privateKey: config.push.vapidPrivateKey,
 }) : undefined;
+const pushPoller = pushRegistry && config.push.mode === 'polling'
+  ? new RedminePushPoller(pushRegistry, createRedminePollApi(config),
+    config.push.pollingStateFile, config.push.pollingIntervalSeconds,
+    (message) => app.log.warn(message))
+  : undefined;
 const mapOrigin = 'https://sgx.geodatenzentrum.de'; // Raster tiles are fetched directly by the client.
 
 await app.register(cookie);
@@ -110,6 +116,7 @@ app.get('/api/config', async () => ({ mapStyleUrl: config.mapStyleUrl, mapCenter
 app.get('/api/push/config', async () => ({
   enabled: Boolean(pushRegistry),
   publicKey: pushRegistry ? config.push.vapidPublicKey : null,
+  mode: pushRegistry ? config.push.mode : null,
 }));
 
 app.get('/api/push/status', async (request) => {
@@ -139,7 +146,7 @@ app.post('/api/push/unsubscribe', async (request, reply) => {
 // Only the Redmine-side event bridge knows this token. Browser sessions cannot post events.
 // Recipients are computed by Redmine's assignment/group rules, never by the PWA.
 app.post('/api/push/events', async (request, reply) => {
-  if (!pushRegistry) return reply.code(503).send({ error: 'push_not_configured' });
+  if (!pushRegistry || config.push.mode !== 'plugin') return reply.code(503).send({ error: 'push_plugin_mode_disabled' });
   const token = request.headers['x-derkumpel-event-token'];
   if (!verifyEventToken(typeof token === 'string' ? token : undefined, config.push.eventToken))
     return reply.code(403).send({ error: 'forbidden' });
@@ -279,4 +286,9 @@ app.setNotFoundHandler((request, reply) => {
   return reply.type('text/html').sendFile('index.html');
 });
 
+if (pushPoller) app.addHook('onClose', async () => { pushPoller.stop(); });
 await app.listen({ host: config.host, port: config.port });
+if (pushPoller) {
+  pushPoller.start();
+  app.log.info('Redmine REST Push polling enabled (plugin-free mode)');
+}
