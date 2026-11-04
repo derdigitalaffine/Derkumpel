@@ -246,7 +246,25 @@ export class PushService {
         .run(user.user_id, next.issueId, next.updatedOn, next.statusId, next.priorityId, next.startDate, next.dueDate);
     }
     for (const old of before) if (!seen.has(old.issue_id)) {
-      // No longer assigned or no longer permitted: do not leak anything to a former assignee.
+      // A ticket that was just closed disappears from "open" immediately. Recheck only
+      // with this user's Redmine rights; notify on closure only if they remain assigned.
+      if (user.initialized && subs.some((sub) => prefsFromUnknown(JSON.parse(sub.preferences)).status)) {
+        try {
+          const result = await redmineJson<{ issue: {
+            id: number; status: { id: number }; assigned_to?: { id: number };
+            closed_on?: string; updated_on: string;
+          } }>(this.config, creds, `/issues/${old.issue_id}.json`);
+          const ticket = result.issue;
+          const assignee = ticket.assigned_to?.id;
+          const stillAssigned = assignee === user.user_id ||
+            (remote.user.groups ?? []).some((group) => group.id === assignee);
+          if (ticket.closed_on && stillAssigned && ticket.status.id !== old.status_id) {
+            outbound.push({ issueId: old.issue_id, kinds: ['status'] });
+          }
+        } catch {
+          // 403/404 => user no longer sees this issue; never disclose it in a push.
+        }
+      }
       this.db.prepare('DELETE FROM push_issues WHERE user_id=? AND issue_id=?').run(user.user_id, old.issue_id);
     }
     if (!user.initialized) this.db.prepare('UPDATE push_users SET initialized=1 WHERE user_id=?').run(user.user_id);
