@@ -99,6 +99,29 @@ PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push \
 grep -qx 'PUSH_MODE=polling' "$temp/.env"
 grep -qx 'PUSH_POLL_INTERVAL_SECONDS=45' "$temp/.env"
 grep -Eq '^PUSH_POLL_API_KEY=[0-9]{40}
+grep -Fq 'Pluginfreies Polling aktiviert' "$temp/polling.log"
+cp "$temp/.env" "$temp/polling.env"
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push --push-mode polling > "$temp/polling-repeat.log"
+cmp "$temp/.env" "$temp/polling.env"
+[[ $(grep -c '^compose run ' "$temp/docker.log") == 1 ]] ||
+  { echo 'Polling mode unexpectedly rotated VAPID keys' >&2; exit 1; }
+
+# Switching back to plugin mode clears the high-privilege admin API key.
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push --push-mode plugin --app-only > "$temp/plugin-repeat.log"
+grep -qx 'PUSH_MODE=plugin' "$temp/.env"
+grep -qx 'PUSH_POLL_API_KEY=' "$temp/.env"
+grep -qx 'SESSION_SECRET=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' "$temp/.env"
+
+# Never accept weak API key files, symlinks, or world-readable secrets.
+cp "$temp/.env" "$temp/before-bad-key.env"
+chmod 644 "$temp/redmine-admin.key"
+if PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push \
+  --push-mode polling --redmine-api-key-file "$temp/redmine-admin.key" >/dev/null 2>&1; then
+  echo 'Accepted world-readable API key' >&2; exit 1
+fi
+cmp "$temp/.env" "$temp/before-bad-key.env"
+
+echo 'Push Linux installer: idempotence, polling/plugin switching, secret preservation and rejection checks OK'
  "$temp/.env"
 grep -Fq 'Pluginfreies Polling aktiviert' "$temp/polling.log"
 cp "$temp/.env" "$temp/polling.env"
