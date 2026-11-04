@@ -23,7 +23,9 @@
 - navigation exposes a dedicated `Tickets` surface separate from `Meine Arbeit`
 - browser can switch between open, closed and all visible Redmine tickets
 - tracker and project filters are passed to Redmine and affect results
-- text search filters the currently loaded result set
+- text search filters the currently loaded result set; search/filter toolbar is non-sticky and never obscures issue rows on 320–430px devices
+- compact/card view switch defaults to compact, remains persisted on this device, preserves Redmine statuses and opens detail by tapping any row
+- project/tracker selectors are in a collapsible bottom drawer rather than permanently consuming vertical list space
 - result loading is paginated and exposes a clear load-more action while more results exist
 - opening a visible result not yet in IndexedDB fetches its complete issue detail and stores it locally
 - browsing a closed ticket does not incorrectly make it an active `Meine Arbeit` ticket
@@ -66,7 +68,25 @@
 - login uses the full PNG logo; header/start state use the square brand mark
 - manifest contains *valid* versioned PNG 192x192, 512x512 and maskable icons, plus 180x180 Apple touch and favicons; release validation checks PNG headers, dimensions and IEND bytes, and the removed generic SVG icon is not referenced
 
+## Real Web Push (when opted in)
+
+- API starts normally with `PUSH_ENABLED=false` and without any push secrets/database on an existing deployment.
+- Push-enabled startup rejects absent/invalid secrets, absent VAPID keys or HTTP PUBLIC_BASE_URL.
+- One device can opt in only with a user gesture; iOS 16.4+ requires Home Screen install.
+- Server binds each subscription to the actual Redmine login; local notification switches sync to that device's subscription.
+- VAPID test arrives when app is minimized/closed; tapping notification opens the correct `/issues/:id` route.
+- New personal/group assignment, status change including closure, another user comment, priority and date changes notify, with first enrollment only baselining.
+- A Redmine role that cannot read an issue or private journal never receives its details in push. Lock-screen text contains no ticket subject/description/private notes.
+- Changed/invalid Redmine password revokes stored encrypted credentials and device subscriptions after the next failed poll.
+- Device unsubscribe removes the endpoint and deletes stored credentials once the account has no devices left.
+- Invalid/untrusted subscription endpoints (localhost, internal networks, HTTP, forged domains) are rejected to prevent SSRF.
+- Push database and secrets persist across container recreation, but never appear in source/logs.
+- New service worker preserves offline navigation, cached issue/attachment data, raster offline maps and disabled API response caching.
+
 ## Map/privacy
+
+- Map filters are collapsed by default, remember tracker/status/priority/project/due selections and never obscure the base map when closed.
+- Selecting no map results shows the Otterbach–Otterberg raster fallback with an actionable explanation.
 
 - map uses basemap.de Web Raster by default, without requiring a vector-style network request; browser CSP and service-worker caching allow its WMTS PNG tiles
 - optional Offline-Karte prefetch downloads exactly the same raster PNG tile URLs used by the visible map
