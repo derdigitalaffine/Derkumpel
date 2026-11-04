@@ -35,7 +35,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
     <Paper component="form" onSubmit={submit} withBorder shadow="md" p={{ base: 'xl', sm: 36 }} w="100%" maw={440} className="surface-card">
       <Stack gap="xl">
         <Stack align="center" gap="sm">
-          <Image src="/derkumpel-logo.png" alt="DerKumpel – Bauhof-App" w="100%" maw={310} fit="contain" />
+          <Image src="/derkumpel-logo-v2.png" alt="DerKumpel – Bauhof-App" w="100%" maw={310} fit="contain" />
           <Title order={1} className="sr-only">DerKumpel</Title>
           <Box ta="center">
             <Text c="dimmed">Deine Bauhof-Aufträge. Schnell, mobil und offline.</Text>
