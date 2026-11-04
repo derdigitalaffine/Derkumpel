@@ -80,6 +80,25 @@ describe('pluginless Redmine push polling', () => {
     expect(privateRecipients).toEqual([2]);
   });
 
+  it('reuses authenticated issue visibility for multiple journal events', async () => {
+    const calls = { identity: 0, issue: 0 };
+    const counting: RedminePollApi = {
+      async get<T>(path: string, login?: string): Promise<T> {
+        if (path === '/users/current.json') calls.identity++;
+        if (path === '/issues/47.json?include=journals') calls.issue++;
+        return fakeApi.get<T>(path, login);
+      },
+    };
+    const events = derivePollEvents(issue, Date.parse('2026-11-04T12:00:00Z'), Date.parse('2026-11-04T12:02:00Z'));
+    const users = new Map();
+    const verified = new Set<number>();
+    const views = new Map<string, Set<number> | null>();
+    for (const event of events) {
+      await authorizedRecipients(issue, event, [2], counting, users, verified, views);
+    }
+    expect(calls).toEqual({ identity: 1, issue: 1 });
+  });
+
   it('halts delivery if Redmine ignores impersonation', async () => {
     const wrongApi: RedminePollApi = {
       get: async <T>(path: string, login?: string): Promise<T> =>
