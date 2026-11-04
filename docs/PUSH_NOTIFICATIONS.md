@@ -20,13 +20,13 @@ Nach der normalen DerKumpel-Installation auf dem **DerKumpel-Linux-Server** aus 
 **Weg A – ohne Redmine-Plugin, auch wenn Redmine auf einem anderen Docker-Server liegt:**
 
 ```bash
-# Den persönlichen/technischen Redmine-Administrator-API-Key in
-# einer privaten Datei (nur root lesbar) bereithalten:
-sudo install -m 600 /dev/null /root/redmine-admin.key
-sudo nano /root/redmine-admin.key
+# Interaktiv: DerKumpel fragt den Admin-API-Key verdeckt ab.
+./setup.sh push --push-mode polling
 
-# Kein SSH-/Docker-Zugriff auf den Redmine-Host erforderlich:
-./setup.sh push --push-mode polling --redmine-api-key-file /root/redmine-admin.key
+# Für automatisiertes Setup: Admin-API-Key zuvor in einer 0600-Datei
+# im geschützten Home-Verzeichnis ablegen (nicht im Shell-Verlauf).
+./setup.sh push --push-mode polling \
+  --redmine-api-key-file "$HOME/.config/derkumpel/redmine-admin.key"
 ```
 
 Der API-Key stammt aus „Mein Konto“ der Redmine-Administratoranmeldung und muss in Redmine die REST-API verwenden können. Das Skript validiert die Berechtigung über den Administrator-Endpunkt `/users.json` und bricht **vor jeder Konfigurationsänderung** ab, wenn sie fehlt. Der Schlüssel wird nur in der geschützten `.env` gespeichert. Standardmäßig fragt der Backend-Poller alle 90 Sekunden nach geänderten Tickets und Journals; alternativ `--push-poll-interval 60`. Die Redmine-Instanz selbst wird hierbei **überhaupt nicht geändert**.
