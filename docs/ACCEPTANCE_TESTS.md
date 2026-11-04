@@ -47,6 +47,16 @@
 
 ## UI / brand
 
+- AppShell uses consistent vector icons on mobile/desktop navigation with labelled 48px+ tap targets
+- `Meine Arbeit` quick filters show all/due-today/overdue counts; selection and clear/reset stay consistent with structured filters
+- Ticket cards show readable status, title, address, date and assignee at 320px with no clipping
+- Ticket-browser project/tracker selectors stack on narrow phones, and stale fetches cannot overwrite a newer filter choice
+- Loading an uncached ticket uses a skeleton and provides an explicit retry after failure
+- Status/notes/photos/advanced-form saves are guarded against double submission, and unsuccessful saves preserve drafts
+- HTTPS is enforced by the login form for non-localhost devices, with a readable explanation when opened through HTTP
+- Settings never permit clearing business cache while local outbox entries exist, including after opening the delete dialog
+- Map fits two or more coordinate-bearing tickets; single and zero-pin maps keep their respective correct centers
+
 - 360px viewport has no horizontal scroll in home/tickets/detail/login/settings
 - every issue opens with advanced details collapsed
 - simple view contains title, status, priority, assignee, dates, location/address, percent, description and primary actions when values/actions exist
