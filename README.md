@@ -120,6 +120,17 @@ DerKumpel hat serverseitig keine zu sichernde Fachdatenbank. Redmine bleibt das 
 
 Die PWA darf nach einer einmaligen erfolgreichen Anmeldung im Funkloch mit bereits synchronisierten Daten weiterarbeiten. Offline-Änderungen werden zuerst dauerhaft in der lokalen Outbox gespeichert und später gegen den aktuellen Redmine-Stand abgeglichen. Geschlossene bzw. andere nur über den Ticketbrowser geöffnete Tickets werden bei Bedarf in den lokalen Cache übernommen und unterliegen derselben Aufbewahrungslogik.
 
+## Push auf Linux automatisch einrichten
+
+Nach dem normalen Setup genügt auf dem DerKumpel-Server bei einer klassischen Redmine-Installation beispielsweise:
+
+```bash
+./setup.sh push --redmine-path /opt/redmine --redmine-service redmine
+```
+
+Alternativ werden `--redmine-compose-dir` (Redmine in Docker Compose) oder `--redmine-ssh user@host` (Redmine auf einem zweiten Linux-Server) unterstützt. VAPID-Schlüssel und Event-Token werden sicher erzeugt und bei späteren Aufrufen **nicht rotiert**. Die `.env` bleibt ansonsten unverändert. Für genaue Voraussetzungen und Beispiele siehe [Push-Installation](docs/PUSH_NOTIFICATIONS.md).
+
+
 ## Web Push
 
 **Implementiert als opt-in Integration:** VAPID Web Push, Push-Abos nur für das authentifizierte Redmine-Konto, private JSON-Persistenz für Endpunkte, ein installierbares Redmine-5.x-Plugin als Ereignisquelle, pro Gerät einstellbare Ereignisarten sowie Service-Worker-Benachrichtigungen mit Direktlink zum Ticket. Der Redmine-Event-Adapter muss **separat auf dem Redmine-Server installiert und konfiguriert** werden. Ohne ihn werden keine Hintergrundbenachrichtigungen verschickt. Details, Secrets und Kompatibilitätsprüfung: [Push-Deployment](docs/PUSH_NOTIFICATIONS.md).
