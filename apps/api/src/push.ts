@@ -104,6 +104,10 @@ export class PushRegistry {
     this.persist();
   }
 
+  subscribedUserIds(): number[] {
+    return [...new Set(this.store.entries.map((entry) => entry.userId))];
+  }
+
   owns(userId: number, endpoint: string): boolean {
     return this.store.entries.some((entry) => entry.userId === userId && entry.subscription.endpoint === endpoint);
   }
