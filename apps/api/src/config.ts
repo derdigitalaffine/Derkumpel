@@ -13,6 +13,15 @@ export type AppConfig = {
   offlineMapBounds?: [number, number, number, number];
   offlineMapRadiusKm: number;
   pollIntervalMs: number;
+  push: {
+    enabled: boolean;
+    dbPath: string;
+    key: Buffer;
+    vapidPublicKey: string;
+    vapidPrivateKey: string;
+    contact: string;
+    pollIntervalMs: number;
+  };
 };
 
 function positiveInt(name: string, fallback: number): number {
@@ -61,6 +70,19 @@ export function loadConfig(): AppConfig {
   const sessionKey = Buffer.from(secret, 'base64');
   if (sessionKey.length !== 32) throw new Error('SESSION_SECRET must be exactly 32 random bytes encoded as base64');
 
+  const pushEnabled = process.env.PUSH_ENABLED === 'true';
+  const pushKey = Buffer.from(process.env.PUSH_ENCRYPTION_SECRET ?? '', 'base64');
+  const vapidPublicKey = process.env.PUSH_VAPID_PUBLIC_KEY ?? '';
+  const vapidPrivateKey = process.env.PUSH_VAPID_PRIVATE_KEY ?? '';
+  const contact = process.env.PUSH_CONTACT ?? '';
+  if (pushEnabled) {
+    if (pushKey.length !== 32) throw new Error('PUSH_ENCRYPTION_SECRET must contain 32 random base64 bytes');
+    if (!vapidPublicKey || !vapidPrivateKey || !/^mailto:[^\s@]+@[^\s@]+$|^https:\/\//.test(contact)) {
+      throw new Error('PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY and PUSH_CONTACT are required when push is enabled');
+    }
+    if (requiredUrl('PUBLIC_BASE_URL').protocol !== 'https:') throw new Error('Web Push requires PUBLIC_BASE_URL=https://...');
+  }
+
   return {
     host: process.env.HOST ?? '0.0.0.0',
     port: positiveInt('PORT', 8080),
@@ -76,5 +98,14 @@ export function loadConfig(): AppConfig {
     offlineMapBounds: bounds('MAP_OFFLINE_BOUNDS'),
     offlineMapRadiusKm: positiveNumber('MAP_OFFLINE_RADIUS_KM', 12),
     pollIntervalMs: Math.max(120_000, positiveInt('POLL_INTERVAL_MS', 120_000)),
+    push: {
+      enabled: pushEnabled,
+      dbPath: process.env.PUSH_DB_PATH ?? '/data/push.sqlite',
+      key: pushKey,
+      vapidPublicKey,
+      vapidPrivateKey,
+      contact,
+      pollIntervalMs: Math.max(120_000, positiveInt('PUSH_POLL_INTERVAL_MS', 120_000)),
+    },
   };
 }
