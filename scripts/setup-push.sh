@@ -132,6 +132,31 @@ PUBLIC_URL=$(read_env PUBLIC_BASE_URL)
 [[ $PUBLIC_URL =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
   die 'PUBLIC_BASE_URL muss eine HTTPS-URL ohne Pfad sein.'
 
+if [[ $PUSH_MODE == plugin && $APP_ONLY != true && -z $MODE && -t 0 ]]; then
+  printf '\nRedmine-Ziel für die Plugin-Methode:\n  1) Redmine im Docker-Compose-Projekt auf anderem Server\n  2) Redmine-Docker auf diesem Server\n  3) Klassische native Redmine-Installation\nAuswahl [1/2/3]: ' >&2
+  IFS= read -r redmine_choice
+  case "$redmine_choice" in
+    1)
+      MODE=compose
+      printf 'SSH-Ziel (USER@HOST): ' >&2
+      IFS= read -r REDMINE_SSH ;;
+    2) MODE=compose ;;
+    3) MODE=native ;;
+    *) die 'Ungültiges Redmine-Ziel.' ;;
+  esac
+  printf 'Absoluter Projekt-/Installationspfad auf dem Redmine-Server: ' >&2
+  IFS= read -r REDMINE_PATH
+  printf 'Redmine-Service-Name [redmine]: ' >&2
+  IFS= read -r service_answer
+  [[ -z $service_answer ]] || REDMINE_SERVICE=$service_answer
+  [[ $REDMINE_SERVICE =~ ^[A-Za-z0-9_.-]+$ ]] || die 'Ungültiger Redmine-Service-Name.'
+  if [[ -n $REDMINE_SSH ]]; then
+    [[ $REDMINE_SSH =~ ^[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9.-]+$ ]] ||
+      die 'Ungültiges SSH-Ziel.'
+    need ssh; need scp; need tar
+  fi
+fi
+
 if [[ $PUSH_MODE == plugin && $APP_ONLY != true ]]; then
   if [[ -z $MODE ]]; then
     [[ -z $REDMINE_SSH ]] || die 'Bei --redmine-ssh ist --redmine-path oder --redmine-compose-dir nötig.'
