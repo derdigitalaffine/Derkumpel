@@ -1,8 +1,9 @@
-import { ActionIcon, Alert, Badge, Box, Button, Group, Paper, SegmentedControl, Select, Skeleton, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
-import { useEffect, useMemo, useState } from 'react';
+import { ActionIcon, Alert, Badge, Box, Button, Group, Paper, SegmentedControl, Select, SimpleGrid, Skeleton, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type TicketBrowserStatus } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { IssueCard } from '../components/IssueCard';
+import { UIIcon } from '../components/UIIcon';
 import { issueAddress } from '../issueUtils';
 import type { NamedRef, RedmineIssue } from '../types';
 
@@ -31,6 +32,7 @@ export function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
 
   useEffect(() => {
     let disposed = false;
@@ -60,7 +62,7 @@ export function TicketsPage() {
     return () => { disposed = true; };
   }, []);
 
-  const loadOffline = async (state: BrowserState) => {
+  const loadOffline = async (state: BrowserState, token: number) => {
     const local = (await db.issues.toArray()).map((record) => record.data).filter((issue) => {
       if (state.status === 'closed' && !issue.closed_on) return false;
       if (state.status === 'open' && issue.closed_on) return false;
@@ -68,14 +70,16 @@ export function TicketsPage() {
       if (state.projectId && issue.project.id !== state.projectId) return false;
       return true;
     }).sort((a, b) => b.updated_on.localeCompare(a.updated_on));
+    if (token !== requestId.current) return;
     setIssues(local);
     setTotal(local.length);
     setError('Offline: Es werden die auf diesem Gerät gespeicherten Tickets angezeigt.');
   };
 
   const load = async (state: BrowserState, append = false) => {
+    const token = append ? requestId.current : ++requestId.current;
     if (!navigator.onLine) {
-      if (!append) await loadOffline(state);
+      if (!append) await loadOffline(state, token);
       setLoading(false); setLoadingMore(false);
       return;
     }
@@ -84,13 +88,15 @@ export function TicketsPage() {
     try {
       const offset = append ? issues.length : 0;
       const page = await api.browseIssues({ status: state.status, trackerId: state.trackerId, projectId: state.projectId, offset, limit: PAGE_SIZE });
+      if (token !== requestId.current) return; // stale filter responses must not override the new selection
       setIssues((current) => append ? [...current, ...page.issues] : page.issues);
       setTotal(page.total_count);
     } catch (caught) {
-      if (!append) await loadOffline(state);
+      if (token !== requestId.current) return;
+      if (!append) await loadOffline(state, token);
       setError(caught instanceof Error ? `Ticketbrowser konnte nicht aktualisiert werden: ${caught.message}` : 'Ticketbrowser konnte nicht aktualisiert werden.');
     } finally {
-      setLoading(false); setLoadingMore(false);
+      if (token === requestId.current) { setLoading(false); setLoadingMore(false); }
     }
   };
 
@@ -113,17 +119,20 @@ export function TicketsPage() {
   const trackerData = trackers.map((tracker) => ({ value: String(tracker.id), label: tracker.name }));
   const projectData = projects.map((project) => ({ value: String(project.id), label: project.name }));
   const hasMore = navigator.onLine && issues.length < total;
+  const activeFilters = Number(Boolean(browser.projectId)) + Number(Boolean(browser.trackerId));
+  const resetFilters = () => { setSearch(''); setBrowser({ status: '*' }); };
 
   return <Stack gap="md" maw={900} mx="auto">
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
-        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Tickets</Title>
-        <Text c="dimmed" size="sm" mt={3}>Offene und geschlossene Redmine-Tickets durchsuchen</Text>
+        <Text className="page-kicker">Recherche & Archiv</Text>
+        <Title order={1} size="h2">Alle Tickets</Title>
+        <Text className="page-subtitle" mt={4}>Auch erledigte und geschlossene Aufträge wiederfinden</Text>
       </Box>
-      <Badge variant="light" size="lg">{total} Treffer</Badge>
+      <Badge variant="light" size="lg" color="brand">{total} Treffer</Badge>
     </Group>
 
-    <Paper withBorder p="sm" className="work-toolbar" pos="sticky" top={76}>
+    <Paper withBorder p="sm" className="work-toolbar" pos="sticky" top={78}>
       <Stack gap="sm">
         <SegmentedControl
           fullWidth
@@ -131,7 +140,7 @@ export function TicketsPage() {
           onChange={(value) => updateBrowser({ status: value as TicketBrowserStatus })}
           data={[{ value: 'open', label: 'Offen' }, { value: 'closed', label: 'Geschlossen' }, { value: '*', label: 'Alle' }]}
         />
-        <Group gap="xs" grow align="flex-end">
+        <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
           <Select
             label="Tracker"
             placeholder="Alle Tracker"
@@ -150,15 +159,19 @@ export function TicketsPage() {
             value={browser.projectId ? String(browser.projectId) : null}
             onChange={(value) => updateBrowser({ projectId: value ? Number(value) : undefined })}
           />
-        </Group>
+        </SimpleGrid>
         <TextInput
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
-          placeholder="In geladenen Tickets suchen …"
+          placeholder="Titel, Ort, Ticketnummer …"
           aria-label="Tickets durchsuchen"
-          leftSection={<Text aria-hidden="true">⌕</Text>}
-          rightSection={search ? <ActionIcon variant="subtle" color="gray" aria-label="Suche leeren" onClick={() => setSearch('')}>×</ActionIcon> : undefined}
+          leftSection={<UIIcon name="search" size={19} />}
+          rightSection={search ? <ActionIcon variant="subtle" color="gray" aria-label="Suche leeren" onClick={() => setSearch('')}><UIIcon name="close" size={16} /></ActionIcon> : undefined}
         />
+        <Group justify="space-between" align="center" gap="xs">
+          <Text size="xs" c="dimmed">Suche in den {issues.length} bereits geladenen Tickets</Text>
+          {(activeFilters > 0 || browser.status !== '*' || search) && <Button variant="subtle" color="gray" size="compact-xs" onClick={resetFilters}>Alle Filter löschen</Button>}
+        </Group>
       </Stack>
     </Paper>
 
@@ -166,13 +179,14 @@ export function TicketsPage() {
 
     {loading ? <BrowserSkeleton /> : filtered.length === 0 ? <Paper className="empty-state" p="xl">
       <Stack align="center" gap="sm" ta="center">
-        <ThemeIcon size={52} radius="xl" variant="light">⌕</ThemeIcon>
+        <ThemeIcon size={52} radius="xl" variant="light"><UIIcon name="search" size={24} /></ThemeIcon>
         <Box><Text fw={800}>Keine passenden Tickets</Text><Text size="sm" c="dimmed" mt={4}>Status, Tracker, Projekt oder Suche anpassen.</Text></Box>
+        <Button variant="light" onClick={resetFilters}>Suche zurücksetzen</Button>
       </Stack>
     </Paper> : <Stack gap="sm">
       <Text size="xs" c="dimmed" fw={650}>{search ? `${filtered.length} in ${issues.length} geladenen Tickets` : `${issues.length} von ${total} geladen`}</Text>
       {filtered.map((issue) => <IssueCard key={issue.id} issue={issue} />)}
-      {hasMore && !search && <Button variant="light" loading={loadingMore} onClick={() => void load(browser, true)}>Weitere {Math.min(PAGE_SIZE, total - issues.length)} laden</Button>}
+      {hasMore && <Button variant="light" loading={loadingMore} onClick={() => void load(browser, true)} leftSection={<UIIcon name="download" size={17} />}>Weitere {Math.min(PAGE_SIZE, total - issues.length)} laden{search ? ' (Suche erweitern)' : ''}</Button>}
     </Stack>}
   </Stack>;
 }
