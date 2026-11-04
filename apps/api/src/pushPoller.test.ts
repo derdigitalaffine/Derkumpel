@@ -31,7 +31,7 @@ const issue = {
 };
 
 const fakeApi: RedminePollApi = {
-  async get<T>(path, login) {
+  async get<T>(path: string, login?: string): Promise<T> {
     if (path === '/users.json?limit=1') return { users: [{ id: 1 }] } as T;
     if (path.startsWith('/issues.json?')) return { issues: [issue], total_count: 1 } as T;
     if (path === '/issues/47.json?include=journals') {
