@@ -36,7 +36,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/sgx\.geodatenzentrum\.de\/gdz_basemapde_vektor\//,
+            urlPattern: /^https:\/\/sgx\.geodatenzentrum\.de\/wmts_basemapde\/tile\//,
             handler: 'CacheFirst',
             options: {
               cacheName: 'derkumpel-map',
