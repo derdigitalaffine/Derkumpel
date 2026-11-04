@@ -122,18 +122,25 @@ Die PWA darf nach einer einmaligen erfolgreichen Anmeldung im Funkloch mit berei
 
 ## Push auf Linux automatisch einrichten
 
-Nach dem normalen Setup genügt auf dem DerKumpel-Server bei einer klassischen Redmine-Installation beispielsweise:
+Für euren Aufbau mit Redmine-Docker auf einem **anderen Server** stehen zwei Verfahren zur Auswahl:
 
 ```bash
-./setup.sh push --redmine-path /opt/redmine --redmine-service redmine
+# Ohne Eingriff auf dem Redmine-Server (API-Polling, Admin-API-Key liegt nur auf DerKumpel):
+./setup.sh push --push-mode polling --redmine-api-key-file /root/redmine-admin.key
+
+# Oder mit Redmine-Ereignis-Plugin über SSH (weniger API-Aufrufe):
+./setup.sh push --push-mode plugin --redmine-ssh admin@redmine-host \
+  --redmine-compose-dir /opt/redmine --redmine-service redmine
 ```
+
+Mit `./setup.sh push` wird interaktiv nach der Methode und den nötigen Angaben gefragt. Beim Polling ist **ein Redmine-Administrator-API-Key** erforderlich, weil die App Ticket-Sichtbarkeit für jede benachrichtigte Person sicher über Redmine-Impersonation prüfen muss.
 
 Alternativ werden `--redmine-compose-dir` (Redmine in Docker Compose) oder `--redmine-ssh user@host` (Redmine auf einem zweiten Linux-Server) unterstützt. VAPID-Schlüssel und Event-Token werden sicher erzeugt und bei späteren Aufrufen **nicht rotiert**. Die `.env` bleibt ansonsten unverändert. Für genaue Voraussetzungen und Beispiele siehe [Push-Installation](docs/PUSH_NOTIFICATIONS.md).
 
 
 ## Web Push
 
-**Implementiert als opt-in Integration:** VAPID Web Push, Push-Abos nur für das authentifizierte Redmine-Konto, private JSON-Persistenz für Endpunkte, ein installierbares Redmine-5.x-Plugin als Ereignisquelle, pro Gerät einstellbare Ereignisarten sowie Service-Worker-Benachrichtigungen mit Direktlink zum Ticket. Der Redmine-Event-Adapter muss **separat auf dem Redmine-Server installiert und konfiguriert** werden. Ohne ihn werden keine Hintergrundbenachrichtigungen verschickt. Details, Secrets und Kompatibilitätsprüfung: [Push-Deployment](docs/PUSH_NOTIFICATIONS.md).
+**Implementiert als opt-in Integration:** VAPID Web Push, Push-Abos nur für das authentifizierte Redmine-Konto, private JSON-Persistenz für Endpunkte, ein installierbares Redmine-5.x-Plugin als Ereignisquelle, pro Gerät einstellbare Ereignisarten sowie Service-Worker-Benachrichtigungen mit Direktlink zum Ticket. Alternativ gibt es jetzt einen **pluginfreien REST-Worker im bestehenden Fastify-Server**. In diesem Modus braucht Redmine keinen zusätzlich installierten Worker/Plugin; nur HTTPS, aktivierte REST-API und einen Admin-API-Key. Die Plugin-Methode bleibt vollständig erhalten. Beide Modi können im Linux-Setup gewählt werden. Details, Secrets und Kompatibilitätsprüfung: [Push-Deployment](docs/PUSH_NOTIFICATIONS.md).
 
 ## Entwicklungsorganisation
 
