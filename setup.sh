@@ -100,14 +100,15 @@ EOF
     compose build app
     # Generate VAPID keys inside the already-built application image; no host Node installation needed.
     keys=$(compose run --rm --no-deps --entrypoint node app --input-type=module -e \
-      'import webpush from "web-push"; const k=webpush.generateVAPIDKeys(); console.log(k.publicKey+"\\n"+k.privateKey)')
+      'import webpush from "web-push"; const k=webpush.generateVAPIDKeys(); console.log(k.publicKey); console.log(k.privateKey)')
     public=$(printf '%s\n' "$keys" | sed -n '1p')
     private=$(printf '%s\n' "$keys" | sed -n '2p')
     [ -n "$public" ] && [ -n "$private" ] || { echo 'VAPID-Schlüsselerzeugung fehlgeschlagen' >&2; exit 1; }
     secret=$(openssl rand -base64 32 | tr -d '\n')
     umask 077
-    grep -v '^PUSH_' .env > .env.push.tmp.$
-    mv .env.push.tmp.$ .env
+    tmp_env=$(mktemp .env.push.XXXXXX)
+    grep -v '^PUSH_' .env > "$tmp_env"
+    mv "$tmp_env" .env
     cat >> .env <<EOF
 
 # Optional: Web Push (secure device subscriptions and per-user polling)
