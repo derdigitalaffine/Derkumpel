@@ -5,9 +5,9 @@
 Derkumpel is a two-part application delivered as one container:
 
 1. React/Mantine PWA (`apps/web`)
-2. stateless Fastify BFF (`apps/api`)
+2. stateless Fastify BFF (`apps/api`), with an **optional** small persistent push device registry
 
-The BFF serves the built PWA and same-origin `/api/*`. It does not have a database.
+The BFF serves the built PWA and same-origin `/api/*`. It does not have a business database. When Push is explicitly enabled, a small separate JSON registry in a private Docker volume stores only browser push endpoints/keys, a Redmine user ID and preferences. Redmine remains the authority for recipients and ticket visibility.
 
 ## Redmine authority
 
@@ -64,13 +64,17 @@ No credential material is stored in these tables.
 
 Background Sync API may be used when available, but correctness must not depend on it. Foreground/reconnect sync is mandatory for iOS compatibility.
 
+## Push event seam
+
+The separate Redmine 5.x plugin under `integrations/redmine/plugins/derkumpel_push` listens for issue and journal commits, resolves direct/group assignees using native Redmine visibility checks, and enqueues an ActiveJob. It sends a minimal signed-by-shared-secret event to `/api/push/events`; never a credential or issue description. The DerKumpel adapter uses VAPID Web Push and a persisted per-device subscription registry. The existing Workbox service worker imports `push-sw.js` so offline shell and push share exactly one registration. Background notifications open the issue. Push does not replace the client-side polling/sync and cannot be relied on for guaranteed delivery.
+
 ## PWA caching
 
 The service worker precaches the application shell. API data is not blindly cached by Workbox; authoritative offline data lives in IndexedDB. Static map assets may use runtime caching. Offline map tiles are a separate opt-in cache with explicit storage/budget controls.
 
 ## Map
 
-MapLibre loads the basemap.de Web Vektor style online. Issue coordinates come from Redmine custom fields. Native navigation uses a platform URL handler. User geolocation never leaves the device.
+MapLibre loads the official basemap.de Web Raster WMTS PNG tiles by default. Optional local filters (status, priority, tracker and project) are remembered on the device. Issue coordinates come from Redmine custom fields. Native navigation uses a platform URL handler. User geolocation never leaves the device.
 
 ## Deployment
 
