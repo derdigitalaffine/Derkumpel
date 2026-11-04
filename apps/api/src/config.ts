@@ -82,6 +82,10 @@ export function loadConfig(): AppConfig {
     throw new Error('PUSH_ENABLED requires VAPID public/private keys, VAPID subject and PUSH_EVENT_TOKEN (32+ characters)');
   }
 
+  const redmineBaseUrl = requiredUrl('REDMINE_BASE_URL', 'https://redmine.vgo-o.de');
+  if (pushEnabled && push.mode === 'polling' && redmineBaseUrl.protocol !== 'https:') {
+    throw new Error('PUSH_MODE=polling requires REDMINE_BASE_URL to use HTTPS');
+  }
   if (pushEnabled && push.mode === 'polling' && !/^[A-Za-z0-9_-]{32,128}$/.test(push.pollingApiKey)) {
     throw new Error('PUSH_MODE=polling requires a 32+ character Redmine administrator API key in PUSH_POLL_API_KEY');
   }
@@ -90,7 +94,7 @@ export function loadConfig(): AppConfig {
     push,
     host: process.env.HOST ?? '0.0.0.0',
     port: positiveInt('PORT', 8080),
-    redmineBaseUrl: requiredUrl('REDMINE_BASE_URL', 'https://redmine.vgo-o.de'),
+    redmineBaseUrl,
     publicBaseUrl: requiredUrl('PUBLIC_BASE_URL', production ? undefined : 'http://localhost:8080'),
     sessionKey,
     sessionMaxAgeSeconds: positiveInt('SESSION_MAX_AGE_DAYS', 30) * 86_400,
