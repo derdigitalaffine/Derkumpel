@@ -176,7 +176,7 @@ fi
 
 # Atomically replace only Push keys; do not print or leak private values.
 TEMP_ENV=$(mktemp "$ROOT/.env.push.tmp.XXXXXXXX")
-awk '!/^PUSH_(ENABLED|VAPID_PUBLIC_KEY|VAPID_PRIVATE_KEY|VAPID_SUBJECT|EVENT_TOKEN|STORE_FILE)=/' "$ENV_FILE" > "$TEMP_ENV"
+awk '!/^PUSH_(ENABLED|VAPID_PUBLIC_KEY|VAPID_PRIVATE_KEY|VAPID_SUBJECT|EVENT_TOKEN|STORE_FILE)=/ { if ($0 ~ /^[[:space:]]*$/) { blank = blank $0 "\n"; next } printf "%s\n", blank $0; blank = "" }' "$ENV_FILE" > "$TEMP_ENV"
 printf '\nPUSH_ENABLED=true\nPUSH_VAPID_PUBLIC_KEY=%s\nPUSH_VAPID_PRIVATE_KEY=%s\nPUSH_VAPID_SUBJECT=%s\nPUSH_EVENT_TOKEN=%s\nPUSH_STORE_FILE=/app/push-data/subscriptions.json\n' \
   "$PUBLIC_KEY" "$PRIVATE_KEY" "$SUBJECT" "$EVENT_TOKEN" >> "$TEMP_ENV"
 chmod 600 "$TEMP_ENV"
