@@ -17,6 +17,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run verify:branding
+      - name: Validate optional Redmine integration Ruby syntax
+        run: find integrations/redmine/plugins/derkumpel_push -name '*.rb' -print0 | xargs -0 -n1 ruby -c
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
       - name: Validate Compose
