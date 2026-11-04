@@ -21,6 +21,8 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
+    volumes:
+      - push_data:/app/push-data
     tmpfs:
       - /tmp:size=32m,mode=1777
   caddy:
@@ -42,5 +44,6 @@ services:
         condition: service_healthy
     security_opt: [no-new-privileges:true]
 volumes:
+  push_data:
   caddy_data:
   caddy_config:
