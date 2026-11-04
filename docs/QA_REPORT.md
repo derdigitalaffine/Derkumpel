@@ -180,3 +180,18 @@ Branch: `ux/field-app-overhaul`. Mantine 9 / React 19 field-service redesign, no
 - New due-date classification unit tests and extended visual/UX acceptance checklist.
 
 **Automated CI:** Typecheck, unit tests, PNG asset checks, production PWA build, npm audit, Compose validation, Docker image and running-container smoke test. A passing pipeline does not prove pixel-level rendering on every mobile browser; physical-device checks (320/360/390/430 px, sunlight, phone keyboard, offline/online and iOS standalone where used) remain required before a fleet-wide release.
+
+## Push, compact ticket list and map filtering — November 4, 2026
+
+Release candidate: `feature/push-compact-tickets-map-filters`.
+
+- Tickets explorer: search/filters stop covering the list; compact view is the default and can be switched persistently to full cards; full filters are in a bottom Drawer.
+- Map: collapse/expand tracker, status, priority, project and due urgency filters; default closed; visible map extent and missing-coordinates feedback preserved.
+- Real browser Push: standard VAPID subscriptions, opt-in per device, notifications displayed by the service worker and click deep links to issues.
+- Optional server component: encrypted subscription database in local SQLite; the core Redmine client remains stateless and works unchanged when `PUSH_ENABLED=false`.
+- Push triggers on personal/group assignments, comment, status including closure, priority and date updates, polled as the actual Redmine user (not a shared admin), with minimum interval 120 seconds.
+- Push endpoints reject untrusted providers/localhost/HTTP (SSRF boundary); no issue subjects or private content are sent to push provider payloads.
+- Browser permissions requested on a real user gesture; iOS 16.4+ only supports Web Push from an installed Home Screen PWA.
+- Standard API responses remain uncached; new custom SW must be validated for existing IndexedDB and offline map behavior.
+
+**QA evidence and limitations:** The automated release CI checks TypeScript, event classification, push endpoint validation, tests, Vite/PWA build, dependency audit, Compose, Docker and startup smoke. It cannot prove that a real FCM/Apple push will arrive on a physical device or that Redmine's live custom roles/journals match test fixtures. Before fleet rollout, test opt-in, close-app delivery, status closure, browser/OS permissions, group assignments, revoked password, multi-device opt-out, map filters and short-screen behaviour with real Redmine users and actual employee phones. Do not mark production push externally verified until that pilot is completed.
