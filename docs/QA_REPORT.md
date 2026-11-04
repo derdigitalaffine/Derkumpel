@@ -192,3 +192,10 @@ Branch: `feature/push-ticket-map-ux`.
 - Workbox service worker imports push click/notification handlers while keeping existing offline shell and map caching. Notification payload intentionally contains only issue ID and event category.
 - Redmine 5.x plugin emits events through after-commit Issue/Journal callbacks via ActiveJob. It enforces Redmine visibility, current assignee/group membership and private-note roles. Notifications are opt-in and do not replace normal offline/client sync.
 - Node CI tests input validation and builds the delivery code; Ruby static syntax checks run. **Cannot verify real push delivery, Redmine plugin registration/role model or iOS PWA behavior without deployment + pilot**; see `docs/PUSH_NOTIFICATIONS.md`.
+
+
+## Linux one-command Push installation — November 2026
+
+Branch `feat/linux-push-setup` adds `./setup.sh push` with three deployment targets: native Redmine + systemd, Redmine Docker Compose and another Linux Redmine server over SSH. It generates/reuses VAPID credentials and high-entropy event tokens, preserves the existing DerKumpel `.env` settings, keeps file permissions restrictive, installs the Redmine plugin persistently and restarts only the affected app/Redmine service. It refuses ambiguous installation targets and pre-existing non-managed Redmine Compose overrides.
+
+Automated validation: Bash syntax for all installation scripts; mocked Docker app-only install including idempotent rerun, preservation of SESSION_SECRET and secrets, 0600 `.env` permission, rejection of HTTP origins and unsafe SSH host arguments; normal Node/React/Redmine Ruby syntax, Compose, Docker and Push-enabled container CI. **Operational caveat:** root-level native/Compose Redmine installation and cross-host SSH require the specified permissions and a real Redmine server, so they must be exercised on staging before production rollout. Do not claim those environmental deployments were executed from GitHub CI.
