@@ -98,8 +98,9 @@ export async function disableDevicePush(): Promise<void> {
   if (!subscription) return;
   // Remove server credentials and the endpoint before invalidating this browser subscription.
   // Offline local unsubscription will still invalidate the endpoint at the push provider.
-  if (navigator.onLine) await api.pushUnsubscribe(subscription.endpoint);
+  const remoteRemoved = navigator.onLine ? await api.pushUnsubscribe(subscription.endpoint).then(() => true).catch(() => false) : false;
   await subscription.unsubscribe();
+  if (!remoteRemoved) throw new Error('Push auf diesem Gerät beendet. Der Server entfernt den alten Endpunkt, sobald er vom Push-Anbieter als ungültig gemeldet wird.');
 }
 
 export async function testDevicePush(): Promise<void> {
