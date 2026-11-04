@@ -10,11 +10,12 @@ describe('offline map helpers', () => {
     expect(north).toBeGreaterThan(49.5);
   });
 
-  it('builds basemap.de vector tile URLs within the cap', () => {
+  it('builds basemap.de raster tile URLs within the cap', () => {
     const urls = tileUrls([7.74, 49.47, 7.80, 49.53], 10, 11, 100);
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((url) => url.includes('sgx.geodatenzentrum.de'))).toBe(true);
-    expect(urls.every((url) => url.endsWith('.pbf'))).toBe(true);
+    expect(urls.every((url) => url.endsWith('.png'))).toBe(true);
+    expect(urls.every((url) => url.includes('/wmts_basemapde/tile/'))).toBe(true);
   });
 
   it('refuses excessively large offline downloads', () => {
