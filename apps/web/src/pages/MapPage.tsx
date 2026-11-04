@@ -223,7 +223,7 @@ export function MapPage() {
           <Text size="xs" c="dimmed">{issues.length} von {available.length} Aufträgen ausgewählt</Text>
           <Button variant="subtle" color="gray" size="compact-xs" onClick={() => setMapFilters(emptyFilters)}>Filter löschen</Button>
         </Group>}
-        <Collapse in={filterOpen}>
+        <Collapse expanded={filterOpen}>
           <Stack gap="sm" pt="sm" id="map-filter-options">
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
               <MultiSelect label="Tracker" placeholder="Alle Tracker" searchable clearable
