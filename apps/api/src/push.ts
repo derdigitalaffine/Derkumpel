@@ -113,9 +113,6 @@ export class PushRegistry {
     if (this.store.recentEvents.includes(event.event_id)) return { delivered: 0, failed: 0, duplicate: true };
     if (this.busy) throw new Error('Push delivery busy');
     this.busy = true;
-    this.store.recentEvents.push(event.event_id);
-    this.store.recentEvents = this.store.recentEvents.slice(-500);
-    this.persist();
     try {
       const recipients = new Set(event.user_ids);
       const targets = this.store.entries.filter((entry) => recipients.has(entry.userId) && entry.preferences[event.kind]);
@@ -145,8 +142,14 @@ export class PushRegistry {
       if (expired.length) {
         const dead = new Set(expired);
         this.store.entries = this.store.entries.filter((entry) => !dead.has(entry.subscription.endpoint));
-        this.persist();
       }
+      // Persist the deduplication marker only after successful delivery. An event
+      // with temporary push-provider errors must be retried by the Redmine job.
+      if (failed === 0) {
+        this.store.recentEvents.push(event.event_id);
+        this.store.recentEvents = this.store.recentEvents.slice(-500);
+      }
+      this.persist();
       return { delivered, failed, duplicate: false };
     } finally { this.busy = false; }
   }
