@@ -106,11 +106,13 @@ export function MapPage() {
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
       map.once('load', markReady);
       map.once('style.load', markReady);
+      // MapLibre reports individual transient tile-fetch and style errors through
+      // this event, sometimes repeatedly. They must not replace the usable raster
+      // map with a persistent warning (particularly not an obsolete vector error).
+      // A genuine failure to initialize is handled by the timeout/catch below.
       map.on('error', (event) => {
         if (disposed) return;
-        const message = event.error instanceof Error ? event.error.message : 'Netzwerk- oder Grafikfehler';
-        setMapLoading(false);
-        setError(`Kartenkacheln konnten nicht geladen werden: ${message}. Bitte Internetverbindung und Kartenhost prüfen.`);
+        if (import.meta.env.DEV) console.debug('Raster map resource error', event.error);
       });
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => map.resize());
@@ -120,14 +122,14 @@ export function MapPage() {
       loadTimer = window.setTimeout(() => {
         if (!disposed && !map.isStyleLoaded()) {
           setMapLoading(false);
-          setError('Die Rasterkarte konnte nicht initialisiert werden. Bitte Browser und Verbindung prüfen.');
+          setError('Die Karte konnte nicht vollständig gestartet werden. Bitte die Seite neu laden oder die Verbindung prüfen.');
         }
       }, 9000);
-    } catch (initializationError) {
+    } catch {
+      // Never surface raw map-library messages to field users. They can refer to
+      // a previous vector configuration, even though only raster is configured.
       setMapLoading(false);
-      setError(initializationError instanceof Error
-        ? `Karte konnte nicht gestartet werden: ${initializationError.message}`
-        : 'Karte konnte auf diesem Gerät nicht gestartet werden.');
+      setError('Die Karte konnte auf diesem Gerät nicht gestartet werden.');
     }
 
     return () => {

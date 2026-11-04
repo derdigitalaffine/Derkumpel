@@ -49,6 +49,12 @@ jobs:
           trap 'docker logs derkumpel-ci || true; docker rm -f derkumpel-ci >/dev/null 2>&1 || true' EXIT
           for i in {1..20}; do
             if curl --fail --silent http://127.0.0.1:18080/api/health/ready >/dev/null; then
+              # An updated raster-only app must not serve a stale HTML shell
+              # from the browser cache after deployment.
+              curl --fail --silent --show-error -D /tmp/dk-html-headers -o /dev/null http://127.0.0.1:18080/map
+              grep -Eiq '^cache-control: no-cache, max-age=0, must-revalidate' /tmp/dk-html-headers
+              curl --fail --silent --show-error -D /tmp/dk-sw-headers -o /dev/null http://127.0.0.1:18080/sw.js
+              grep -Eiq '^cache-control: no-cache, max-age=0, must-revalidate' /tmp/dk-sw-headers
               exit 0
             fi
             sleep 1
