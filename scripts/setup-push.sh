@@ -85,8 +85,10 @@ if [[ -n $REDMINE_SSH ]]; then
     die 'Ungültiger SSH-Host, erwartet USER@HOST ohne Shell-Metazeichen.'
   need ssh; need scp; need tar
 fi
-[[ $APP_ONLY != true || (-z $MODE && -z $REDMINE_SSH) ]] ||
-  die '--app-only nicht mit einem Redmine-Ziel kombinieren.'
+if [[ $APP_ONLY == true ]]; then
+  [[ -z $MODE && -z $REDMINE_SSH ]] ||
+    die '--app-only nicht mit einem Redmine-Ziel kombinieren.'
+fi
 
 read_env() {
   # Never source/eval an existing .env (credentials and arbitrary values).
