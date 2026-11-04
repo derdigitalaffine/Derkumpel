@@ -29,6 +29,8 @@ Use Mantine components and theme tokens, not ad-hoc component libraries. Prefer 
 
 ## Information hierarchy
 
+The shared dependency-free `UIIcon` component is the approved icon vocabulary; don't mix random Unicode symbols into navigation/critical actions. All icons in controls are decorative and their button labels remain readable to assistive technologies.
+
 Issue cards emphasize in this order:
 
 1. status/priority signal
@@ -37,7 +39,11 @@ Issue cards emphasize in this order:
 4. due/start timing
 5. assignee/group
 
+The `Meine Arbeit` home has a compact work overview and **three optional quick filters** (all, due today, overdue) before the sticky search toolbar. Tapping a selected urgent quick filter returns to all. Stored personal filters are not lost when using quick filters.
+
 Issue detail simple mode uses sections: Auftrag, Ort & Termin, Aktionen, Beschreibung, Anhänge, Verlauf. `Alle Angaben & Bearbeiten` remains collapsed by default on every open.
+
+All ticket titles wrap safely at 320 px. Date-only overdue classification must use calendar days rather than elapsed hours; UTC arithmetic prevents false urgency around DST. Status and deadline labels must remain textual in addition to color.
 
 `Tickets` is a browse/archive surface, not a second dashboard. Keep status scope, tracker, project and search controls together in a sticky filter surface; reuse the same issue cards as `Meine Arbeit` so scanning behavior stays consistent.
 
@@ -54,18 +60,20 @@ Issue detail simple mode uses sections: Auftrag, Ort & Termin, Aktionen, Beschre
 - Conflict counts use a stronger semantic signal than ordinary pending changes.
 - The Sync page links each queue/warning item back to the affected issue.
 - Repeated conflict-resolution taps must be guarded while one resolution is running.
+- Status, comment, photo and advanced-form saves must block repeated input, keep the draft on error and report whether it was saved locally.
 - Missing attachment cache entries are visually distinct from attachments already stored offline.
 
 ## Color
 
-Use a neutral light-first municipal palette with strong blue primary and semantic status colors. Dark mode may follow OS later, but outdoor daylight readability takes priority for the initial release. Never encode status using color alone.
+Use a light-first municipal palette derived from the DerKumpel symbol: deep navy for structure, clean white surfaces, muted forest/grass green for selection and semantic state colors for ticket urgency. Use the Mantine `brand` color scale for primary actions and `blue/red/orange/green` for their established meanings. Dark mode may follow OS later, but outdoor daylight readability takes priority for the initial release. Never encode status using color alone.
 
 Suggested tokens:
 
-- primary: blue 7/8
-- background: gray 0
-- surface: white
-- text: dark 8/9
+- primary: `brand.7–9` (navy)
+- background: `#f3f7f8` (soft daylight canvas)
+- surface: white / nearly opaque
+- text: `#142d40` and `#567080` secondary
+- selection accent: `#82b535` (brand green)
 - urgent: red 7
 - warning/paused: orange 7
 - active: blue 7
@@ -99,8 +107,9 @@ Use avatar/icon rail + cards. Comments and photos are visually prominent. Techni
 - Every attachment card communicates whether it is already stored offline.
 - Non-image files show a recognizable file-type cue and a large `Mit Gerät öffnen` action.
 - Missing offline copies use a calm dashed state rather than looking like a failed upload.
+- Destructive cache clearing and logout must be disabled while local mutations remain unsynchronized, including inside confirmation dialogs.
 - If online, a missing copy offers an explicit `Jetzt offline speichern` recovery action on the attachment itself.
 
 ## Map
 
-Map is a secondary work view, never the only way to reach an issue. Marker clustering is allowed. A bottom sheet/card may present selected issue details. Markers must remain comfortably tappable on phones. With no valid coordinates in the selected scope, center the basemap on Otterbach-Otterberg and explain why no issue markers are visible.
+Map is a secondary work view, never the only way to reach an issue. Marker clustering is allowed. A bottom sheet/card may present selected issue details. Markers must remain comfortably tappable on phones. When two or more issues have coordinates, fit the map viewport to all visible pins (with padding and a sensible maximum zoom). With no valid coordinates in the selected scope, center the basemap on Otterbach-Otterberg and explain why no issue markers are visible.
