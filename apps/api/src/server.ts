@@ -183,7 +183,7 @@ app.post('/api/push/test', async (request, reply) => {
   if (!endpoint || endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
   try {
     const sent = await pushService.sendTest(user.user.id, endpoint);
-    return sent ? { ok: true } : reply.code(404).send({ error: 'subscription_missing' });
+    return sent ? { ok: true } : reply.code(502).send({ error: 'push_delivery_failed', message: 'Push-Dienst konnte die Testmitteilung nicht zustellen' });
   } catch (error) {
     if (error instanceof Error && /einmal pro Minute/.test(error.message)) return reply.code(429).send({ error: 'rate_limited', message: error.message });
     throw error;
