@@ -56,6 +56,12 @@ cmp "$temp/.env" "$temp/first.env"
 [[ $(grep -c '^compose run ' "$temp/docker.log") == 1 ]] ||
   { echo 'Rerun unexpectedly rotated VAPID keys' >&2; exit 1; }
 
+# Previously configured strong non-hex secrets remain valid and are never rotated.
+sed -i 's/^PUSH_EVENT_TOKEN=.*/PUSH_EVENT_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AB/' "$temp/.env"
+cp "$temp/.env" "$temp/existing-secret.env"
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push --app-only > "$temp/existing-secret.log"
+cmp "$temp/.env" "$temp/existing-secret.env"
+
 # A malicious/invalid URL must fail before any change to the existing file.
 sed -i 's#PUBLIC_BASE_URL=https://rm.tromu.de#PUBLIC_BASE_URL=http://rm.tromu.de#' "$temp/.env"
 cp "$temp/.env" "$temp/bad.env"
