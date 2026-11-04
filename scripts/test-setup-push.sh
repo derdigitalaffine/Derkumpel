@@ -77,4 +77,49 @@ if PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push \
   echo 'Accepted shell metacharacters in SSH host' >&2; exit 1
 fi
 
-echo 'Push Linux installer: idempotence, secret preservation, permissions and rejection checks OK'
+# Pluginless backend polling: no Redmine SSH or plugin installation.
+cat > "$temp/mockbin/curl" <<'MOCK_CURL'
+#!/usr/bin/env bash
+set -eu
+output=''
+previous=''
+for arg in "$@"; do
+  if [[ $previous == -o ]]; then output=$arg; break; fi
+  previous=$arg
+done
+[[ -n $output ]] || exit 1
+printf '{"users":[{"id":1}]}\n' > "$output"
+MOCK_CURL
+chmod +x "$temp/mockbin/curl"
+printf '%040d\n' 0 > "$temp/redmine-admin.key"
+chmod 600 "$temp/redmine-admin.key"
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push \
+  --push-mode polling --redmine-api-key-file "$temp/redmine-admin.key" \
+  --push-poll-interval 45 > "$temp/polling.log"
+grep -qx 'PUSH_MODE=polling' "$temp/.env"
+grep -qx 'PUSH_POLL_INTERVAL_SECONDS=45' "$temp/.env"
+grep -Eq '^PUSH_POLL_API_KEY=[0-9]{40}
+ "$temp/.env"
+grep -Fq 'Pluginfreies Polling aktiviert' "$temp/polling.log"
+cp "$temp/.env" "$temp/polling.env"
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push --push-mode polling > "$temp/polling-repeat.log"
+cmp "$temp/.env" "$temp/polling.env"
+[[ $(grep -c '^compose run ' "$temp/docker.log") == 1 ]] ||
+  { echo 'Polling mode unexpectedly rotated VAPID keys' >&2; exit 1; }
+
+# Switching back to plugin mode clears the high-privilege admin API key.
+PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push --push-mode plugin --app-only > "$temp/plugin-repeat.log"
+grep -qx 'PUSH_MODE=plugin' "$temp/.env"
+grep -qx 'PUSH_POLL_API_KEY=' "$temp/.env"
+grep -qx 'SESSION_SECRET=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' "$temp/.env"
+
+# Never accept weak API key files, symlinks, or world-readable secrets.
+cp "$temp/.env" "$temp/before-bad-key.env"
+chmod 644 "$temp/redmine-admin.key"
+if PATH="$temp/mockbin:$PATH" bash "$temp/setup.sh" push \
+  --push-mode polling --redmine-api-key-file "$temp/redmine-admin.key" >/dev/null 2>&1; then
+  echo 'Accepted world-readable API key' >&2; exit 1
+fi
+cmp "$temp/.env" "$temp/before-bad-key.env"
+
+echo 'Push Linux installer: idempotence, polling/plugin switching, secret preservation and rejection checks OK'
