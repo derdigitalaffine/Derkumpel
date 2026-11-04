@@ -28,7 +28,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <AppShell.Header px={{ base: 'md', sm: 'lg' }} className="app-header">
       <Group h="100%" justify="space-between" wrap="nowrap">
         <Group gap="sm" wrap="nowrap">
-          <Image src="/derkumpel-icon-192.png" alt="" w={44} h={44} radius={13} />
+          <Image src="/derkumpel-icon-192-v2.png" alt="" w={44} h={44} radius={13} />
           <Box>
             <Text fw={850} lh={1.05} fz="md" style={{ letterSpacing: '-0.02em' }}>DerKumpel</Text>
             <Text size="xs" c="dimmed" mt={2}>Bauhof · Redmine</Text>
