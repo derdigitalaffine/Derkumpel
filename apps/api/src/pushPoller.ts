@@ -70,6 +70,8 @@ export async function authorizedRecipients(
   subscribed: number[],
   api: RedminePollApi,
   users: Map<number, UserRecord | null>,
+  verifiedUsers: Set<number> = new Set(),
+  issueViews: Map<string, Set<number> | null> = new Map(),
 ): Promise<number[]> {
   if (!issue.assigned_to || !Number.isSafeInteger(issue.assigned_to.id)) return [];
   const recipients: number[] = [];
@@ -92,21 +94,29 @@ export async function authorizedRecipients(
       (user.groups ?? []).some((group) => group.id === issue.assigned_to?.id);
     if (!isAssignee) continue;
 
-    // Require proof that the admin's X-Redmine-Switch-User header really
-    // impersonates this user. A proxy ignoring it must not leak notifications.
-    const current = await api.get<{ user: { id: number } }>('/users/current.json', user.login);
-    if (current.user?.id !== id) throw new Error('Redmine API did not honor user impersonation; push polling halted');
-
-    let visible: { issue: Issue };
-    try {
-      visible = await api.get<{ issue: Issue }>('/issues/' + issue.id + '.json?include=journals', user.login);
-    } catch (error) {
-      if (error instanceof RedminePollHttpError && [403, 404, 412].includes(error.status)) continue;
-      throw error;
+    // Verify impersonation once per recipient per polling cycle. If a reverse
+    // proxy ignores this header, no push must be sent using administrator rights.
+    if (!verifiedUsers.has(id)) {
+      const current = await api.get<{ user: { id: number } }>('/users/current.json', user.login);
+      if (current.user?.id !== id) throw new Error('Redmine API did not honor user impersonation; push polling halted');
+      verifiedUsers.add(id);
     }
-    if (visible.issue?.id !== issue.id) continue;
-    if (candidate.privateJournalId !== undefined &&
-      !visible.issue.journals?.some((journal) => journal.id === candidate.privateJournalId)) continue;
+
+    const viewKey = issue.id + ':' + id;
+    let journalIds = issueViews.get(viewKey);
+    if (journalIds === undefined) {
+      try {
+        const visible = await api.get<{ issue: Issue }>('/issues/' + issue.id + '.json?include=journals', user.login);
+        journalIds = visible.issue?.id === issue.id
+          ? new Set((visible.issue.journals ?? []).map((journal) => journal.id)) : null;
+      } catch (error) {
+        if (error instanceof RedminePollHttpError && [403, 404, 412].includes(error.status)) journalIds = null;
+        else throw error;
+      }
+      issueViews.set(viewKey, journalIds);
+    }
+    if (!journalIds) continue;
+    if (candidate.privateJournalId !== undefined && !journalIds.has(candidate.privateJournalId)) continue;
     recipients.push(id);
   }
   return recipients;
@@ -230,6 +240,8 @@ export class RedminePushPoller {
         if (offset + page.issues.length >= (page.total_count ?? issues.length) || !page.issues.length) break;
       }
       const users = new Map<number, UserRecord | null>();
+      const verifiedUsers = new Set<number>();
+      const issueViews = new Map<string, Set<number> | null>();
       let delivered = 0;
       for (const summary of issues) {
         const updated = timestamp(summary.updated_on);
@@ -239,7 +251,7 @@ export class RedminePushPoller {
         const issue = detail.issue;
         if (!issue || issue.id !== summary.id) continue;
         for (const candidate of derivePollEvents(issue, from, cutoff)) {
-          candidate.event.user_ids = await authorizedRecipients(issue, candidate, subscribed, this.api, users);
+          candidate.event.user_ids = await authorizedRecipients(issue, candidate, subscribed, this.api, users, verifiedUsers, issueViews);
           if (!candidate.event.user_ids.length) continue;
           const result = await this.registry.dispatch(candidate.event);
           if (result.failed) throw new Error('Push provider temporarily unavailable; cursor kept for retry');
