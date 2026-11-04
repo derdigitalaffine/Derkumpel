@@ -15,7 +15,7 @@ type Journal = {
 };
 type Issue = {
   id: number; created_on?: string; updated_on?: string;
-  assigned_to?: Ref; journals?: Journal[];
+  assigned_to?: Ref; author?: Ref; journals?: Journal[];
 };
 type PollState = { startedAt: string; cursor: string };
 type Candidate = { event: PushEvent; actor?: number; privateJournalId?: number };
@@ -31,7 +31,7 @@ export function derivePollEvents(issue: Issue, from: number, until: number): Can
   const created = timestamp(issue.created_on);
   if (Number.isFinite(created) && created >= from && created <= until) {
     return issue.assigned_to
-      ? [{ event: { event_id: 'poll-create-' + issue.id + '-assigned', issue_id: issue.id, kind: 'assignment', user_ids: [] } }]
+      ? [{ event: { event_id: 'poll-create-' + issue.id + '-assigned', issue_id: issue.id, kind: 'assignment', user_ids: [] }, actor: issue.author?.id }]
       : [];
   }
   const result: Candidate[] = [];
@@ -77,9 +77,14 @@ export async function authorizedRecipients(
     if (id === candidate.actor) continue;
     let user = users.get(id);
     if (user === undefined) {
-      const response = await api.get<{ user: UserRecord }>('/users/' + id + '.json?include=groups');
-      user = response.user?.id === id && response.user.status === 1 && typeof response.user.login === 'string'
-        ? response.user : null;
+      try {
+        const response = await api.get<{ user: UserRecord }>('/users/' + id + '.json?include=groups');
+        user = response.user?.id === id && response.user.status === 1 && typeof response.user.login === 'string'
+          ? response.user : null;
+      } catch (error) {
+        if (error instanceof RedminePollHttpError && [404, 412].includes(error.status)) user = null;
+        else throw error;
+      }
       users.set(id, user);
     }
     if (!user?.login) continue;
@@ -192,6 +197,15 @@ export class RedminePushPoller {
       }
       const cutoff = now - 8_000;
       if (cutoff <= timestamp(this.state.cursor)) return 0;
+      // Web Push is best-effort. After a very long outage or a switch away from
+      // polling, skip stale notifications rather than replaying days of changes.
+      if (now - timestamp(this.state.cursor) > 12 * 3_600_000) {
+        const boundary = new Date(now).toISOString();
+        this.state = { startedAt: boundary, cursor: boundary };
+        this.persist();
+        this.log('Redmine polling backlog older than 12 hours was skipped; current cursor reinitialized');
+        return 0;
+      }
       const subscribed = this.registry.subscribedUserIds();
       if (!subscribed.length) {
         this.state.cursor = new Date(cutoff).toISOString();
@@ -200,7 +214,7 @@ export class RedminePushPoller {
       }
       const from = Math.max(timestamp(this.state.startedAt), timestamp(this.state.cursor) - 60_000);
       const params = new URLSearchParams({
-        updated_on: '>=' + new Date(from).toISOString().replace('.000', ''),
+        updated_on: '>=' + new Date(from).toISOString().replace(/\.\d{3}Z$/, 'Z'),
         status_id: '*',
         sort: 'updated_on:asc,id:asc',
         limit: '100',
