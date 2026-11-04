@@ -7,10 +7,13 @@ import fastifyStatic from '@fastify/static';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
 import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { PushService } from './push.js';
+import { prefsFromUnknown } from './push-events.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
 const SESSION_COOKIE = 'derkumpel_session';
+const pushService = config.push.enabled ? new PushService(config, app.log) : undefined;
 const mapOrigin = 'https://sgx.geodatenzentrum.de'; // Raster tiles are fetched directly by the client.
 
 await app.register(cookie);
@@ -113,6 +116,76 @@ app.post('/api/auth/login', async (request, reply) => {
     return { user: current.user };
   } catch (error) {
     if (error instanceof RedmineError && [401, 403].includes(error.status)) return reply.code(401).send({ error: 'invalid_login', message: 'Anmeldung fehlgeschlagen' });
+    throw error;
+  }
+});
+
+
+app.get('/api/push/config', async () => ({
+  enabled: Boolean(pushService),
+  publicKey: pushService ? config.push.vapidPublicKey : null,
+  pollIntervalMs: config.push.pollIntervalMs,
+}));
+
+// Push subscriptions are strictly opt-in and bound to the *actual Redmine user*.
+app.post('/api/push/subscribe', async (request, reply) => {
+  if (!pushService) return reply.code(503).send({ error: 'push_disabled', message: 'Push-Dienst nicht aktiviert' });
+  const creds = credentials(request);
+  const user = await fetchCurrentUser(config, creds);
+  const body = request.body as { subscription?: unknown; preferences?: unknown } | undefined;
+  try {
+    pushService.subscribe(user.user.id, creds, body?.subscription, body?.preferences);
+  } catch (error) {
+    if (error instanceof Error && /subscription|endpoint|keys/i.test(error.message)) {
+      return reply.code(400).send({ error: 'invalid_subscription', message: 'Push-Abonnement ungültig' });
+    }
+    throw error;
+  }
+  return { ok: true };
+});
+
+app.post('/api/push/status', async (request, reply) => {
+  if (!pushService) return reply.code(503).send({ error: 'push_disabled' });
+  const creds = credentials(request);
+  const user = await fetchCurrentUser(config, creds);
+  const { endpoint } = (request.body ?? {}) as { endpoint?: string };
+  if (!endpoint || endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
+  return pushService.status(user.user.id, endpoint);
+});
+
+app.post('/api/push/preferences', async (request, reply) => {
+  if (!pushService) return reply.code(503).send({ error: 'push_disabled' });
+  const creds = credentials(request);
+  const user = await fetchCurrentUser(config, creds);
+  const { endpoint, preferences } = (request.body ?? {}) as { endpoint?: string; preferences?: unknown };
+  if (!endpoint || endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
+  if (!pushService.updatePreferences(user.user.id, endpoint, prefsFromUnknown(preferences))) {
+    return reply.code(404).send({ error: 'subscription_missing' });
+  }
+  return { ok: true };
+});
+
+app.post('/api/push/unsubscribe', async (request, reply) => {
+  if (!pushService) return reply.code(503).send({ error: 'push_disabled' });
+  const creds = credentials(request);
+  const user = await fetchCurrentUser(config, creds);
+  const { endpoint } = (request.body ?? {}) as { endpoint?: string };
+  if (!endpoint || endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
+  pushService.unsubscribe(user.user.id, endpoint);
+  return { ok: true };
+});
+
+app.post('/api/push/test', async (request, reply) => {
+  if (!pushService) return reply.code(503).send({ error: 'push_disabled' });
+  const creds = credentials(request);
+  const user = await fetchCurrentUser(config, creds);
+  const { endpoint } = (request.body ?? {}) as { endpoint?: string };
+  if (!endpoint || endpoint.length > 2048) return reply.code(400).send({ error: 'invalid_endpoint' });
+  try {
+    const sent = await pushService.sendTest(user.user.id, endpoint);
+    return sent ? { ok: true } : reply.code(404).send({ error: 'subscription_missing' });
+  } catch (error) {
+    if (error instanceof Error && /einmal pro Minute/.test(error.message)) return reply.code(429).send({ error: 'rate_limited', message: error.message });
     throw error;
   }
 });
@@ -230,3 +303,5 @@ app.setNotFoundHandler((request, reply) => {
 });
 
 await app.listen({ host: config.host, port: config.port });
+pushService?.start();
+app.addHook('onClose', async () => { pushService?.stop(); });
