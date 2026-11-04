@@ -4,13 +4,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { useCallback, type ReactNode } from 'react';
 import { db } from '../db';
 import { useDexieLive } from '../live';
+import { UIIcon, type IconName } from './UIIcon';
 
-const items = [
-  { to: '/', label: 'Arbeit', icon: '▣' },
-  { to: '/tickets', label: 'Tickets', icon: '☷' },
-  { to: '/map', label: 'Karte', icon: '⌖' },
-  { to: '/sync', label: 'Sync', icon: '↻' },
-  { to: '/settings', label: 'Mehr', icon: '☰' },
+const items: Array<{ to: string; label: string; fullLabel: string; icon: IconName }> = [
+  { to: '/', label: 'Arbeit', fullLabel: 'Meine Arbeit', icon: 'work' },
+  { to: '/tickets', label: 'Tickets', fullLabel: 'Ticket-Browser', icon: 'tickets' },
+  { to: '/map', label: 'Karte', fullLabel: 'Auftragskarte', icon: 'map' },
+  { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
+  { to: '/settings', label: 'Mehr', fullLabel: 'Einstellungen', icon: 'settings' },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -21,30 +22,31 @@ export function Layout({ children }: { children: ReactNode }) {
   const conflictCount = queue.filter((item) => item.state === 'conflict').length;
   const queueColor = conflictCount ? 'red' : 'orange';
   const queueLabel = conflictCount ? `${conflictCount} Konflikt${conflictCount === 1 ? '' : 'e'}` : `${pendingCount} lokal`;
+  const syncBadge = pendingCount > 0
+    ? <Badge color={queueColor} variant="filled" size="xs" circle aria-label={queueLabel}>{pendingCount > 99 ? '99+' : pendingCount}</Badge>
+    : null;
 
-  const syncBadge = pendingCount > 0 ? <Badge color={queueColor} variant="filled" size="xs" aria-label={queueLabel}>{pendingCount > 99 ? '99+' : pendingCount}</Badge> : undefined;
-
-  return <AppShell header={{ height: 68 }} navbar={{ width: 248, breakpoint: 'sm', collapsed: { mobile: true } }} padding={{ base: 'md', sm: 'lg' }}>
-    <AppShell.Header px={{ base: 'md', sm: 'lg' }} className="app-header">
+  return <AppShell header={{ height: 72 }} navbar={{ width: 244, breakpoint: 'sm', collapsed: { mobile: true } }}
+    padding={{ base: 'md', sm: 'lg' }}>
+    <AppShell.Header px={{ base: 'md', sm: 'xl' }} className="app-header">
       <Group h="100%" justify="space-between" wrap="nowrap">
         <Group gap="sm" wrap="nowrap">
-          <Image src="/derkumpel-icon-192-v2.png" alt="" w={44} h={44} radius={13} />
+          <Image src="/derkumpel-icon-192-v2.png" alt="" w={44} h={44} radius={12} className="app-brandmark" />
           <Box>
-            <Text fw={850} lh={1.05} fz="md" style={{ letterSpacing: '-0.02em' }}>DerKumpel</Text>
-            <Text size="xs" c="dimmed" mt={2}>Bauhof · Redmine</Text>
+            <Text fw={850} lh={1.05} fz="md" c="brand.9" style={{ letterSpacing: '-0.035em' }}>DerKumpel</Text>
+            <Text size="xs" c="dimmed" mt={3} fw={600}>Bauhof · unterwegs</Text>
           </Box>
         </Group>
-        <Group gap={6} wrap="nowrap">
-          {pendingCount > 0 && <Badge color={queueColor} variant="light" size="lg" visibleFrom="xs">{queueLabel}</Badge>}
-          <Badge
-            color={network.online ? 'green' : 'orange'}
-            variant="light"
-            size="lg"
-            leftSection={<Box className="connection-dot" />}
-            aria-label={network.online ? 'Verbindung online' : 'Verbindung offline'}
-          >
-            {network.online ? 'Online' : 'Offline'}
-          </Badge>
+        <Group gap="xs" wrap="nowrap">
+          {pendingCount > 0 && <Badge color={queueColor} variant="light" size="lg" visibleFrom="sm"
+            leftSection={<UIIcon name="sync" size={13} />}>{queueLabel}</Badge>}
+          <Link to="/sync" className="connection-pill" data-offline={!network.online}
+            aria-label={network.online ? `Online. ${pendingCount} Änderungen ausstehend. Synchronisation öffnen`
+              : `Offline. ${pendingCount} Änderungen lokal gespeichert. Synchronisation öffnen`}>
+            <Box className="connection-dot" aria-hidden="true" />
+            <Text component="span" size="xs" fw={750}>{network.online ? 'Online' : 'Offline'}</Text>
+            {pendingCount > 0 && <Badge size="xs" color={queueColor} variant="filled" circle>{pendingCount > 99 ? '99+' : pendingCount}</Badge>}
+          </Link>
         </Group>
         <Text component="span" className="sr-only" aria-live="polite">
           {network.online ? 'Verbindung hergestellt.' : 'Keine Verbindung. Offline-Arbeit ist aktiv.'}
@@ -53,46 +55,38 @@ export function Layout({ children }: { children: ReactNode }) {
       </Group>
     </AppShell.Header>
 
-    <AppShell.Navbar p="md">
+    <AppShell.Navbar p="md" style={{ background: '#f9fcfc', borderColor: 'var(--dk-border)' }}>
       <Stack gap="xs">
-        <Text size="xs" fw={800} c="dimmed" tt="uppercase" px="sm" mb={2} style={{ letterSpacing: '.06em' }}>Navigation</Text>
+        <Text size="xs" fw={850} c="dimmed" tt="uppercase" px="sm" mb={6}
+          style={{ letterSpacing: '.1em' }}>Arbeitsbereiche</Text>
         {items.map((item) => {
           const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
-          const isSync = item.to === '/sync';
-          return <NavLink
-            key={item.to}
-            component={Link}
-            to={item.to}
-            active={active}
-            label={item.label}
-            aria-label={isSync && pendingCount > 0 ? `Synchronisation, ${queueLabel}` : item.label}
-            leftSection={<Text fz={19} fw={800} w={22} ta="center">{item.icon}</Text>}
-            rightSection={isSync ? syncBadge : undefined}
-          />;
+          return <NavLink key={item.to} component={Link} to={item.to} active={active}
+            label={item.fullLabel} className="desktop-nav-link"
+            aria-current={active ? 'page' : undefined}
+            leftSection={<UIIcon name={item.icon} size={20} />}
+            rightSection={item.to === '/sync' ? syncBadge : null} />;
         })}
       </Stack>
     </AppShell.Navbar>
 
-    <AppShell.Main className="mobile-content">{children}</AppShell.Main>
+    <AppShell.Main className="mobile-content" id="hauptinhalt">
+      {children}
+    </AppShell.Main>
 
-    <Box hiddenFrom="sm" pos="fixed" bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
-      <Group grow gap={2} px={4} pt={6} align="stretch">
+    <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
+      bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
+      <Group grow gap={3} px={5} pt={7} align="stretch">
         {items.map((item) => {
           const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
-          const isSync = item.to === '/sync';
-          return <UnstyledButton
-            key={item.to}
-            component={Link}
-            to={item.to}
-            className="mobile-nav-item"
-            data-active={active}
+          return <UnstyledButton key={item.to} component={Link} to={item.to}
+            className="mobile-nav-item" data-active={active}
             aria-current={active ? 'page' : undefined}
-            aria-label={isSync && pendingCount > 0 ? `Synchronisation, ${queueLabel}` : item.label}
-          >
-            <Stack gap={1} align="center">
-              <Group gap={3} wrap="nowrap" justify="center">
-                <Text fz={19} fw={850} lh={1.05}>{item.icon}</Text>
-                {isSync && syncBadge}
+            aria-label={item.to === '/sync' && pendingCount > 0 ? `Synchronisation, ${queueLabel}` : item.fullLabel}>
+            <Stack align="center" gap={3} justify="center">
+              <Group gap={2} wrap="nowrap" justify="center">
+                <span className="nav-icon"><UIIcon name={item.icon} size={22} strokeWidth={active ? 2.25 : 1.8} /></span>
+                {item.to === '/sync' && syncBadge}
               </Group>
               <Text size="xs" fw={active ? 850 : 650} lh={1.15}>{item.label}</Text>
             </Stack>

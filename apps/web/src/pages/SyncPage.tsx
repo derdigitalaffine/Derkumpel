@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { db } from '../db';
 import { useDexieLive } from '../live';
 import { resolveConflict, syncNow } from '../sync';
+import { UIIcon } from '../components/UIIcon';
 
 type AttachmentCacheWarning = { attachmentId: number; issueId: number; filename: string; message: string };
 
@@ -15,13 +16,17 @@ export function SyncPage() {
   const status = useDexieLive(useCallback(async () => (await db.syncState.get('status'))?.value as { state?: string; lastSuccess?: number; message?: string } | undefined, []), undefined);
   const attachmentWarnings = useDexieLive(useCallback(async () => ((await db.syncState.get('attachmentWarnings'))?.value as AttachmentCacheWarning[] | undefined) ?? [], []), []);
   const [resolving, setResolving] = useState<string>();
+  const [syncBusy, setSyncBusy] = useState(false);
   const conflicts = useMemo(() => outbox.filter((item) => item.state === 'conflict').length, [outbox]);
   const statusLabel = status?.state === 'syncing' ? 'Synchronisiert' : status?.state === 'offline' ? 'Offline' : status?.state === 'error' ? 'Fehler' : 'Aktuell';
   const statusColor = status?.state === 'error' ? 'red' : status?.state === 'offline' ? 'orange' : status?.state === 'syncing' ? 'blue' : 'green';
 
   const sync = async () => {
+    if (syncBusy || !navigator.onLine) return;
+    setSyncBusy(true);
     try { await syncNow(); notifications.show({ message: 'Synchronisation abgeschlossen', color: 'green' }); }
     catch { notifications.show({ message: 'Synchronisation nicht möglich', color: 'red' }); }
+    finally { setSyncBusy(false); }
   };
 
   const resolve = async (id: string, choice: 'server' | 'local') => {
@@ -40,30 +45,47 @@ export function SyncPage() {
   return <Stack gap="md" maw={820} mx="auto">
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
-        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Synchronisation</Title>
-        <Text c="dimmed" size="sm" mt={3}>Lokale Änderungen, Offline-Dateien und Konflikte</Text>
+        <Text className="page-kicker">Daten & Sicherheit</Text>
+        <Title order={1} size="h2">Synchronisation</Title>
+        <Text className="page-subtitle" mt={4}>Alle Änderungen im Blick – auch ohne Internet</Text>
       </Box>
-      <Button onClick={() => void sync()} loading={status?.state === 'syncing'} leftSection={<Text aria-hidden="true">↻</Text>}>Synchronisieren</Button>
+      <Button onClick={() => void sync()} loading={syncBusy || status?.state === 'syncing'} disabled={!navigator.onLine || syncBusy} leftSection={<UIIcon name="refresh" size={19} />}>Jetzt abgleichen</Button>
     </Group>
 
     <SimpleGrid cols={{ base: 3 }} spacing="xs">
-      <Paper withBorder p="sm" className="surface-card"><Text className="muted-label">Offen</Text><Text fw={850} fz="xl">{outbox.length}</Text></Paper>
-      <Paper withBorder p="sm" className="surface-card"><Text className="muted-label">Konflikte</Text><Text fw={850} fz="xl" c={conflicts ? 'red' : undefined}>{conflicts}</Text></Paper>
-      <Paper withBorder p="sm" className="surface-card"><Text className="muted-label">Dateien fehlen</Text><Text fw={850} fz="xl" c={attachmentWarnings.length ? 'orange' : undefined}>{attachmentWarnings.length}</Text></Paper>
+      <Paper withBorder p="sm" className="surface-card">
+        <Stack gap={4}>
+          <Group gap={5} c="dimmed"><UIIcon name="cloud" size={15} /><Text className="muted-label">Ausstehend</Text></Group>
+          <Text fw={850} fz="xl" c="brand.8" style={{ fontVariantNumeric: 'tabular-nums' }}>{outbox.length}</Text>
+        </Stack>
+      </Paper>
+      <Paper withBorder p="sm" className="surface-card">
+        <Stack gap={4}>
+          <Group gap={5} c="dimmed"><UIIcon name="alert" size={15} /><Text className="muted-label">Konflikte</Text></Group>
+          <Text fw={850} fz="xl" c={conflicts ? 'red' : 'brand.8'} style={{ fontVariantNumeric: 'tabular-nums' }}>{conflicts}</Text>
+        </Stack>
+      </Paper>
+      <Paper withBorder p="sm" className="surface-card">
+        <Stack gap={4}>
+          <Group gap={5} c="dimmed"><UIIcon name="download" size={15} /><Text className="muted-label">Dateien fehlen</Text></Group>
+          <Text fw={850} fz="xl" c={attachmentWarnings.length ? 'orange' : 'brand.8'} style={{ fontVariantNumeric: 'tabular-nums' }}>{attachmentWarnings.length}</Text>
+        </Stack>
+      </Paper>
     </SimpleGrid>
 
     <Card withBorder className="surface-card" aria-live="polite">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <Group gap="sm" wrap="nowrap">
-          <ThemeIcon color={statusColor} variant="light" size={42} radius="xl">{status?.state === 'error' ? '!' : status?.state === 'offline' ? '⌁' : status?.state === 'syncing' ? '↻' : '✓'}</ThemeIcon>
+          <ThemeIcon color={statusColor} variant="light" size={44} radius="xl"><UIIcon name={status?.state === 'error' ? 'alert' : status?.state === 'offline' ? 'wifi-off' : status?.state === 'syncing' ? 'sync' : 'check-circle'} size={23} /></ThemeIcon>
           <Box>
-            <Text fw={800}>Synchronisationsstatus</Text>
+            <Text fw={820}>{status?.state === 'offline' ? 'Offline weiterarbeiten' : status?.state === 'syncing' ? 'Daten werden abgeglichen' : status?.state === 'error' ? 'Abgleich benötigt Aufmerksamkeit' : 'Deine Änderungen sind sicher'}</Text>
             <Text size="sm" c="dimmed" mt={2}>{status?.lastSuccess ? `Zuletzt erfolgreich ${new Date(status.lastSuccess).toLocaleString('de-DE')}` : 'Noch keine erfolgreiche Synchronisation protokolliert'}</Text>
           </Box>
         </Group>
         <Badge color={statusColor} variant="light" size="lg">{statusLabel}</Badge>
       </Group>
-      {status?.message && <Alert color="red" mt="md" variant="light">{status.message}</Alert>}
+      {status?.message && <Alert color={status?.state === 'error' ? 'red' : 'blue'} mt="md" variant="light">{status.message}</Alert>}
+      {!navigator.onLine && <Text size="xs" c="dimmed" mt="sm">Änderungen bleiben lokal gespeichert und werden bei Rückkehr der Verbindung automatisch abgeglichen.</Text>}
     </Card>
 
     {attachmentWarnings.length > 0 && <Alert color="orange" title={`${attachmentWarnings.length} Anhang/Anhänge noch nicht offline verfügbar`} variant="light">
@@ -79,17 +101,17 @@ export function SyncPage() {
 
     {outbox.length === 0 ? <Paper className="empty-state" p="xl">
       <Stack align="center" gap="sm" ta="center">
-        <ThemeIcon size={52} radius="xl" variant="light" color={attachmentWarnings.length ? 'blue' : 'green'}>{attachmentWarnings.length ? '↻' : '✓'}</ThemeIcon>
+        <ThemeIcon size={52} radius="xl" variant="light" color={attachmentWarnings.length ? 'blue' : 'green'}><UIIcon name={attachmentWarnings.length ? 'sync' : 'check-circle'} size={27} /></ThemeIcon>
         <Box><Text fw={800}>Keine lokalen Änderungen offen</Text><Text size="sm" c="dimmed" mt={4}>{attachmentWarnings.length ? 'Die oben genannten Offline-Dateien fehlen noch, deine Änderungen sind aber synchronisiert.' : 'Alles synchronisiert. Du kannst auch ohne Netz weiterarbeiten.'}</Text></Box>
       </Stack>
     </Paper> : <Stack gap="sm">
-      <Text fw={800} size="sm" c="dimmed">Warteschlange</Text>
+      <Group justify="space-between"><Text fw={820} size="sm" c="brand.8">Warteschlange</Text><Text size="xs" c="dimmed">{outbox.length} Vorgänge</Text></Group>
       {outbox.map((item) => <Card withBorder key={item.id} className="surface-card">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Box style={{ minWidth: 0 }}>
             <Group gap="xs" wrap="nowrap">
               <Text fw={800}>Auftrag #{item.issueId}</Text>
-              <Button component={Link} to={`/issues/${item.issueId}`} variant="subtle" size="compact-xs">Öffnen</Button>
+              <Button component={Link} to={`/issues/${item.issueId}`} variant="subtle" size="compact-xs" rightSection={<UIIcon name="chevron-right" size={14} />}>Öffnen</Button>
             </Group>
             <Text size="sm" c="dimmed" mt={2}>{kindLabels[item.kind]} · {new Date(item.createdAt).toLocaleString('de-DE')}</Text>
             {item.state === 'retrying' && <Text size="xs" c="orange" mt={3}>Wird beim nächsten Sync erneut versucht · Versuch {item.attempts}</Text>}

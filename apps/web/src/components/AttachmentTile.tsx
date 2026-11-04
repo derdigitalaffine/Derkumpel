@@ -4,6 +4,7 @@ import { api } from '../api';
 import { db } from '../db';
 import { prepareOfflinePreview } from '../image';
 import { useDexieLive } from '../live';
+import { UIIcon } from './UIIcon';
 
 function fileLabel(filename: string): string {
   const extension = filename.split('.').pop()?.toUpperCase();
@@ -56,16 +57,16 @@ export function AttachmentTile({ id, filename, contentType }: { id: number; file
   if (!record || !url) return <Card withBorder p="md" className="attachment-card attachment-card-missing">
     <Stack gap="sm">
       <Group wrap="nowrap" align="flex-start">
-        <ThemeIcon size={42} radius="md" variant="light" color="orange">↓</ThemeIcon>
+        <ThemeIcon size={44} radius="md" variant="light" color="orange"><UIIcon name="download" size={23} /></ThemeIcon>
         <Box style={{ minWidth: 0, flex: 1 }}>
           <Text size="sm" fw={750} truncate>{filename}</Text>
           <Text size="xs" c="dimmed" mt={3}>{navigator.onLine ? 'Noch nicht auf diesem Gerät gespeichert' : 'Offline nicht auf diesem Gerät verfügbar'}</Text>
         </Box>
-        <Badge color="orange" variant="light" size="sm">{navigator.onLine ? 'Online' : 'Fehlt'}</Badge>
+        <Badge color="orange" variant="light" size="sm">Nicht gespeichert</Badge>
       </Group>
       {error && <Alert color="red" variant="light" p="xs">{error}</Alert>}
-      <Button variant="light" fullWidth loading={loading} disabled={!navigator.onLine || !source?.content_url} onClick={() => void download()}>
-        {navigator.onLine ? 'Jetzt offline speichern' : 'Zum Laden Verbindung herstellen'}
+      <Button variant="light" fullWidth loading={loading} disabled={!navigator.onLine || !source?.content_url} onClick={() => void download()} leftSection={<UIIcon name="download" size={18} />}>
+        {navigator.onLine ? 'Für Offline-Nutzung speichern' : 'Zum Speichern Verbindung herstellen'}
       </Button>
     </Stack>
   </Card>;
@@ -79,21 +80,21 @@ export function AttachmentTile({ id, filename, contentType }: { id: number; file
         <Text size="sm" fw={700} truncate>{filename}</Text>
         <Text size="xs" c="dimmed">Offline · {Math.max(1, Math.ceil(record.size / 1024))} KB</Text>
       </Box>
-      <Badge color="green" variant="light" size="sm">Gespeichert</Badge>
+      <Badge color="green" variant="light" size="sm" leftSection={<UIIcon name="check" size={12} />}>Offline</Badge>
     </Group>
   </Card>;
 
   return <Card withBorder p="md" className="attachment-card">
     <Stack gap="sm">
       <Group wrap="nowrap" align="flex-start">
-        <ThemeIcon size={44} radius="md" variant="light" color="blue"><Text size="xs" fw={850}>{fileLabel(filename)}</Text></ThemeIcon>
+        <ThemeIcon size={44} radius="md" variant="light" color="brand"><UIIcon name="file" size={22} /></ThemeIcon>
         <Box style={{ minWidth: 0, flex: 1 }}>
           <Text fw={750} truncate>{filename}</Text>
           <Text size="xs" c="dimmed" mt={3}>Offline gespeichert · {Math.max(1, Math.ceil(record.size / 1024))} KB</Text>
         </Box>
-        <Badge color="green" variant="light" size="sm">Offline</Badge>
+        <Badge color="green" variant="light" size="sm" leftSection={<UIIcon name="check" size={12} />}>Offline</Badge>
       </Group>
-      <Button component="a" href={url} target="_blank" rel="noreferrer" variant="light" fullWidth>Mit Gerät öffnen</Button>
+      <Button component="a" href={url} target="_blank" rel="noreferrer" variant="light" fullWidth rightSection={<UIIcon name="external" size={17} />}>Mit Gerät öffnen · {fileLabel(filename)}</Button>
     </Stack>
   </Card>;
 }

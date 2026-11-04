@@ -1,14 +1,17 @@
-import { ActionIcon, Badge, Box, Button, Drawer, Group, Menu, MultiSelect, Paper, ScrollArea, Skeleton, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
+import { ActionIcon, Badge, Box, Button, Drawer, Group, Menu, MultiSelect, Paper, ScrollArea, Skeleton, Stack, Text, TextInput, ThemeIcon, Title, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
-import { IssueCard } from '../components/IssueCard';
+import { IssueCard, dueInfo } from '../components/IssueCard';
+import { UIIcon } from '../components/UIIcon';
 import { issueAddress } from '../issueUtils';
 import type { NamedRef } from '../types';
 
 type SortKey = 'priority' | 'due' | 'updated' | 'subject';
+type QuickView = 'all' | 'today' | 'late';
 type SavedFilter = { id: string; name: string; search: string; sort: SortKey; statuses: string[]; priorities: string[]; trackers: string[] };
 type SyncStatus = { state?: string; lastSuccess?: number };
 
@@ -39,6 +42,7 @@ export function WorkPage() {
   const records = useDexieLive(query, []);
   const syncStatus = useDexieLive(statusQuery, undefined);
   const [search, setSearch] = useState('');
+  const [quickView, setQuickView] = useState<QuickView>('all');
   const [sort, setSort] = useState<SortKey>('priority');
   const [excludedTrackers, setExcludedTrackers] = useState<number[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -70,12 +74,16 @@ export function WorkPage() {
   }, []);
 
   const available = useMemo(() => records.map((record) => record.data).filter((issue) => !excludedTrackers.includes(issue.tracker.id)), [records, excludedTrackers]);
+  const dueToday = useMemo(() => available.filter((issue) => dueInfo(issue.due_date).color === 'orange').length, [available]);
+  const overdue = useMemo(() => available.filter((issue) => dueInfo(issue.due_date).color === 'red').length, [available]);
   const statusOptions = useMemo(() => [...new Set(available.map((issue) => issue.status.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
   const priorityOptions = useMemo(() => [...new Set(available.map((issue) => issue.priority.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
   const trackerOptions = useMemo(() => [...new Set(available.map((issue) => issue.tracker.name))].sort((a, b) => a.localeCompare(b, 'de')), [available]);
   const priorityRank = useMemo(() => new Map(priorityOrder.map((priority, index) => [priority.id, index])), [priorityOrder]);
 
   const issues = useMemo(() => available.filter((issue) => {
+    if (quickView === 'today' && dueInfo(issue.due_date).color !== 'orange') return false;
+    if (quickView === 'late' && dueInfo(issue.due_date).color !== 'red') return false;
     if (statuses.length && !statuses.includes(issue.status.name)) return false;
     if (priorities.length && !priorities.includes(issue.priority.name)) return false;
     if (trackers.length && !trackers.includes(issue.tracker.name)) return false;
@@ -89,10 +97,10 @@ export function WorkPage() {
     const aRank = priorityRank.get(a.priority.id) ?? a.priority.id;
     const bRank = priorityRank.get(b.priority.id) ?? b.priority.id;
     return bRank - aRank || (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999');
-  }), [available, search, sort, statuses, priorities, trackers, priorityRank]);
+  }), [available, search, sort, statuses, priorities, trackers, priorityRank, quickView]);
 
-  const activeFilterCount = statuses.length + priorities.length + trackers.length;
-  const clearStructuredFilters = () => { setStatuses([]); setPriorities([]); setTrackers([]); };
+  const activeFilterCount = statuses.length + priorities.length + trackers.length + (quickView === 'all' ? 0 : 1);
+  const clearStructuredFilters = () => { setStatuses([]); setPriorities([]); setTrackers([]); setQuickView('all'); };
   const clearAll = () => { setSearch(''); clearStructuredFilters(); };
   const saveCurrentFilter = async () => {
     const name = filterName.trim();
@@ -103,6 +111,7 @@ export function WorkPage() {
     notifications.show({ message: `Filter „${name}“ gespeichert`, color: 'green' });
   };
   const applySaved = (saved: SavedFilter) => {
+    setQuickView('all');
     setSearch(saved.search); setSort(saved.sort); setStatuses(saved.statuses); setPriorities(saved.priorities); setTrackers(saved.trackers);
     void setSetting('workSort', saved.sort);
   };
@@ -112,20 +121,47 @@ export function WorkPage() {
   };
 
   const firstSyncLoading = records.length === 0 && syncStatus?.state === 'syncing';
+  const quickOptions: Array<{ key: QuickView; label: string; count: number }> = [
+    { key: 'all', label: 'Alle offen', count: available.length },
+    { key: 'today', label: 'Heute fällig', count: dueToday },
+    { key: 'late', label: 'Überfällig', count: overdue },
+  ];
 
   return <Stack gap="md" maw={900} mx="auto" aria-busy={firstSyncLoading}>
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
-        <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Meine Arbeit</Title>
-        <Text c="dimmed" size="sm" mt={3}>Persönlich und über deine Gruppen zugewiesen</Text>
+        <Text className="page-kicker">Einsatzübersicht</Text>
+        <Title order={1} size="h2">Meine Arbeit</Title>
+        <Text className="page-subtitle" mt={4}>Deine eigenen Aufträge und Gruppenaufträge</Text>
       </Box>
-      <Stack gap={2} align="flex-end">
-        {available.length > 0 && <Badge variant="light" size="lg">{available.length} offen</Badge>}
-        {syncStatus?.lastSuccess && <Text size="xs" c="dimmed">Stand {new Date(syncStatus.lastSuccess).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</Text>}
-      </Stack>
+      {syncStatus?.lastSuccess && <Text size="xs" c="dimmed" fw={650} ta="right">
+        <UIIcon name="check-circle" size={12} /> Stand {new Date(syncStatus.lastSuccess).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+      </Text>}
     </Group>
 
-    <Paper withBorder p="sm" pos="sticky" top={76} className="work-toolbar">
+    <Box className="summary-strip">
+      <Group justify="space-between" align="flex-end" wrap="nowrap">
+        <Box>
+          <Text size="xs" fw={800} tt="uppercase" style={{ letterSpacing: '.1em', color: '#c9e4e8' }}>Aufträge im Blick</Text>
+          <Group align="baseline" gap={10} mt={8} wrap="nowrap">
+            <Text className="summary-count">{available.length}</Text>
+            <Text className="summary-caption">offene Aufträge für dich und deine Teams</Text>
+          </Group>
+        </Box>
+        <Box c="white" style={{ opacity: .78 }}><UIIcon name="work" size={34} strokeWidth={1.35} /></Box>
+      </Group>
+    </Box>
+
+    <Box className="quick-stats" role="group" aria-label="Aufträge nach Fälligkeit eingrenzen">
+      {quickOptions.map((option) => <UnstyledButton key={option.key} className="quick-stat"
+        data-active={quickView === option.key} aria-pressed={quickView === option.key}
+        onClick={() => setQuickView(quickView === option.key && option.key !== 'all' ? 'all' : option.key)}>
+        <span className="quick-stat-count" style={{ color: option.key === 'late' && option.count ? '#b85043' : option.key === 'today' && option.count ? '#9c6a16' : '#1b5067' }}>{option.count}</span>
+        <span className="quick-stat-label">{option.label}</span>
+      </UnstyledButton>)}
+    </Box>
+
+    <Paper withBorder p="sm" pos="sticky" top={78} className="work-toolbar">
       <Stack gap="xs">
         <Group gap="xs" wrap="nowrap">
           <TextInput
@@ -133,8 +169,8 @@ export function WorkPage() {
             onChange={(event) => setSearch(event.currentTarget.value)}
             placeholder="Titel, Ort, Auftrag …"
             aria-label="Aufträge durchsuchen"
-            leftSection={<Text aria-hidden="true" fw={800}>⌕</Text>}
-            rightSection={search ? <ActionIcon size={34} variant="subtle" color="gray" aria-label="Suche leeren" onClick={() => setSearch('')}>×</ActionIcon> : undefined}
+            leftSection={<UIIcon name="search" size={20} />}
+            rightSection={search ? <ActionIcon size={34} variant="subtle" color="gray" aria-label="Suche leeren" onClick={() => setSearch('')}><UIIcon name="close" size={16} /></ActionIcon> : undefined}
             style={{ flex: 1 }}
           />
           <ActionIcon
@@ -143,10 +179,10 @@ export function WorkPage() {
             aria-label={activeFilterCount ? `Filter, ${activeFilterCount} aktiv` : 'Filter'}
             onClick={() => setFilterOpen(true)}
           >
-            <Text fw={900} fz="lg">≡</Text>
+            <UIIcon name="filter" size={21} />
           </ActionIcon>
           <Menu position="bottom-end" shadow="md" width={210}>
-            <Menu.Target><ActionIcon variant="light" size={48} aria-label={`Sortierung: ${sortLabels[sort]}`}>↕</ActionIcon></Menu.Target>
+            <Menu.Target><ActionIcon variant="light" size={48} aria-label={`Sortierung: ${sortLabels[sort]}`} ><UIIcon name="sort" size={21} /></ActionIcon></Menu.Target>
             <Menu.Dropdown>
               <Menu.Label>Sortieren nach</Menu.Label>
               {(Object.entries(sortLabels) as [SortKey, string][]).map(([value, label]) => <Menu.Item key={value} onClick={() => { setSort(value); void setSetting('workSort', value); }}>
@@ -187,7 +223,8 @@ export function WorkPage() {
           <Text fw={800}>{records.length === 0 ? 'Keine offenen Aufträge' : 'Keine passenden Aufträge'}</Text>
           <Text size="sm" c="dimmed" mt={4}>{records.length === 0 ? 'Aktuell ist dir und deinen Gruppen nichts Offenes zugewiesen.' : 'Passe Suche oder Filter an.'}</Text>
         </Box>
-        {records.length > 0 && <Button variant="light" onClick={clearAll}>Filter zurücksetzen</Button>}
+        {records.length > 0 ? <Button variant="light" onClick={clearAll} leftSection={<UIIcon name="refresh" size={17} />}>Filter zurücksetzen</Button>
+          : <Button variant="light" component={Link} to="/tickets" leftSection={<UIIcon name="tickets" size={17} />}>Ticket-Browser öffnen</Button>}
       </Stack>
     </Paper> : <Stack gap="sm">{issues.map((issue) => <IssueCard key={issue.id} issue={issue} />)}</Stack>}
 
