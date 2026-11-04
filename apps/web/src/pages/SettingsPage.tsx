@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
+import { Alert, Badge, Box, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
