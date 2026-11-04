@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: [
         'derkumpel-logo-v2.png',
@@ -32,20 +35,9 @@ export default defineConfig({
           { src: '/derkumpel-icon-maskable-512-v2.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        navigateFallback: '/index.html',
-        cleanupOutdatedCaches: true,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/sgx\.geodatenzentrum\.de\/wmts_basemapde\/tile\//,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'derkumpel-map',
-              expiration: { maxEntries: 3000, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+      injectManifest: {
+        // Static JS, CSS, app shell and brand assets; API payloads are never precached.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),
   ],
