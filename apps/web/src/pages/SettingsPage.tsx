@@ -6,13 +6,15 @@ import { clearBusinessData, db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { boundsAround, prefetchOfflineMap } from '../mapOffline';
 import type { NamedRef, PublicConfig } from '../types';
+import { Link } from 'react-router-dom';
+import { UIIcon, type IconName } from '../components/UIIcon';
 
 type NotificationPreferences = { assignment: boolean; status: boolean; comment: boolean; priority: boolean; dates: boolean };
 const DEFAULT_NOTIFICATIONS: NotificationPreferences = { assignment: true, status: true, comment: true, priority: true, dates: true };
 
-function SectionHeading({ icon, title, description }: { icon: string; title: string; description: string }) {
+function SectionHeading({ icon, title, description }: { icon: IconName; title: string; description: string }) {
   return <Group gap="sm" align="flex-start" wrap="nowrap">
-    <ThemeIcon size={38} radius="md" variant="light">{icon}</ThemeIcon>
+    <ThemeIcon size={40} radius="md" variant="light" color="brand"><UIIcon name={icon} size={21} /></ThemeIcon>
     <Box><Text fw={850}>{title}</Text><Text size="sm" c="dimmed" mt={2}>{description}</Text></Box>
   </Group>;
 }
@@ -62,23 +64,24 @@ export function SettingsPage() {
 
   return <Stack gap="md" maw={820} mx="auto">
     <Box className="page-heading">
-      <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Einstellungen</Title>
-      <Text c="dimmed" size="sm" mt={3}>Offline-Verhalten, Arbeitsliste und dieses Gerät</Text>
+      <Text className="page-kicker">Dein Gerät · deine Arbeit</Text>
+      <Title order={1} size="h2">Einstellungen</Title>
+      <Text className="page-subtitle" mt={4}>Offline-Modus und persönliche Arbeitsansicht einrichten</Text>
     </Box>
 
-    {pendingCount > 0 && <Alert color="orange" variant="light" title={`${pendingCount} lokale Änderung(en) offen`}>Löschen oder Abmelden ist erst sinnvoll, nachdem diese Änderungen synchronisiert wurden.</Alert>}
+    {pendingCount > 0 && <Alert color="orange" variant="light" title={`${pendingCount} lokale Änderung(en) noch offen`}>Die Änderungen werden auf diesem Gerät geschützt. <Button component={Link} to="/sync" variant="subtle" color="orange" size="compact-sm" rightSection={<UIIcon name="chevron-right" size={14} />}>Zum Sync-Center</Button></Alert>}
 
-    <Card withBorder className="surface-card">
+    <Card withBorder className="surface-card settings-section">
       <Stack gap="lg">
-        <SectionHeading icon="↧" title="Offline-Daten" description="Wie lange abgeschlossene oder nicht mehr zugewiesene Aufträge auf dem Gerät bleiben." />
+        <SectionHeading icon="download" title="Offline-Daten" description="Wie lange abgeschlossene oder nicht mehr zugewiesene Aufträge auf dem Gerät bleiben." />
         <NumberInput label="Aufträge lokal behalten" description="Tage nach letzter Zuweisung, Standard 30" min={1} max={180} value={retention} onChange={(value) => { const next = typeof value === 'number' ? value : 30; setRetention(next); void setSetting('retentionDays', next); }} suffix=" Tage" />
-        <Button variant="light" color="red" onClick={() => setConfirmClear(true)}>Offline-Daten löschen</Button>
+        <Button variant="light" color="red" leftSection={<UIIcon name="trash" size={17} />} disabled={pendingCount > 0} onClick={() => setConfirmClear(true)}>Offline-Daten löschen</Button>
       </Stack>
     </Card>
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="▣" title="Arbeitsliste" description="Tracker ausblenden, die du unterwegs nicht in „Meine Arbeit“ brauchst." />
+        <SectionHeading icon="work" title="Arbeitsliste" description="Tracker ausblenden, die du unterwegs nicht in „Meine Arbeit“ brauchst." />
         {trackers.length === 0 ? <Text size="sm" c="dimmed">Noch keine Tracker geladen.</Text> : <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
           {trackers.map((tracker) => <Checkbox key={tracker.id} checked={!excluded.includes(tracker.id)} onChange={(event) => void toggleTracker(tracker.id, event.currentTarget.checked)} label={tracker.name} />)}
         </SimpleGrid>}
@@ -87,12 +90,12 @@ export function SettingsPage() {
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="⌖" title="Offline-Karte" description="Kartenmaterial für typische Funklöcher vorab auf diesem Gerät speichern." />
+        <SectionHeading icon="map" title="Offline-Karte" description="Kartenmaterial für typische Funklöcher vorab auf diesem Gerät speichern." />
         <Switch checked={offlineMaps} onChange={(event) => { setOfflineMaps(event.currentTarget.checked); void setSetting('offlineMaps', event.currentTarget.checked); }} label="Kartenbereich offline vorladen" description="Standardmäßig deaktiviert, um Gerätespeicher zu sparen" />
         {offlineMaps && <Stack gap="sm">
           <Alert color="blue" variant="light">Es wird die konfigurierte Verwaltungsgrenze verwendet; falls keine gesetzt ist, ein Radius von {config.offlineMapRadiusKm} km um das Standardgebiet.</Alert>
-          <Button onClick={() => void downloadMap()} disabled={!navigator.onLine || Boolean(mapProgress)}>{mapProgress ? 'Offlinekarte wird geladen …' : 'Offlinekarte laden / aktualisieren'}</Button>
-          {mapProgress && <Progress value={mapProgress[1] ? mapProgress[0] / mapProgress[1] * 100 : 0} animated />}
+          <Button onClick={() => void downloadMap()} disabled={!navigator.onLine || Boolean(mapProgress)} loading={Boolean(mapProgress)} leftSection={<UIIcon name="download" size={18} />}>{mapProgress ? 'Offlinekarte wird geladen …' : 'Offlinekarte laden / aktualisieren'}</Button>
+          {mapProgress && <Progress value={mapProgress[1] ? mapProgress[0] / mapProgress[1] * 100 : 0} animated aria-label={`${mapProgress[0]} von ${mapProgress[1]} Kartenkacheln gespeichert`} />}
           {!navigator.onLine && <Text size="xs" c="dimmed">Zum Aktualisieren der Offlinekarte wird eine Internetverbindung benötigt.</Text>}
         </Stack>}
       </Stack>
@@ -100,7 +103,7 @@ export function SettingsPage() {
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="◉" title="Benachrichtigungen" description="Lege fest, welche Änderungen ein späterer Push-Dienst melden soll." />
+        <SectionHeading icon="info" title="Benachrichtigungen" description="Lege fest, welche Änderungen ein späterer Push-Dienst melden soll." />
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
           <Switch checked={notificationPrefs.assignment} onChange={(event) => void setNotification('assignment', event.currentTarget.checked)} label="Neue Zuweisungen" />
           <Switch checked={notificationPrefs.status} onChange={(event) => void setNotification('status', event.currentTarget.checked)} label="Statusänderungen" />
@@ -114,9 +117,9 @@ export function SettingsPage() {
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="◎" title="Konto & Gerät" description="Dieses Gerät ist für die persönliche Offline-Arbeit gedacht." />
+        <SectionHeading icon="shield" title="Konto & Gerät" description="Dieses Gerät ist für die persönliche Offline-Arbeit gedacht." />
         <Text size="sm" c="dimmed">Beim Abmelden werden die gecachten Arbeitsdaten dieses Kontos vom Gerät entfernt. Redmine selbst bleibt unverändert.</Text>
-        <Button variant="light" color="red" onClick={() => setConfirmLogout(true)}>Von diesem Gerät abmelden</Button>
+        <Button variant="light" color="red" leftSection={<UIIcon name="logout" size={17} />} disabled={pendingCount > 0} onClick={() => setConfirmLogout(true)}>Von diesem Gerät abmelden</Button>
       </Stack>
     </Card>
 
@@ -124,7 +127,7 @@ export function SettingsPage() {
       <Stack>
         <Text>Alle lokal gecachten Aufträge, Anhänge und noch nicht synchronisierten Änderungen werden von diesem Gerät gelöscht. Redmine-Daten bleiben unverändert.</Text>
         {pendingCount > 0 && <Alert color="red">Achtung: {pendingCount} noch nicht synchronisierte Änderung(en) würden verloren gehen.</Alert>}
-        <Group grow><Button variant="default" onClick={() => setConfirmClear(false)}>Abbrechen</Button><Button color="red" onClick={() => void clearBusinessData().then(() => { setConfirmClear(false); notifications.show({ message: 'Offline-Daten gelöscht' }); })}>Endgültig löschen</Button></Group>
+        <Group grow><Button variant="default" onClick={() => setConfirmClear(false)}>Abbrechen</Button><Button color="red" disabled={pendingCount > 0} onClick={() => void clearBusinessData().then(() => { setConfirmClear(false); notifications.show({ message: 'Offline-Daten gelöscht' }); })}>Endgültig löschen</Button></Group>
       </Stack>
     </Modal>
 
