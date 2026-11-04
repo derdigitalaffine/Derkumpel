@@ -137,8 +137,8 @@ if [[ -n $PUBLIC_KEY || -n $PRIVATE_KEY ]]; then
     die 'Vorhandene VAPID-Schlüssel sind ungültig. Kein automatisches Überschreiben.'
 fi
 if [[ -n $EVENT_TOKEN ]]; then
-  [[ $EVENT_TOKEN =~ ^[0-9a-fA-F]{64}$ ]] ||
-    die 'Vorhandenes PUSH_EVENT_TOKEN ist kein 64-stelliges Hex-Secret.'
+  [[ $EVENT_TOKEN =~ ^[A-Za-z0-9_-]{32,256}$ ]] ||
+    die 'Vorhandenes PUSH_EVENT_TOKEN muss 32–256 sichere alphanumerische/Base64url-Zeichen enthalten.'
 fi
 if [[ -z $SUBJECT ]]; then
   SUBJECT=$CURRENT_SUBJECT
