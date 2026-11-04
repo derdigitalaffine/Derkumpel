@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Badge, Box, Group, Loader, Paper, SegmentedControl, Stack, Text, Title } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Box, Button, Collapse, Group, Loader, MultiSelect, Paper, SegmentedControl, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { Map, Marker, NavigationControl } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +11,8 @@ import type { RedmineIssue } from '../types';
 import { UIIcon } from '../components/UIIcon';
 
 type MapScope = 'mine' | 'visible';
+type MapFilters = { statuses: string[]; trackers: string[]; priorities: string[]; projects: string[] };
+const EMPTY_FILTERS: MapFilters = { statuses: [], trackers: [], priorities: [], projects: [] };
 
 export function MapPage() {
   const query = useCallback(() => db.issues.where('active').equals(1).toArray(), []);
@@ -23,10 +25,15 @@ export function MapPage() {
   const [mapReady, setMapReady] = useState(false);
   const [mapLoading, setMapLoading] = useState(true);
   const [scope, setScope] = useState<MapScope>('mine');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<MapFilters>(EMPTY_FILTERS);
   const [visibleIssues, setVisibleIssues] = useState<RedmineIssue[]>([]);
   const [visibleLoaded, setVisibleLoaded] = useState(false);
 
-  useEffect(() => { void getSetting<MapScope>('mapScope', 'mine').then(setScope); }, []);
+  useEffect(() => {
+    void getSetting<MapScope>('mapScope', 'mine').then(setScope);
+    void getSetting<MapFilters>('mapFilters', EMPTY_FILTERS).then(setFilters);
+  }, []);
   useEffect(() => {
     if (scope !== 'visible') return;
     if (!navigator.onLine) {
@@ -46,8 +53,29 @@ export function MapPage() {
     return () => { disposed = true; };
   }, [scope]);
 
-  const issues = useMemo(() => scope === 'visible' && visibleLoaded ? visibleIssues : records.map((record) => record.data), [scope, visibleLoaded, visibleIssues, records]);
+  const sourceIssues = useMemo(() => scope === 'visible' && visibleLoaded
+    ? visibleIssues : records.map((record) => record.data), [scope, visibleLoaded, visibleIssues, records]);
+  const options = useMemo(() => ({
+    statuses: [...new Set(sourceIssues.map((issue) => issue.status.name))].sort(),
+    trackers: [...new Set(sourceIssues.map((issue) => issue.tracker.name))].sort(),
+    priorities: [...new Set(sourceIssues.map((issue) => issue.priority.name))].sort(),
+    projects: [...new Set(sourceIssues.map((issue) => issue.project.name))].sort(),
+  }), [sourceIssues]);
+  const issues = useMemo(() => sourceIssues.filter((issue) =>
+    (!filters.statuses.length || filters.statuses.includes(issue.status.name)) &&
+    (!filters.trackers.length || filters.trackers.includes(issue.tracker.name)) &&
+    (!filters.priorities.length || filters.priorities.includes(issue.priority.name)) &&
+    (!filters.projects.length || filters.projects.includes(issue.project.name))
+  ), [sourceIssues, filters]);
   const mappedCount = useMemo(() => issues.filter((issue) => Boolean(issueCoordinates(issue))).length, [issues]);
+  const activeFilters = Object.values(filters).reduce((sum, values) => sum + values.length, 0);
+  const changeFilter = (name: keyof MapFilters, values: string[]) => {
+    const next = { ...filters, [name]: values };
+    setFilters(next);
+    void setSetting('mapFilters', next);
+  };
+  const resetFilters = () => { setFilters(EMPTY_FILTERS); void setSetting('mapFilters', EMPTY_FILTERS); };
+
 
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
@@ -181,12 +209,48 @@ export function MapPage() {
       </Group>
     </Group>
 
-    <Paper p={4} withBorder className="map-toolbar">
-      <SegmentedControl fullWidth value={scope} onChange={changeScope} data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
+    <Paper p="sm" withBorder className="map-toolbar">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Box>
+            <Text fw={800} size="sm">Kartenauswahl</Text>
+            <Text size="xs" c="dimmed">{issues.length} passende Tickets · {mappedCount} mit Standort</Text>
+          </Box>
+          <Button size="sm" variant={activeFilters ? 'filled' : 'light'}
+            leftSection={<UIIcon name="filter" size={17} />}
+            rightSection={<UIIcon name={filtersOpen ? 'chevron-left' : 'chevron-right'} size={15} />}
+            onClick={() => setFiltersOpen((current) => !current)}
+            aria-expanded={filtersOpen} aria-controls="map-filters">
+            Filter {activeFilters ? `(${activeFilters})` : ''}
+          </Button>
+        </Group>
+        <Collapse in={filtersOpen} id="map-filters">
+          <Stack gap="sm" pt="xs">
+            <SegmentedControl fullWidth size="sm" value={scope} onChange={changeScope}
+              data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]}
+              aria-label="Auftragsumfang auf der Karte" />
+            <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+              <MultiSelect size="sm" label="Tracker" searchable clearable data={options.trackers}
+                value={filters.trackers} onChange={(values) => changeFilter('trackers', values)} placeholder="Alle Tracker" />
+              <MultiSelect size="sm" label="Status" searchable clearable data={options.statuses}
+                value={filters.statuses} onChange={(values) => changeFilter('statuses', values)} placeholder="Alle Status" />
+              <MultiSelect size="sm" label="Prioritäten" searchable clearable data={options.priorities}
+                value={filters.priorities} onChange={(values) => changeFilter('priorities', values)} placeholder="Alle Prioritäten" />
+              <MultiSelect size="sm" label="Projekte" searchable clearable data={options.projects}
+                value={filters.projects} onChange={(values) => changeFilter('projects', values)} placeholder="Alle Projekte" />
+            </SimpleGrid>
+            <Group justify="space-between">
+              <Text size="xs" c="dimmed">Gespeichert auf diesem Gerät</Text>
+              <Button size="compact-sm" variant="subtle" color="gray" disabled={!activeFilters}
+                onClick={resetFilters}>Zurücksetzen</Button>
+            </Group>
+          </Stack>
+        </Collapse>
+      </Stack>
     </Paper>
 
     {error && <Alert color="orange" variant="light">{error}</Alert>}
-    {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Ticket-Koordinaten">Die Karte bleibt sichtbar und ist auf Otterbach–Otterberg zentriert. Sobald Tickets Koordinaten enthalten, erscheinen sie hier automatisch.</Alert>}
+    {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Standorte in dieser Auswahl">Die Karte bleibt auf Otterbach–Otterberg zentriert. Prüfe die Filter oder die Koordinaten der Tickets.</Alert>}
 
     <Paper withBorder p={0} className="map-shell" pos="relative">
       {mapLoading && <Box pos="absolute" inset={0} style={{ zIndex: 2, pointerEvents: 'none', background: 'linear-gradient(140deg,#e7f1f1,#eef5f7)' }}>
