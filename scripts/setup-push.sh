@@ -159,6 +159,51 @@ if [[ $PUSH_MODE == plugin && $APP_ONLY != true ]]; then
   fi
 fi
 
+POLL_API_KEY=''
+if [[ $PUSH_MODE == polling ]]; then
+  [[ $(read_env REDMINE_BASE_URL) =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
+    die 'REDMINE_BASE_URL muss für Polling HTTPS ohne Pfad nutzen.'
+  if [[ -n $API_KEY_FILE ]]; then
+    [[ -f $API_KEY_FILE && ! -L $API_KEY_FILE ]] || die 'API-Key-Datei fehlt oder ist ein Symlink.'
+    [[ $(stat -c '%a' "$API_KEY_FILE") == 600 ]] ||
+      die 'API-Key-Datei muss Berechtigungen 0600 haben (chmod 600 ...).'
+    IFS= read -r POLL_API_KEY < "$API_KEY_FILE" || true
+  else
+    POLL_API_KEY=$(read_env PUSH_POLL_API_KEY)
+  fi
+  if [[ -z $POLL_API_KEY ]]; then
+    [[ -t 0 ]] || die 'Polling benötigt --redmine-api-key-file oder PUSH_POLL_API_KEY in .env.'
+    printf 'Redmine-Administrator-API-Key (Eingabe unsichtbar): ' >&2
+    IFS= read -r -s POLL_API_KEY
+    printf '\n' >&2
+  fi
+  [[ $POLL_API_KEY =~ ^[A-Za-z0-9_-]{32,128}$ ]] ||
+    die 'Der API-Key muss mindestens 32 sichere Zeichen enthalten.'
+  if [[ -z $POLL_INTERVAL ]]; then
+    POLL_INTERVAL=$(read_env PUSH_POLL_INTERVAL_SECONDS)
+    [[ -n $POLL_INTERVAL ]] || POLL_INTERVAL=90
+  fi
+  [[ $POLL_INTERVAL =~ ^[0-9]+$ ]] && ((POLL_INTERVAL >= 30 && POLL_INTERVAL <= 3600)) ||
+    die 'Polling-Intervall muss zwischen 30 und 3600 Sekunden liegen.'
+  need curl
+  REDMINE_URL=$(read_env REDMINE_BASE_URL)
+  response_file=$(mktemp)
+  # Send admin key as curl config on stdin, never process arguments or logs.
+  if ! printf 'header = "X-Redmine-API-Key: %s"\n' "$POLL_API_KEY" |
+       curl --config - --silent --show-error --fail --max-time 18 \
+         --proto '=https' --max-redirs 0 -o "$response_file" \
+         "${REDMINE_URL%/}/users.json?limit=1"; then
+    rm -f -- "$response_file"
+    die 'Redmine-Admin-API-Zugriff fehlgeschlagen. Kein Setup durchgeführt.'
+  fi
+  if ! grep -Eq '"users"[[:space:]]*:' "$response_file"; then
+    rm -f -- "$response_file"
+    die 'Redmine lieferte keine Admin-Benutzerliste.'
+  fi
+  rm -f -- "$response_file"
+  say 'Redmine-Administrator-API-Zugriff erfolgreich geprüft.'
+fi
+
 PUBLIC_KEY=$(read_env PUSH_VAPID_PUBLIC_KEY)
 PRIVATE_KEY=$(read_env PUSH_VAPID_PRIVATE_KEY)
 EVENT_TOKEN=$(read_env PUSH_EVENT_TOKEN)
@@ -210,9 +255,16 @@ fi
 
 # Atomically replace only Push keys; do not print or leak private values.
 TEMP_ENV=$(mktemp "$ROOT/.env.push.tmp.XXXXXXXX")
-awk '!/^PUSH_(ENABLED|VAPID_PUBLIC_KEY|VAPID_PRIVATE_KEY|VAPID_SUBJECT|EVENT_TOKEN|STORE_FILE)=/ { if ($0 ~ /^[[:space:]]*$/) { blank = blank $0 "\n"; next } printf "%s\n", blank $0; blank = "" }' "$ENV_FILE" > "$TEMP_ENV"
+awk '!/^PUSH_(ENABLED|MODE|VAPID_PUBLIC_KEY|VAPID_PRIVATE_KEY|VAPID_SUBJECT|EVENT_TOKEN|STORE_FILE|POLL_API_KEY|POLL_INTERVAL_SECONDS|POLL_STATE_FILE)=/ { if ($0 ~ /^[[:space:]]*$/) { blank = blank $0 "\n"; next } printf "%s\n", blank $0; blank = "" }' "$ENV_FILE" > "$TEMP_ENV"
 printf '\nPUSH_ENABLED=true\nPUSH_VAPID_PUBLIC_KEY=%s\nPUSH_VAPID_PRIVATE_KEY=%s\nPUSH_VAPID_SUBJECT=%s\nPUSH_EVENT_TOKEN=%s\nPUSH_STORE_FILE=/app/push-data/subscriptions.json\n' \
   "$PUBLIC_KEY" "$PRIVATE_KEY" "$SUBJECT" "$EVENT_TOKEN" >> "$TEMP_ENV"
+printf 'PUSH_MODE=%s\n' "$PUSH_MODE" >> "$TEMP_ENV"
+if [[ $PUSH_MODE == polling ]]; then
+  printf 'PUSH_POLL_API_KEY=%s\nPUSH_POLL_INTERVAL_SECONDS=%s\nPUSH_POLL_STATE_FILE=/app/push-data/polling-state.json\n' \
+    "$POLL_API_KEY" "$POLL_INTERVAL" >> "$TEMP_ENV"
+else
+  printf 'PUSH_POLL_API_KEY=\n' >> "$TEMP_ENV"
+fi
 chmod 600 "$TEMP_ENV"
 mv -f "$TEMP_ENV" "$ENV_FILE"
 TEMP_ENV=''
@@ -232,6 +284,12 @@ for attempt in {1..20}; do
 done
 [[ $ready == true ]] || die 'Push-Endpunkt im Container nicht bereit. Bitte docker compose logs app prüfen.'
 say 'Push-API im App-Container erfolgreich geprüft.'
+
+if [[ $PUSH_MODE == polling ]]; then
+  say 'Pluginfreies Polling aktiviert – kein Redmine-Plugin und kein SSH-Zugriff erforderlich.'
+  say 'Im Handy: Mehr → Push-Benachrichtigungen → Push erlauben.'
+  exit 0
+fi
 
 if [[ $APP_ONLY == true ]]; then
   say 'Nur DerKumpel aktiviert. Redmine-Plugin ist noch NICHT installiert.'
