@@ -1,27 +1,14 @@
 import { ActionIcon, Alert, Badge, Box, Group, Loader, Paper, SegmentedControl, Stack, Text, Title } from '@mantine/core';
-import { Map, Marker, NavigationControl, type StyleSpecification } from 'maplibre-gl';
+import { Map, Marker, NavigationControl } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { issueCoordinates } from '../issueUtils';
+import { BASEMAP_RASTER_STYLE, OTTERBACH_OTTERBERG_CENTER } from '../mapStyle';
 import type { RedmineIssue } from '../types';
 
-const DEFAULT_STYLE = 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json';
-const OTTERBACH_OTTERBERG_CENTER: [number, number] = [7.7546, 49.4944];
-const FALLBACK_RASTER_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    basemap: {
-      type: 'raster',
-      tiles: ['https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png'],
-      tileSize: 256,
-      attribution: '© basemap.de / BKG',
-    },
-  },
-  layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-};
 type MapScope = 'mine' | 'visible';
 
 export function MapPage() {
@@ -34,7 +21,6 @@ export function MapPage() {
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
   const [mapLoading, setMapLoading] = useState(true);
-  const [usingRasterFallback, setUsingRasterFallback] = useState(false);
   const [scope, setScope] = useState<MapScope>('mine');
   const [visibleIssues, setVisibleIssues] = useState<RedmineIssue[]>([]);
   const [visibleLoaded, setVisibleLoaded] = useState(false);
@@ -65,7 +51,6 @@ export function MapPage() {
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
     let disposed = false;
-    let fallbackApplied = false;
     let loadTimer: number | undefined;
     let resizeObserver: ResizeObserver | undefined;
 
@@ -77,55 +62,44 @@ export function MapPage() {
       window.requestAnimationFrame(() => mapRef.current?.resize());
     };
 
-    const applyRasterFallback = (reason: string) => {
-      const map = mapRef.current;
-      if (!map || fallbackApplied || disposed) return;
-      fallbackApplied = true;
-      setUsingRasterFallback(true);
-      setError(`Vektorkarte konnte nicht geladen werden (${reason}). DerKumpel verwendet die basemap.de-Rasterkarte.`);
-      try {
-        map.setStyle(FALLBACK_RASTER_STYLE);
-        window.requestAnimationFrame(() => map.resize());
-      } catch {
+    try {
+      // A local raster style object avoids the remote vector-style JSON request entirely.
+      // This remains the default even when an old deployment .env still has MAP_STYLE_URL
+      // pointing at the legacy basemap.de vector style.
+      const map = new Map({
+        container: mapNode.current,
+        style: BASEMAP_RASTER_STYLE,
+        center: OTTERBACH_OTTERBERG_CENTER,
+        zoom: 11,
+        attributionControl: {},
+      });
+      mapRef.current = map;
+      map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+      map.once('load', markReady);
+      map.once('style.load', markReady);
+      map.on('error', (event) => {
+        if (disposed) return;
+        const message = event.error instanceof Error ? event.error.message : 'Netzwerk- oder Grafikfehler';
         setMapLoading(false);
-        setError('Die Karte konnte auf diesem Gerät nicht initialisiert werden. Bitte Browser/WebView und Grafikbeschleunigung prüfen.');
-      }
-    };
-
-    void api.config().catch(() => ({ mapStyleUrl: DEFAULT_STYLE, mapCenter: OTTERBACH_OTTERBERG_CENTER })).then((config) => {
-      if (disposed || !mapNode.current || mapRef.current) return;
-      try {
-        const map = new Map({
-          container: mapNode.current,
-          style: config.mapStyleUrl || DEFAULT_STYLE,
-          center: OTTERBACH_OTTERBERG_CENTER,
-          zoom: 11,
-          attributionControl: {},
-        });
-        mapRef.current = map;
-        map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-        map.on('load', markReady);
-        map.on('style.load', markReady);
-        map.on('error', (event) => {
-          if (!map.isStyleLoaded() && !fallbackApplied) {
-            const message = event.error instanceof Error ? event.error.message : 'Style-Fehler';
-            applyRasterFallback(message);
-          }
-        });
-
+        setError(`Kartenkacheln konnten nicht geladen werden: ${message}. Bitte Internetverbindung und Kartenhost prüfen.`);
+      });
+      if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => map.resize());
         resizeObserver.observe(mapNode.current);
-        window.requestAnimationFrame(() => map.resize());
-        loadTimer = window.setTimeout(() => {
-          if (!map.isStyleLoaded()) applyRasterFallback('Zeitüberschreitung beim Kartenstil');
-        }, 6500);
-      } catch (initializationError) {
-        setMapLoading(false);
-        setError(initializationError instanceof Error
-          ? `Karte konnte nicht gestartet werden: ${initializationError.message}`
-          : 'Karte konnte auf diesem Gerät nicht gestartet werden.');
       }
-    });
+      window.requestAnimationFrame(() => map.resize());
+      loadTimer = window.setTimeout(() => {
+        if (!disposed && !map.isStyleLoaded()) {
+          setMapLoading(false);
+          setError('Die Rasterkarte konnte nicht initialisiert werden. Bitte Browser und Verbindung prüfen.');
+        }
+      }, 9000);
+    } catch (initializationError) {
+      setMapLoading(false);
+      setError(initializationError instanceof Error
+        ? `Karte konnte nicht gestartet werden: ${initializationError.message}`
+        : 'Karte konnte auf diesem Gerät nicht gestartet werden.');
+    }
 
     return () => {
       disposed = true;
@@ -190,10 +164,10 @@ export function MapPage() {
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
         <Title order={1} size="h2" style={{ letterSpacing: '-0.025em' }}>Karte</Title>
-        <Text c="dimmed" size="sm" mt={3}>Aufträge mit Koordinaten · Fallback-Zentrum Otterbach–Otterberg</Text>
+        <Text c="dimmed" size="sm" mt={3}>basemap.de Web Raster · Otterbach–Otterberg</Text>
       </Box>
       <Group gap="xs" wrap="nowrap">
-        <Badge variant="light" color={usingRasterFallback ? 'orange' : 'blue'} size="lg">{usingRasterFallback ? 'Raster' : `${mappedCount} Orte`}</Badge>
+        <Badge variant="light" color="blue" size="lg">{mappedCount} Orte</Badge>
         <ActionIcon size={48} variant="filled" onClick={locate} aria-label="Meine Position anzeigen">⌖</ActionIcon>
       </Group>
     </Group>
