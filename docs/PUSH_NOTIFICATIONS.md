@@ -2,6 +2,38 @@
 
 Web Push ist **optional**. Ohne Konfiguration arbeitet DerKumpel weiterhin wie bisher ohne Push. Der Hauptserver benötigt weder Redmine-Datenbankkopie noch Poller/Broker: Nur die Geräte-Abonnements werden im benannten Docker-Volume `push_data` gespeichert. Die Event-Quelle ist Redmine selbst.
 
+## Automatische Linux-Installation (empfohlen)
+
+Nach der normalen DerKumpel-Installation auf dem **DerKumpel-Linux-Server** aus dem Repository heraus ausführen:
+
+```bash
+# Wenn Redmine als klassischer Linux-/systemd-Dienst auf demselben Server läuft:
+./setup.sh push --redmine-path /opt/redmine --redmine-service redmine
+
+# Wenn Redmine als Docker-Compose-Projekt auf demselben Server läuft:
+./setup.sh push --redmine-compose-dir /opt/redmine-compose --redmine-service redmine
+
+# Wenn Redmine auf einem anderen Linux-Server läuft (SSH-Zugang mit sudo -n):
+./setup.sh push --redmine-ssh admin@redmine-host --redmine-path /opt/redmine
+
+# Oder Redmine remote als Docker Compose:
+./setup.sh push --redmine-ssh admin@redmine-host --redmine-compose-dir /opt/redmine
+```
+
+Falls exakt **eine** native Redmine-Installation in einem der üblichen Verzeichnisse erkannt wird, genügt `./setup.sh push`. Die Pfade und SSH-Namen oben sind **Beispiele** und müssen zur tatsächlichen Installation passen. Bei uneindeutiger oder unbekannter Installation bricht das Skript bewusst ab, statt den falschen Dienst zu ändern.
+
+Das Skript erledigt automatisch: Docker-Image bauen, VAPID-Schlüssel erzeugen oder **unverändert wiederverwenden**, starkes Webhook-Token erzeugen, ausschließlich Push-Variablen in der bestehenden `.env` sicher aktualisieren (Berechtigung `0600`), DerKumpel neu erstellen und den aktiven Push-Konfigurationsendpunkt prüfen. Anschließend wird das Plugin auf dem Redmine-Server installiert, sein Token über eine root-geschützte Environment-Datei konfiguriert und der Redmine-Dienst neu gestartet. Bei Docker Compose erstellt es eine dauerhaft automatisch berücksichtigte `compose.override.yaml` und eine persistente Host-Einbindung für das Plugin.
+
+**Voraussetzungen:** Linux mit Docker Engine/Compose v2 und OpenSSL; die DerKumpel-`.env` muss bereits existieren und `PUBLIC_BASE_URL` auf HTTPS zeigen. Für native Redmine-Installationen sind `sudo` und ein systemd-Service nötig. Für einen anderen Server benötigt der ausführende Benutzer SSH-Zugang mit **passwortlosem sudo** auf dem Zielhost. Ein vorhandenes fremdes Redmine-`compose.override.*` wird nicht überschrieben: in diesem Fall muss der Override vorab kontrolliert und zusammengeführt werden. Der Docker-Container nutzt standardmäßig `/usr/src/redmine/plugins/derkumpel_push`; bei anderen Images lässt sich dies mit `--redmine-plugin-dir` ändern.
+
+Wenn die Redmine-Installation anders verwaltet wird, kann mit `./setup.sh push --app-only` nur DerKumpel aktiviert werden; die Plugin-Integration aus Abschnitt 2 erfolgt dann getrennt. **`--app-only` bedeutet ausdrücklich: keine Push-Ereignisse aus Redmine**, solange dort kein Event-Adapter eingerichtet ist.
+
+Das Skript ist wiederholt ausführbar und **rotiert weder vorhandene VAPID-Schlüssel noch das Event-Token**. Es berührt `SESSION_SECRET` nicht. VAPID-Schlüssel dürfen nicht regelmäßig erneuert werden, sonst verlieren zuvor registrierte Geräte die Funktion. Die Schlüssel werden nicht im Terminal ausgegeben. Aus Sicherheitsgründen wird weder ein fremder Compose-Override automatisch ersetzt noch der Inhalt fremder `.env`-Dateien als Shell-Code ausgeführt. Vor der Installation eine Sicherung der Serverkonfiguration erstellen.
+
+**Nach der Installation:** Auf dem Handy in DerKumpel unter „Mehr → Push-Benachrichtigungen“ aktivieren und mit zwei Redmine-Konten testen. GitHub-CI prüft das Installationsskript mit simuliertem Docker/Secrets; sie kann keinen produktiven Redmine-Service neugestarten oder echte Geräte-Pushs bestätigen.
+
+---
+
 ## 1. DerKumpel konfigurieren
 
 In der DerKumpel-Installation einen stabilen VAPID-Schlüsselsatz erzeugen (nach `npm ci`):
