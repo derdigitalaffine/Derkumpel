@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Badge, Box, Group, Loader, Paper, SegmentedControl, Stack, Text, Title } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Box, Button, Collapse, Group, Loader, MultiSelect, Paper, SegmentedControl, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { Map, Marker, NavigationControl } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -6,11 +6,14 @@ import { api } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { issueCoordinates } from '../issueUtils';
+import { dueInfo } from '../components/IssueCard';
 import { BASEMAP_RASTER_STYLE, OTTERBACH_OTTERBERG_CENTER } from '../mapStyle';
 import type { RedmineIssue } from '../types';
 import { UIIcon } from '../components/UIIcon';
 
 type MapScope = 'mine' | 'visible';
+type MapFilters = { trackers: string[]; statuses: string[]; priorities: string[]; projects: string[]; onlyDue: boolean };
+const emptyFilters: MapFilters = { trackers: [], statuses: [], priorities: [], projects: [], onlyDue: false };
 
 export function MapPage() {
   const query = useCallback(() => db.issues.where('active').equals(1).toArray(), []);
@@ -23,10 +26,15 @@ export function MapPage() {
   const [mapReady, setMapReady] = useState(false);
   const [mapLoading, setMapLoading] = useState(true);
   const [scope, setScope] = useState<MapScope>('mine');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<MapFilters>(emptyFilters);
   const [visibleIssues, setVisibleIssues] = useState<RedmineIssue[]>([]);
   const [visibleLoaded, setVisibleLoaded] = useState(false);
 
-  useEffect(() => { void getSetting<MapScope>('mapScope', 'mine').then(setScope); }, []);
+  useEffect(() => {
+    void getSetting<MapScope>('mapScope', 'mine').then(setScope);
+    void getSetting<MapFilters>('mapFilters', emptyFilters).then((stored) => setFilters({ ...emptyFilters, ...stored }));
+  }, []);
   useEffect(() => {
     if (scope !== 'visible') return;
     if (!navigator.onLine) {
@@ -46,8 +54,24 @@ export function MapPage() {
     return () => { disposed = true; };
   }, [scope]);
 
-  const issues = useMemo(() => scope === 'visible' && visibleLoaded ? visibleIssues : records.map((record) => record.data), [scope, visibleLoaded, visibleIssues, records]);
+  const available = useMemo(() => scope === 'visible' && visibleLoaded ? visibleIssues : records.map((record) => record.data),
+    [scope, visibleLoaded, visibleIssues, records]);
+  const filterOptions = useMemo(() => {
+    const values = (getter: (issue: RedmineIssue) => string) => [...new Set(available.map(getter))].sort((a, b) => a.localeCompare(b, 'de'));
+    return { trackers: values((item) => item.tracker.name), statuses: values((item) => item.status.name),
+      priorities: values((item) => item.priority.name), projects: values((item) => item.project.name) };
+  }, [available]);
+  const issues = useMemo(() => available.filter((item) =>
+    (!filters.trackers.length || filters.trackers.includes(item.tracker.name)) &&
+    (!filters.statuses.length || filters.statuses.includes(item.status.name)) &&
+    (!filters.priorities.length || filters.priorities.includes(item.priority.name)) &&
+    (!filters.projects.length || filters.projects.includes(item.project.name)) &&
+    (!filters.onlyDue || ['red', 'orange'].includes(dueInfo(item.due_date).color))
+  ), [available, filters]);
   const mappedCount = useMemo(() => issues.filter((issue) => Boolean(issueCoordinates(issue))).length, [issues]);
+  const missingCount = issues.length - mappedCount;
+  const activeCount = filters.trackers.length + filters.statuses.length + filters.priorities.length + filters.projects.length + Number(filters.onlyDue);
+  const setMapFilters = (next: MapFilters) => { setFilters(next); void setSetting('mapFilters', next); };
 
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
@@ -181,12 +205,59 @@ export function MapPage() {
       </Group>
     </Group>
 
-    <Paper p={4} withBorder className="map-toolbar">
-      <SegmentedControl fullWidth value={scope} onChange={changeScope} data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
+    <Paper p="sm" withBorder className="map-toolbar">
+      <Stack gap="xs">
+        <Group gap="xs" wrap="nowrap" align="center">
+          <SegmentedControl style={{ flex: 1, minWidth: 0 }} size="sm" fullWidth
+            value={scope} onChange={changeScope}
+            data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]} />
+          <Button px={12} variant={activeCount ? 'filled' : 'light'} size="md"
+            leftSection={<UIIcon name="filter" size={18} />}
+            rightSection={<UIIcon name={filterOpen ? 'chevron-left' : 'sliders'} size={15} />}
+            aria-expanded={filterOpen} aria-controls="map-filter-options"
+            onClick={() => setFilterOpen((opened) => !opened)}>
+            Filter{activeCount ? ` (${activeCount})` : ''}
+          </Button>
+        </Group>
+        {activeCount > 0 && !filterOpen && <Group justify="space-between" gap="xs">
+          <Text size="xs" c="dimmed">{issues.length} von {available.length} Aufträgen ausgewählt</Text>
+          <Button variant="subtle" color="gray" size="compact-xs" onClick={() => setMapFilters(emptyFilters)}>Filter löschen</Button>
+        </Group>}
+        <Collapse in={filterOpen}>
+          <Stack gap="sm" pt="sm" id="map-filter-options">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <MultiSelect label="Tracker" placeholder="Alle Tracker" searchable clearable
+                data={filterOptions.trackers} value={filters.trackers}
+                onChange={(trackers) => setMapFilters({ ...filters, trackers })} />
+              <MultiSelect label="Status" placeholder="Alle Status" searchable clearable
+                data={filterOptions.statuses} value={filters.statuses}
+                onChange={(statuses) => setMapFilters({ ...filters, statuses })} />
+              <MultiSelect label="Priorität" placeholder="Alle Prioritäten" searchable clearable
+                data={filterOptions.priorities} value={filters.priorities}
+                onChange={(priorities) => setMapFilters({ ...filters, priorities })} />
+              <MultiSelect label="Projekt" placeholder="Alle Projekte" searchable clearable
+                data={filterOptions.projects} value={filters.projects}
+                onChange={(projects) => setMapFilters({ ...filters, projects })} />
+            </SimpleGrid>
+            <Group justify="space-between" align="center" gap="sm" wrap="wrap">
+              <Button variant={filters.onlyDue ? 'filled' : 'default'} size="sm"
+                onClick={() => setMapFilters({ ...filters, onlyDue: !filters.onlyDue })}
+                leftSection={<UIIcon name="calendar" size={17} />}>
+                Heute oder überfällig
+              </Button>
+              <Group gap="xs">
+                <Button variant="subtle" color="gray" size="sm" onClick={() => setMapFilters(emptyFilters)}>Zurücksetzen</Button>
+                <Button variant="light" size="sm" onClick={() => setFilterOpen(false)}>Karte anzeigen</Button>
+              </Group>
+            </Group>
+          </Stack>
+        </Collapse>
+      </Stack>
     </Paper>
 
     {error && <Alert color="orange" variant="light">{error}</Alert>}
-    {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Ticket-Koordinaten">Die Karte bleibt sichtbar und ist auf Otterbach–Otterberg zentriert. Sobald Tickets Koordinaten enthalten, erscheinen sie hier automatisch.</Alert>}
+    {mappedCount === 0 && <Alert color="blue" variant="light" title="Keine Aufträge mit Koordinaten">Die Basiskarte zeigt Otterbach–Otterberg. Entferne bei Bedarf Kartenfilter oder ergänze Koordinaten in Redmine.</Alert>}
+    {mappedCount > 0 && missingCount > 0 && <Text size="xs" c="dimmed">{missingCount} weitere Aufträge ohne Koordinaten werden nicht als Marker dargestellt.</Text>}
 
     <Paper withBorder p={0} className="map-shell" pos="relative">
       {mapLoading && <Box pos="absolute" inset={0} style={{ zIndex: 2, pointerEvents: 'none', background: 'linear-gradient(140deg,#e7f1f1,#eef5f7)' }}>
