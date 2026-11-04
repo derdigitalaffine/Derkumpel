@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import { clearBusinessData, getSetting, setSetting } from '../db';
 import type { CurrentUser } from '../types';
+import { UIIcon } from '../components/UIIcon';
 
 export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
   const network = useNetwork();
@@ -11,7 +12,8 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const canSubmit = network.online && username.trim().length > 0 && password.length > 0 && !loading;
+  const insecureOrigin = window.location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const canSubmit = !insecureOrigin && network.online && username.trim().length > 0 && password.length > 0 && !loading;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -31,21 +33,23 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
     }
   };
 
-  return <Center mih="100dvh" p={{ base: 'md', sm: 'xl' }}>
-    <Paper component="form" onSubmit={submit} withBorder shadow="md" p={{ base: 'xl', sm: 36 }} w="100%" maw={440} className="surface-card">
+  return <Center mih="100dvh" p={{ base: 'md', sm: 'xl' }} className="login-backdrop">
+    <Paper component="form" onSubmit={submit} withBorder shadow="md" p={{ base: 'xl', sm: 36 }} w="100%" maw={460} className="surface-card login-panel">
       <Stack gap="xl">
         <Stack align="center" gap="sm">
-          <Image src="/derkumpel-logo-v2.png" alt="DerKumpel – Bauhof-App" w="100%" maw={310} fit="contain" />
+          <Image src="/derkumpel-logo-v2.png" alt="DerKumpel – Bauhof-App" w="100%" maw={320} fit="contain" />
           <Title order={1} className="sr-only">DerKumpel</Title>
           <Box ta="center">
-            <Text c="dimmed">Deine Bauhof-Aufträge. Schnell, mobil und offline.</Text>
+            <Text fw={790} size="lg" c="brand.9">Willkommen bei DerKumpel</Text>
+            <Text c="dimmed" size="sm" mt={4}>Alle Bauhof-Aufträge griffbereit – direkt auf dem Diensthandy.</Text>
           </Box>
           <Group gap={6} justify="center">
-            <Badge variant="light" color="blue">Redmine</Badge>
-            <Badge variant="light" color="green">Offline-fähig</Badge>
+            <Badge variant="light" color="brand" leftSection={<UIIcon name="shield" size={13} />}>Redmine-Anmeldung</Badge>
+            <Badge variant="light" color="green" leftSection={<UIIcon name="wifi-off" size={13} />}>Offline arbeiten</Badge>
           </Group>
         </Stack>
 
+        {insecureOrigin && <Alert color="red" title="Unsichere Verbindung" variant="light">Bitte DerKumpel ausschließlich über HTTPS öffnen. Über HTTP werden keine Zugangsdaten übertragen.</Alert>}
         {!network.online && <Alert color="orange" title="Keine Verbindung" variant="light">
           Für die Anmeldung muss Redmine erreichbar sein. Wenn du auf diesem Gerät bereits angemeldet warst, öffnet DerKumpel den Offline-Modus automatisch, sobald die gespeicherte Sitzung erkannt wird.
         </Alert>}
@@ -56,6 +60,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
             label="Benutzername"
             description="Dein vorhandener Redmine-Zugang"
             autoComplete="username"
+            leftSection={<UIIcon name="user" size={19} />}
             autoFocus
             value={username}
             onChange={(event) => { setUsername(event.currentTarget.value); if (error) setError(''); }}
@@ -64,16 +69,17 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
           <PasswordInput
             label="Passwort"
             autoComplete="current-password"
+            leftSection={<UIIcon name="shield" size={19} />}
             value={password}
             onChange={(event) => { setPassword(event.currentTarget.value); if (error) setError(''); }}
             required
           />
-          <Button type="submit" size="lg" loading={loading} disabled={!canSubmit && !loading} mt={4}>
+          <Button type="submit" size="lg" fullWidth loading={loading} disabled={!canSubmit && !loading} mt={4} leftSection={<UIIcon name="check-circle" size={20} />}>
             {network.online ? 'Anmelden' : 'Offline'}
           </Button>
         </Stack>
 
-        <Text size="xs" c="dimmed" ta="center" lh={1.45}>Dein Passwort wird nicht im Offline-Speicher der App abgelegt. Nach erfolgreicher Anmeldung werden nur die für die mobile Arbeit benötigten Auftragsdaten lokal vorgehalten.</Text>
+        <Box className="login-trust"><Group gap={9} wrap="nowrap" align="flex-start"><UIIcon name="shield" size={20} /><Text size="xs" c="dimmed" lh={1.5}>Dein Passwort wird nicht in den lokalen Arbeitsdaten gespeichert. Nach der Anmeldung stehen bereits synchronisierte Aufträge auch im Funkloch zur Verfügung.</Text></Group></Box>
       </Stack>
     </Paper>
   </Center>;
