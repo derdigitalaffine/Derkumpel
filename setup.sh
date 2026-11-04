@@ -13,6 +13,7 @@ DerKumpel Setup
   ./setup.sh logs
   ./setup.sh update
   ./setup.sh caddy
+  ./setup.sh push-enable --contact mailto:admin@example.org
 
 `install` writes .env with a random session key and starts the app behind the
 expected external reverse proxy. `caddy` starts the optional Caddy profile.
@@ -64,8 +65,7 @@ SESSION_SECRET=$session_secret
 SESSION_MAX_AGE_DAYS=30
 REDMINE_TIMEOUT_MS=15000
 MAX_UPLOAD_MB=25
-MAP_STYLE_URL=https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json
-MAP_DEFAULT_CENTER=7.77,49.50
+MAP_DEFAULT_CENTER=7.7546,49.4944
 MAP_OFFLINE_BOUNDS=
 MAP_OFFLINE_RADIUS_KM=12
 POLL_INTERVAL_MS=120000
@@ -76,6 +76,52 @@ EOF
     echo "DerKumpel läuft intern auf $bind:$port"
     echo "Öffentliche URL: $base_url"
     echo "Für integriertes Caddy: ./setup.sh caddy"
+    ;;
+  push-enable)
+    need docker
+    need openssl
+    [ -f .env ] || { echo 'Zuerst ./setup.sh install ausführen.' >&2; exit 2; }
+    contact=''
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --contact) contact=${2:?}; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
+      esac
+    done
+    case "$contact" in
+      mailto:*@*|https://*) ;;
+      *) echo '--contact benötigt mailto:adresse@domain oder https://kontakt-url' >&2; exit 2 ;;
+    esac
+    if grep -q '^PUSH_ENABLED=true' .env; then
+      echo 'Push ist bereits aktiviert. Bestehende VAPID-Schlüssel nicht rotieren; Änderungen in .env vornehmen.' >&2
+      exit 2
+    fi
+    compose build app
+    # Generate VAPID keys inside the already-built application image; no host Node installation needed.
+    keys=$(compose run --rm --no-deps --entrypoint node app --input-type=module -e \
+      'import webpush from "web-push"; const k=webpush.generateVAPIDKeys(); console.log(k.publicKey+"\\n"+k.privateKey)')
+    public=$(printf '%s\n' "$keys" | sed -n '1p')
+    private=$(printf '%s\n' "$keys" | sed -n '2p')
+    [ -n "$public" ] && [ -n "$private" ] || { echo 'VAPID-Schlüsselerzeugung fehlgeschlagen' >&2; exit 1; }
+    secret=$(openssl rand -base64 32 | tr -d '\n')
+    umask 077
+    grep -v '^PUSH_' .env > .env.push.tmp.$
+    mv .env.push.tmp.$ .env
+    cat >> .env <<EOF
+
+# Optional: Web Push (secure device subscriptions and per-user polling)
+PUSH_ENABLED=true
+PUSH_VAPID_PUBLIC_KEY=$public
+PUSH_VAPID_PRIVATE_KEY=$private
+PUSH_ENCRYPTION_SECRET=$secret
+PUSH_CONTACT=$contact
+PUSH_DB_PATH=/data/push.sqlite
+PUSH_POLL_INTERVAL_MS=120000
+EOF
+    chmod 600 .env
+    compose up -d --force-recreate app
+    echo 'DerKumpel Web Push ist aktiviert. Geräteeinrichtung erfolgt in der App unter Mehr -> Einstellungen.'
     ;;
   start) need docker; compose up -d app ;;
   stop) need docker; compose stop ;;
