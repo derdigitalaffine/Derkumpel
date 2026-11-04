@@ -1,10 +1,10 @@
 # QA report
 
-Date: 2026-11-03
+Date: 2026-11-04
 
 ## Release status
 
-The DerKumpel production baseline is on `main`. The current follow-up release candidate is `work/brand-logo` and adds the Redmine ticket/archive browser, robust attachment recovery, the Otterbach-Otterberg empty-map fallback and the final DerKumpel PNG brand/PWA identity.
+The DerKumpel production baseline including the ticket browser and attachment recovery is on `main`. Follow-up candidate `fix/raster-default-valid-png` repairs four malformed PNG assets and switches the primary MapLibre basemap and offline map downloads to official basemap.de Web Raster tiles.
 
 Automated release gates cover static typing, unit tests, production build, high/critical production dependency audit, Compose validation, Docker image build and a started production-container readiness smoke test. A code candidate must not be merged/released while the latest branch CI is red.
 
@@ -18,6 +18,8 @@ The CI pipeline verifies:
 - Redmine field/address/coordinate/status projection tests
 - normalized custom-field conflict snapshots
 - offline-map bounds/tile-limit helpers
+- real PNG-header/dimension validation for every branding asset, including 192/512/maskable/Apple-touch/favicon sizes
+- basemap raster-style and WMTS tile-order tests
 - PWA production build
 - `npm audit --omit=dev --audit-level=high`
 - `docker compose config --quiet`
@@ -25,7 +27,7 @@ The CI pipeline verifies:
 - production container startup
 - `/api/health/ready` from the running container
 
-The major functional head containing ticket browser, direct attachment `content_url` loading, individual attachment retry, map fallback, PNG manifest/icons and DerKumpel UI branding has already completed the full pipeline successfully. The final release head additionally includes only documentation/setup-label consistency and is required to pass the same gate before merge.
+The earlier manifest/image checks were insufficient: malformed PNG bytes passed CI despite file names and declared dimensions looking correct. The new CI validates the binary PNG signature, IHDR image dimensions and IEND trailer; candidate must pass the complete pipeline before merge.
 
 ## Security/architecture review points
 
@@ -83,6 +85,10 @@ Implemented:
 
 Implemented:
 
+- actual PNG source and generated 192, 512, maskable 512, Apple-touch 180, favicon 32/64 and wordmark assets have valid headers, correct pixel dimensions and pass an automated release check
+- renamed icons with a `-v2` suffix to avoid stale browser/home-screen caches; the four malformed legacy images were removed
+- source icon and deterministic Pillow generation script are retained so the branded image suite is reproducible
+
 - user-facing spelling is `DerKumpel`
 - login uses the full DerKumpel PNG logo
 - header/startup state uses the square PNG brand mark
@@ -94,6 +100,10 @@ Implemented:
 ## Map review points
 
 Implemented:
+
+- official basemap.de Web **Raster** is the direct primary MapLibre style (no initial vector style request), independently of stale `MAP_STYLE_URL` values
+- CSP allows the raster tile host and the service worker caches `/wmts_basemapde/tile/` requests
+- opt-in Offline-Karte preload now downloads raster PNG rather than unusable vector PBF files
 
 - ticket markers continue to use Redmine/custom-field coordinates when present
 - when the selected scope contains no valid ticket coordinates, the basemap is centered on the Otterbach-Otterberg area instead of leaving an undefined/empty geographic state
@@ -134,7 +144,7 @@ These checks require the real `redmine.vgo-o.de` data/credentials, actual roles/
 12. Open DerKumpel in a normal browser tab, synchronize once, disable networking and confirm cached work/attachments remain usable; separately verify installed-PWA behavior.
 13. Verify native navigation opens the expected installed map app.
 14. Remove coordinates from/currently select a scope without coordinate-bearing issues and verify the map centers sensibly on Otterbach-Otterberg.
-15. Verify basemap.de Web Vektor from the final HTTPS origin and optional offline-map download for the configured administrative boundary/radius.
+15. Verify basemap.de Web Raster PNG tiles load from the final HTTPS origin and optional offline-map download for the configured administrative boundary/radius.
 16. Verify favicon, Android install icon, maskable icon and Apple touch icon render from the PNG assets rather than a stale service-worker/SVG cache.
 17. Verify external reverse-proxy headers/cookies/HTTPS on the final hostname; if Caddy is used, verify certificate issuance and renewal path.
 18. Run a half-day pilot with 2–3 field workers before enabling the client for all ~25 field users.
