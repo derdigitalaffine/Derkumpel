@@ -21,6 +21,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type PushPreferences = { assignment: boolean; status: boolean; comment: boolean; priority: boolean; dates: boolean };
+export type PushConfig = { enabled: boolean; publicKey: string | null };
+export type DevicePushSubscription = { endpoint: string; keys: { p256dh: string; auth: string }; expirationTime?: number | null };
+
 export type TicketBrowserStatus = 'open' | 'closed' | '*';
 export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
 
@@ -28,6 +32,9 @@ export const api = {
   login: (username: string, password: string) => request<{ user: CurrentUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   me: () => request<CurrentUser>('/api/auth/me'),
+  pushConfig: () => request<PushConfig>('/api/push/config'),
+  pushSubscribe: (subscription: DevicePushSubscription, preferences: PushPreferences) => request<{ ok: true }>('/api/push/subscriptions', { method: 'POST', body: JSON.stringify({ subscription, preferences }) }),
+  pushUnsubscribe: (endpoint: string) => request<{ ok: true }>('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
   config: () => request<PublicConfig>('/api/config'),
   myIssues: () => request<{ issues: RedmineIssue[]; user: CurrentUser }>('/api/issues/my'),
   visibleIssues: (status: TicketBrowserStatus = 'open') => request<{ issues: RedmineIssue[] }>(`/api/issues/visible?status=${encodeURIComponent(status)}`),
