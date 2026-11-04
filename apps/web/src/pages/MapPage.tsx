@@ -224,7 +224,7 @@ export function MapPage() {
             Filter {activeFilters ? `(${activeFilters})` : ''}
           </Button>
         </Group>
-        <Box id="map-filters"><Collapse in={filtersOpen}>
+        <Box id="map-filters"><Collapse opened={filtersOpen}>
           <Stack gap="sm" pt="xs">
             <SegmentedControl fullWidth size="sm" value={scope} onChange={changeScope}
               data={[{ value: 'mine', label: 'Meine Arbeit' }, { value: 'visible', label: 'Alle sichtbaren' }]}
