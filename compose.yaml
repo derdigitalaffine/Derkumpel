@@ -44,5 +44,6 @@ services:
         condition: service_healthy
     security_opt: [no-new-privileges:true]
 volumes:
+  push_data:
   caddy_data:
   caddy_config:
