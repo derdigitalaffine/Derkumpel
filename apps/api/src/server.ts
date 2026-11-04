@@ -286,9 +286,9 @@ app.setNotFoundHandler((request, reply) => {
   return reply.type('text/html').sendFile('index.html');
 });
 
+if (pushPoller) app.addHook('onClose', async () => { pushPoller.stop(); });
 await app.listen({ host: config.host, port: config.port });
 if (pushPoller) {
-  app.addHook('onClose', async () => { pushPoller.stop(); });
   pushPoller.start();
   app.log.info('Redmine REST Push polling enabled (plugin-free mode)');
 }
