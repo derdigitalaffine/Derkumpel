@@ -8,6 +8,7 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify:branding": "node scripts/check-brand-assets.mjs",
     "dev": "npm run dev -w @derkumpel/api",
     "start": "npm run start -w @derkumpel/api"
   }
