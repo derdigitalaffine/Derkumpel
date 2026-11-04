@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, AuthRequiredError } from './api';
 import { getSetting, setSetting } from './db';
 import { startSyncLoop } from './sync';
+import { DEFAULT_PUSH_PREFERENCES, updateDevicePushPreferences, type PushPreferences } from './push';
 import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
@@ -42,6 +43,18 @@ export function App() {
   useEffect(() => {
     if (state !== 'ready' && state !== 'offline') return;
     return startSyncLoop(() => { if (navigator.onLine) setState('login'); });
+  }, [state]);
+  useEffect(() => {
+    if (state !== 'ready' && state !== 'offline') return;
+    const reconcile = () => {
+      if (!navigator.onLine) return;
+      void getSetting<PushPreferences>('notificationPreferences', DEFAULT_PUSH_PREFERENCES)
+        .then((preferences) => updateDevicePushPreferences(preferences))
+        .catch(() => undefined);
+    };
+    reconcile();
+    window.addEventListener('online', reconcile);
+    return () => window.removeEventListener('online', reconcile);
   }, [state]);
 
   if (state === 'loading') return <Center mih="100dvh" p="xl" role="status" aria-live="polite">
