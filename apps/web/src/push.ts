@@ -28,16 +28,17 @@ export async function pushState(): Promise<'unsupported' | 'denied' | 'not-subsc
 }
 
 /** Called ONLY on a user click; permission prompts must never be triggered automatically. */
-export async function enablePush(preferences: PushPreferences): Promise<void> {
+export async function enablePush(preferences: PushPreferences, publicKey: string): Promise<void> {
   if (!pushSupported()) throw new Error('Dieser Browser unterstützt keine Web-Push-Benachrichtigungen.');
-  const config = await api.pushConfig();
-  if (!config.enabled || !config.publicKey) throw new Error('Der Push-Dienst ist serverseitig noch nicht eingerichtet.');
+  if (!publicKey) throw new Error('Der Push-Dienst ist serverseitig noch nicht eingerichtet.');
+  // Safari/iOS requires permission requests within the original click activation.
+  // No awaited network call is permitted before requestPermission.
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') throw new Error('Benachrichtigungen wurden nicht erlaubt. Bitte die Berechtigung im Browser prüfen.');
   const registration = await navigator.serviceWorker.ready;
   const existing = await registration.pushManager.getSubscription();
   const subscription = existing ?? await registration.pushManager.subscribe({
-    userVisibleOnly: true, applicationServerKey: decodeBase64Url(config.publicKey),
+    userVisibleOnly: true, applicationServerKey: decodeBase64Url(publicKey),
   });
   try {
     await api.pushSubscribe(serializeSubscription(subscription), preferences);
