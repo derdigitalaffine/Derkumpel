@@ -95,3 +95,45 @@ jobs:
             -d '{"event_id":"test-12345678","issue_id":1,"kind":"status","user_ids":[]}' \
             http://127.0.0.1:18081/api/push/events)
           test "$status" = 403
+
+      - name: Smoke-test pluginless Redmine REST polling mode
+        env:
+          SESSION_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          eval "$(node - <<'NODE'
+          const keys = require('web-push').generateVAPIDKeys();
+          console.log('VAPID_PUBLIC=' + keys.publicKey);
+          console.log('VAPID_PRIVATE=' + keys.privateKey);
+          NODE
+          )"
+          docker volume create derkumpel-poll-ci >/dev/null
+          docker run -d --name derkumpel-poll-ci -p 18082:8080 \
+            --read-only --tmpfs /tmp:size=32m \
+            -v derkumpel-poll-ci:/app/push-data \
+            -e NODE_ENV=production \
+            -e REDMINE_BASE_URL=https://redmine.example.invalid \
+            -e PUBLIC_BASE_URL=https://derkumpel.example.invalid \
+            -e SESSION_SECRET="$SESSION_SECRET" \
+            -e PUSH_ENABLED=true \
+            -e PUSH_MODE=polling \
+            -e PUSH_POLL_API_KEY=1234567890123456789012345678901234567890 \
+            -e PUSH_POLL_INTERVAL_SECONDS=30 \
+            -e PUSH_VAPID_PUBLIC_KEY="$VAPID_PUBLIC" \
+            -e PUSH_VAPID_PRIVATE_KEY="$VAPID_PRIVATE" \
+            -e PUSH_VAPID_SUBJECT=mailto:operator@example.org \
+            derkumpel:ci
+          trap 'docker logs derkumpel-poll-ci || true; docker rm -f derkumpel-poll-ci >/dev/null 2>&1 || true; docker volume rm derkumpel-poll-ci >/dev/null 2>&1 || true' EXIT
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18082/api/push/config > /tmp/derkumpel-poll.json; then
+              break
+            fi
+            sleep 1
+          done
+          node -e "const x=require('/tmp/derkumpel-poll.json');if(!x.enabled||!x.publicKey||x.mode!=='polling')process.exit(1)"
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://derkumpel.example.invalid' \
+            -H 'X-DerKumpel-Event-Token: some-random-token' \
+            -d '{"event_id":"poll-test-12345678","issue_id":1,"kind":"status","user_ids":[]}' \
+            http://127.0.0.1:18082/api/push/events)
+          test "$status" = 503
