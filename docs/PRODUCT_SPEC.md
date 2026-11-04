@@ -32,7 +32,9 @@ Sorting is user-configurable: priority, start/due date, distance when coordinate
 - `Offen`, `Geschlossen` and `Alle` status scopes;
 - tracker filtering;
 - project filtering;
-- text search across the currently loaded results;
+- text search across the currently loaded results, with a short non-sticky search bar that does not cover the list;
+- persistent Kompakt/Karten view switch, compact rows showing essential status and location;
+- project/tracker filters in an expandable drawer;
 - paginated loading rather than downloading the complete Redmine history at once;
 - opening any issue Redmine allows the current user to see.
 
@@ -108,11 +110,17 @@ Each active client may poll through the BFF for Redmine changes. Do not build a 
 - MapLibre GL map.
 - basemap.de Web Raster is the default online basemap, rendered directly as MapLibre raster tiles without requesting the unreliable vector-style JSON. Legacy MAP_STYLE_URL values must not override this default.
 - Ticket markers use lat/lng when available.
-- Filters allow own/group work and optionally all visible open issues.
+- Filters allow own/group work and optionally all visible open issues; tracker/status/priority/project/due filters are expandable, default collapsed, and stored locally.
 - If the current map scope contains no valid ticket coordinates, keep the map useful by centering it on the Verbandsgemeinde Otterbach-Otterberg instead of presenting a blank/undefined geographic state.
 - Current employee position is optional and local-only.
 - `Navigation` opens the native maps/navigation app.
 - Optional offline map caching is disabled by default. Preferred download extent is a configured municipality/administrative boundary; fallback is configurable radius.
+
+## Push notifications
+
+Optional Web Push uses VAPID, the browser Push API and a custom Service Worker. It is disabled until explicitly configured and opted in on each device. A tiny server-side SQLite push module is the *only* exception to the otherwise stateless BFF, storing encrypted per-user Redmine credentials, browser subscriptions and minimal change snapshots. Each subscriber is polled under their own Redmine permissions (including groups) at most once every 120 seconds. Initial enrollment establishes a baseline, and a changed Redmine password invalidates push access.
+
+Configurable push triggers: new personal/group assignment, status changes including closure, new readable comments/notes, priority and due/start dates. Lock-screen copy is generic without ticket titles, links open the affected issue, and Redmine permissions are verified when loading. Device owners can opt out or send a test notification in settings. iOS/iPadOS requires a Home Screen-installed PWA for push.
 
 ## Brand and PWA identity
 
