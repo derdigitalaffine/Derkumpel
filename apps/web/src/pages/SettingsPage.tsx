@@ -1,7 +1,8 @@
 import { Alert, Box, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type PushPreferences, type PushConfig } from '../api';
+import { disablePush, enablePush, pushState, pushSupported, updatePushPreferences } from '../push';
 import { clearBusinessData, db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { boundsAround, prefetchOfflineMap } from '../mapOffline';
@@ -9,8 +10,7 @@ import type { NamedRef, PublicConfig } from '../types';
 import { Link } from 'react-router-dom';
 import { UIIcon, type IconName } from '../components/UIIcon';
 
-type NotificationPreferences = { assignment: boolean; status: boolean; comment: boolean; priority: boolean; dates: boolean };
-const DEFAULT_NOTIFICATIONS: NotificationPreferences = { assignment: true, status: true, comment: true, priority: true, dates: true };
+const DEFAULT_NOTIFICATIONS: PushPreferences = { assignment: true, status: true, comment: true, priority: true, dates: true };
 
 function SectionHeading({ icon, title, description }: { icon: IconName; title: string; description: string }) {
   return <Group gap="sm" align="flex-start" wrap="nowrap">
@@ -28,7 +28,10 @@ export function SettingsPage() {
   const [mapProgress, setMapProgress] = useState<[number, number]>();
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATIONS);
+  const [notificationPrefs, setNotificationPrefs] = useState<PushPreferences>(DEFAULT_NOTIFICATIONS);
+  const [pushConfig, setPushConfig] = useState<PushConfig>({ enabled: false, publicKey: null });
+  const [pushStatus, setPushStatus] = useState<'unsupported' | 'denied' | 'not-subscribed' | 'subscribed'>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
   const [config, setConfig] = useState<PublicConfig>({ mapStyleUrl: '', mapCenter: [7.77, 49.5], offlineMapRadiusKm: 12, pollIntervalMs: 120000 });
 
   useEffect(() => { void (async () => {
@@ -36,6 +39,8 @@ export function SettingsPage() {
     setExcluded(await getSetting('excludedTrackers', []));
     setOfflineMaps(await getSetting('offlineMaps', false));
     setNotificationPrefs(await getSetting('notificationPreferences', DEFAULT_NOTIFICATIONS));
+    void pushState().then(setPushStatus).catch(() => setPushStatus('unsupported'));
+    if (navigator.onLine) void api.pushConfig().then(setPushConfig).catch(() => undefined);
     const cached = await getSetting<NamedRef[]>('cachedTrackers', []); setTrackers(cached);
     if (navigator.onLine) {
       try { const meta = await api.meta<{ trackers: NamedRef[] }>('trackers'); setTrackers(meta.trackers); await setSetting('cachedTrackers', meta.trackers); } catch { /* cache remains */ }
@@ -44,9 +49,31 @@ export function SettingsPage() {
   })(); }, []);
 
   const toggleTracker = async (id: number, checked: boolean) => { const next = checked ? excluded.filter((value) => value !== id) : [...excluded, id]; setExcluded(next); await setSetting('excludedTrackers', next); };
-  const setNotification = async (key: keyof NotificationPreferences, value: boolean) => {
+  const setNotification = async (key: keyof PushPreferences, value: boolean) => {
     const next = { ...notificationPrefs, [key]: value };
     setNotificationPrefs(next); await setSetting('notificationPreferences', next);
+    if (pushStatus === 'subscribed') {
+      try { await updatePushPreferences(next); }
+      catch { notifications.show({ color: 'orange', message: 'Push-Einstellung wird beim nächsten Aktivieren aktualisiert.' }); }
+    }
+  };
+  const togglePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (pushStatus === 'subscribed') {
+        await disablePush();
+        setPushStatus('not-subscribed');
+        notifications.show({ color: 'green', message: 'Push auf diesem Gerät deaktiviert' });
+      } else {
+        await enablePush(notificationPrefs);
+        setPushStatus('subscribed');
+        notifications.show({ color: 'green', message: 'Push auf diesem Gerät aktiviert' });
+      }
+    } catch (err) {
+      notifications.show({ color: 'red', message: err instanceof Error ? err.message : 'Push konnte nicht geändert werden.' });
+      void pushState().then(setPushStatus).catch(() => undefined);
+    } finally { setPushBusy(false); }
   };
   const downloadMap = async () => {
     const bounds = config.offlineMapBounds ?? boundsAround(config.mapCenter, config.offlineMapRadiusKm);
@@ -55,6 +82,7 @@ export function SettingsPage() {
     finally { setMapProgress(undefined); }
   };
   const logout = async () => {
+    await disablePush().catch(() => undefined);
     if (navigator.onLine) await api.logout().catch(() => undefined);
     await setSetting('locallyLoggedOut', true);
     await setSetting('lastUser', null);
@@ -103,7 +131,13 @@ export function SettingsPage() {
 
     <Card withBorder className="surface-card">
       <Stack gap="lg">
-        <SectionHeading icon="info" title="Benachrichtigungen" description="Lege fest, welche Änderungen ein späterer Push-Dienst melden soll." />
+        <SectionHeading icon="info" title="Push-Benachrichtigungen" description="Auch bei geschlossener installierter PWA über neue Aufträge informiert werden." />
+        {!pushSupported() && <Alert color="orange" variant="light">Push wird auf diesem Gerät/Browser nicht unterstützt. Auf iPhones ist eine zum Home-Bildschirm hinzugefügte PWA erforderlich.</Alert>}
+        {pushSupported() && !pushConfig.enabled && <Alert color="blue" variant="light">Push muss auf dem Server einmalig mit VAPID-Schlüsseln und dem Redmine-Ereignisadapter aktiviert werden.</Alert>}
+        {pushStatus === "denied" && <Alert color="orange" variant="light">Benachrichtigungen sind im Browser blockiert. Bitte die Berechtigung in den Website-Einstellungen ändern.</Alert>}
+        <Group justify="space-between" gap="sm" wrap="wrap"><Text size="sm" fw={700}>{pushStatus === "subscribed" ? "Auf diesem Gerät aktiviert" : "Auf diesem Gerät deaktiviert"}</Text>
+          <Button onClick={() => void togglePush()} loading={pushBusy} disabled={!pushConfig.enabled || !navigator.onLine || pushStatus === "unsupported" || pushStatus === "denied"} variant={pushStatus === "subscribed" ? "default" : "filled"}>{pushStatus === "subscribed" ? "Push deaktivieren" : "Push erlauben und aktivieren"}</Button>
+        </Group>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
           <Switch checked={notificationPrefs.assignment} onChange={(event) => void setNotification('assignment', event.currentTarget.checked)} label="Neue Zuweisungen" />
           <Switch checked={notificationPrefs.status} onChange={(event) => void setNotification('status', event.currentTarget.checked)} label="Statusänderungen" />
@@ -111,7 +145,7 @@ export function SettingsPage() {
           <Switch checked={notificationPrefs.priority} onChange={(event) => void setNotification('priority', event.currentTarget.checked)} label="Prioritätsänderungen" />
           <Switch checked={notificationPrefs.dates} onChange={(event) => void setNotification('dates', event.currentTarget.checked)} label="Termin-/Fälligkeitsänderungen" />
         </SimpleGrid>
-        <Alert color="yellow" variant="light">Bei geöffneter App erkennt der regelmäßige Sync Änderungen. Push bei vollständig geschlossener App benötigt den vorgesehenen separaten Push-/Event-Adapter.</Alert>
+        <Text c="dimmed" size="xs">Benachrichtigungen enthalten nur Ereignistyp und Ticketnummer. Der Push-Adapter benötigt ein konfiguriertes Redmine-Ereignis-Webhook. Push ist freiwillig und kann jederzeit deaktiviert werden.</Text>
       </Stack>
     </Card>
 
