@@ -16,7 +16,8 @@ export function dueInfo(value?: string, now: Date = new Date()) {
   if (!Number.isFinite(timestamp)) return { label: value, color: 'gray', urgent: false };
   const [y, m, d] = [now.getFullYear(), now.getMonth() + 1, now.getDate()];
   const startDay = Date.UTC(y, m - 1, d);
-  const dueDay = Date.UTC(...(value.split('-').map(Number) as [number, number, number]).map((part, index) => index === 1 ? part - 1 : part) as [number, number, number]);
+  const [year, month, day] = value.split('-').map(Number);
+  const dueDay = Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1);
   const days = Math.round((dueDay - startDay) / 86_400_000);
   if (days < 0) return { label: `Überfällig · ${dateLabel(value)}`, color: 'red', urgent: true };
   if (days === 0) return { label: 'Heute fällig', color: 'orange', urgent: true };
