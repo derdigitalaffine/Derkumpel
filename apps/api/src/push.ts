@@ -149,10 +149,11 @@ export class PushService {
     return this.db.prepare('SELECT * FROM push_subscriptions WHERE user_id=?').all(userId) as unknown as SubscriptionRow[];
   }
 
-  private async send(row: SubscriptionRow, payload: NotificationPayload): Promise<void> {
+  private async send(row: SubscriptionRow, payload: NotificationPayload): Promise<boolean> {
     try {
       await webpush.sendNotification({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
-        JSON.stringify(payload), { TTL: 3600, urgency: 'normal' });
+        JSON.stringify(payload), { TTL: 3600, urgency: 'normal', timeout: 10_000 });
+      return true;
     } catch (error) {
       const status = (error as { statusCode?: number })?.statusCode;
       if (status === 404 || status === 410) {
@@ -160,6 +161,7 @@ export class PushService {
       } else {
         this.log.warn({ message: 'Web Push delivery failed', status: status ?? 'unknown' });
       }
+      return false;
     }
   }
 
@@ -168,9 +170,8 @@ export class PushService {
     if (!row) return false;
     if (Date.now() - row.last_test_at < 60_000) throw new Error('Push-Test nur einmal pro Minute möglich');
     this.db.prepare('UPDATE push_subscriptions SET last_test_at=? WHERE endpoint=?').run(Date.now(), endpoint);
-    await this.send(row, { title: 'DerKumpel · Test', body: 'Push-Benachrichtigungen sind auf diesem Gerät eingerichtet.',
+    return this.send(row, { title: 'DerKumpel · Test', body: 'Push-Benachrichtigungen sind auf diesem Gerät eingerichtet.',
       url: '/settings', tag: 'derkumpel-test', icon: '/derkumpel-icon-192-v2.png' });
-    return true;
   }
 
   start(): void {
