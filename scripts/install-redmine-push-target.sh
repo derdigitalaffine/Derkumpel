@@ -38,7 +38,7 @@ done
 IFS= read -r push_url || die 'DerKumpel-URL fehlt auf stdin.'
 IFS= read -r event_token || die 'Event-Token fehlt auf stdin.'
 [[ $push_url =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] || die 'Nur eine HTTPS-URL ohne Pfad ist zulässig.'
-[[ $event_token =~ ^[A-Fa-f0-9]{64}$ ]] || die 'Event-Token muss aus 64 Hex-Zeichen bestehen.'
+[[ $event_token =~ ^[A-Za-z0-9_-]{32,256}$ ]] || die 'Event-Token muss aus mindestens 32 sicheren Zeichen bestehen.'
 
 # Preflight before changing any Redmine files.
 if [[ $mode == native ]]; then
