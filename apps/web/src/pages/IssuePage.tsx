@@ -166,7 +166,7 @@ export function IssuePage() {
           <Button variant="light" leftSection={<UIIcon name="route" size={18} />} disabled={!nav} component={nav ? 'a' : 'button'} href={nav} target="_blank" rel="noopener noreferrer">Navigation</Button>
           <Button variant="default" leftSection={<UIIcon name="clock" size={18} />} onClick={() => notifications.show({ title: 'Rapportzettel', message: 'Die elektronische Zeit-/Rapportfunktion ist als separates Modul vorbereitet und bewusst noch nicht aktiviert.' })}>Zeit buchen</Button>
         </div>
-        <input ref={inputRef} hidden type="file" accept="image/*" capture="environment" onChange={(event) => void selectPhoto(event.currentTarget.files?.[0])} />
+        <input ref={inputRef} hidden type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void selectPhoto(file); }} />
       </Stack>
     </Paper>
 
