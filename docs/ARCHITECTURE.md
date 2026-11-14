@@ -85,3 +85,20 @@ Optional `caddy` profile publishes 80/443 and reverse-proxies to the app. No dat
 ## Future Rapportzettel seam
 
 The PWA domain layer exposes a time/rapport service interface. Redmine time entries are one adapter. A future dedicated rapport backend can be added behind a new `/api/rapport/*` route/service without changing issue storage or core navigation.
+
+
+## Android time booking contract (online-only)
+
+`GET /api/meta/timeActivities` returns Redmine `time_entry_activities`.
+`POST /api/time-entries` accepts only `{issueId, activityId, spentOn, hours, comments}`,
+validates IDs and date, enforces 0.01–24 hours and Redmine's 255-character
+comment limit, then forwards the current cookie session to
+`POST /time_entries.json`. Redmine enforces actual access and activity permissions;
+the BFF does not accept client-selected account/user IDs. A successful response
+returns `{time_entry: {id}}`.
+
+**Important:** This online-only mutation must never be automatically retried after
+a timeout because Redmine 5 does not offer an idempotency-key guarantee through
+this route. Clients must show an uncertain-result warning and let the user verify
+their time entries in Redmine first. Server-side deduplication or durable
+idempotency enforcement is a separate prerequisite for offline time booking.
