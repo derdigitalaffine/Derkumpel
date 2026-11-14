@@ -10,6 +10,7 @@ import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, r
 import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
 import { createRedminePollApi, RedminePushPoller } from './pushPoller.js';
 import { timeEntryPayload, validateTimeEntry } from './timeEntries.js';
+import { issueCreatePayload, validateIssueCreate } from './issueCreation.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
@@ -211,6 +212,19 @@ app.get('/api/issues/browse', async (request) => {
     offset: boundedInt(query.offset, 0, 0, 1_000_000),
     limit: boundedInt(query.limit, 50, 1, 100),
   });
+});
+
+// Create new issues only online, with explicit whitelisted fields. Redmine enforces
+// project/tracker rights. Do not retry on an ambiguous network failure.
+app.post('/api/issues', async (request, reply) => {
+  const input = validateIssueCreate(request.body);
+  const result = await redmineJson<{ issue: { id: number } }>(
+    config, credentials(request), '/issues.json', {
+      method: 'POST',
+      body: JSON.stringify(issueCreatePayload(input)),
+    }
+  );
+  return reply.code(201).send({ issue: { id: result.issue.id } });
 });
 
 app.get('/api/issues/:id', async (request) => {
