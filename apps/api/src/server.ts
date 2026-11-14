@@ -9,6 +9,7 @@ import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from 
 import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
 import { createRedminePollApi, RedminePushPoller } from './pushPoller.js';
+import { timeEntryPayload, validateTimeEntry } from './timeEntries.js';
 
 const config = loadConfig();
 const app = Fastify({ logger: { redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: config.maxUploadBytes + 1024 * 1024 });
@@ -275,6 +276,7 @@ const metaRoutes: Record<string, string> = {
   projects: '/projects.json?limit=100',
   customFields: '/custom_fields.json',
   queries: '/queries.json',
+  timeActivities: '/enumerations/time_entry_activities.json',
 };
 
 app.get('/api/meta/:kind', async (request, reply) => {
@@ -282,6 +284,20 @@ app.get('/api/meta/:kind', async (request, reply) => {
   const target = metaRoutes[kind];
   if (!target) return reply.code(404).send({ error: 'unknown_meta' });
   return redmineJson(config, credentials(request), target);
+});
+
+// Online-only. Native clients MUST NOT auto-retry a timed-out POST: Redmine
+// does not provide idempotency keys for time entries in this BFF contract.
+app.post('/api/time-entries', async (request, reply) => {
+  const creds = credentials(request);
+  const value = validateTimeEntry(request.body);
+  const result = await redmineJson<{ time_entry: { id: number } }>(
+    config, creds, '/time_entries.json', {
+      method: 'POST',
+      body: JSON.stringify(timeEntryPayload(value)),
+    }
+  );
+  return reply.code(201).send({ time_entry: { id: result.time_entry.id } });
 });
 
 app.get('/api/projects/:id/memberships', async (request) => {
