@@ -85,3 +85,36 @@ Optional `caddy` profile publishes 80/443 and reverse-proxies to the app. No dat
 ## Future Rapportzettel seam
 
 The PWA domain layer exposes a time/rapport service interface. Redmine time entries are one adapter. A future dedicated rapport backend can be added behind a new `/api/rapport/*` route/service without changing issue storage or core navigation.
+
+
+## Android time booking contract (online-only)
+
+`GET /api/meta/timeActivities` returns Redmine `time_entry_activities`.
+`POST /api/time-entries` accepts only `{issueId, activityId, spentOn, hours, comments}`,
+validates IDs and date, enforces 0.01–24 hours and Redmine's 255-character
+comment limit, then forwards the current cookie session to
+`POST /time_entries.json`. Redmine enforces actual access and activity permissions;
+the BFF does not accept client-selected account/user IDs. A successful response
+returns `{time_entry: {id}}`.
+
+**Important:** This online-only mutation must never be automatically retried after
+a timeout because Redmine 5 does not offer an idempotency-key guarantee through
+this route. Clients must show an uncertain-result warning and let the user verify
+their time entries in Redmine first. Server-side deduplication or durable
+idempotency enforcement is a separate prerequisite for offline time booking.
+
+
+## Native issue creation contract (online-only)
+
+`POST /api/issues` accepts only
+`{projectId, trackerId, subject, description?, dueDate?, priorityId?}`,
+checks positive IDs, non-empty title, bounded description, valid date and
+optional priority, then calls Redmine `POST /issues.json` with the
+authenticated user's existing BFF credentials. The BFF excludes client-supplied
+author, impersonation, unrestricted custom fields and raw Redmine payloads;
+Redmine checks actual project/tracker permissions. A successful response is
+`{issue: {id}}` with HTTP 201.
+
+Do not automatically retry after ambiguous network errors, since the backend
+does not yet provide durable idempotency acknowledgements for issue creation.
+The Android client therefore restricts new issue creation to online mode.
