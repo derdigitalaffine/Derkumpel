@@ -102,3 +102,19 @@ a timeout because Redmine 5 does not offer an idempotency-key guarantee through
 this route. Clients must show an uncertain-result warning and let the user verify
 their time entries in Redmine first. Server-side deduplication or durable
 idempotency enforcement is a separate prerequisite for offline time booking.
+
+
+## Native issue creation contract (online-only)
+
+`POST /api/issues` accepts only
+`{projectId, trackerId, subject, description?, dueDate?, priorityId?}`,
+checks positive IDs, non-empty title, bounded description, valid date and
+optional priority, then calls Redmine `POST /issues.json` with the
+authenticated user's existing BFF credentials. The BFF excludes client-supplied
+author, impersonation, unrestricted custom fields and raw Redmine payloads;
+Redmine checks actual project/tracker permissions. A successful response is
+`{issue: {id}}` with HTTP 201.
+
+Do not automatically retry after ambiguous network errors, since the backend
+does not yet provide durable idempotency acknowledgements for issue creation.
+The Android client therefore restricts new issue creation to online mode.
