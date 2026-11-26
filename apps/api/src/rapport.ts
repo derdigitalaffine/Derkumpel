@@ -17,7 +17,7 @@ type Person = { id: number; name: string };
 type Member = Person & { groups: string[] };
 type State = 'draft'|'submitted'|'review'|'returned'|'closed';
 type SourceRef={id:number;subject:string;municipalities?:string[];orderNumber?:string};
-type FreeTask={requestId:string;leader:number;team:number[];permanent:boolean;orderNumber:string;createdBy:Person;createdAt:string};
+type FreeTask={requestId:string;leader:number;team:number[];permanent:boolean;orderNumber:string;createdBy:Person;createdAt:string;startEventId?:number};
 type GreenTask=SourceRef & {municipalities:string[];assignment?:FreeTask};
 type Line = { sharedResources?:ResourceUsage[]; greenEventId?:number; sources?:SourceRef[]; id: string; start: string; end: string; kind: 'work'|'pause'; activity: string; order: string; machines: {name:string; minutes:number}[]; materials: {name:string; quantity:number; unit:string}[]; recordedBy: Person; recordedAt:string };
 type Correction={reportId:number;reason:string;createdBy:Person;createdAt:string};
@@ -180,7 +180,7 @@ async function automaticSettings(config:AppConfig,selection:Selection):Promise<S
 
 let pending:Promise<unknown>=Promise.resolve();
 function serialized<T>(fn:()=>Promise<T>):Promise<T>{const run=pending.then(fn,fn);pending=run.catch(()=>undefined);return run;}
-export function registerRapport(app:FastifyInstance,config:AppConfig,credentials:(r:FastifyRequest)=>CredentialEnvelope) {
+export function registerRapport(app:FastifyInstance,config:AppConfig,credentials:(r:FastifyRequest)=>CredentialEnvelope,notifyGreen?: (id:number,leader:number)=>Promise<unknown>) {
   let selection:Selection|undefined;
   const selected=()=>selection??=readSelection();
   let setupCache:{value:Settings;until:number}|undefined,setupPending:Promise<Settings>|undefined;
@@ -281,18 +281,29 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(project.is_public!==false)fail(503,'Grünpflegeprojekt muss privat sein.');
     rememberInternalRapportProject(project.id);
     const issues=(await pages<Issue>(admin,'/issues.json?project_id='+project.id+'&tracker_id='+tracker+'&status_id=*')).filter(i=>i.project.id===project.id&&i.tracker.id===tracker);
-    const tasks:GreenTask[]=issues.filter(i=>!i.subject.startsWith('DK Grünpflege-Einsatz ')).map(i=>{
+    const tasks:GreenTask[]=issues.filter(i=>!i.subject.startsWith('DK Grünpflege-Einsatz ')&&!i.subject.startsWith('DK Grünpflege-Auftragsübernahme ')).map(i=>{
       const raw=i.custom_fields?.find(f=>f.id===field)?.value;
       const municipalities=[...new Set((Array.isArray(raw)?raw:[raw]).filter((v):v is string=>typeof v==='string').map(v=>v.trim().normalize('NFC')).filter(Boolean))];
       const marker=/^DERKUMPEL-GREEN-TASK\/1(?:\r\n|\n|\r)([^\r\n]+)/m.exec(i.description??'');let assignment:FreeTask|undefined;
-      if(marker){try{const a=JSON.parse(marker[1]!) as FreeTask;if(typeof a.requestId!=='string'||!Number.isSafeInteger(a.leader)||!Array.isArray(a.team)||!a.team.includes(a.leader)||!a.team.every(id=>Number.isSafeInteger(id)&&id>0)||typeof a.permanent!=='boolean'||typeof a.orderNumber!=='string')throw Error('invalid');assignment=a;}catch{fail(409,'Ungültiger freier Auftrag #'+i.id);}}
+      if(marker){try{const a=JSON.parse(marker[1]!) as FreeTask;if(typeof a.requestId!=='string'||!Number.isSafeInteger(a.leader)||!Array.isArray(a.team)||!a.team.includes(a.leader)||!a.team.every(id=>Number.isSafeInteger(id)&&id>0)||typeof a.permanent!=='boolean'||typeof a.orderNumber!=='string'||a.startEventId!==undefined&&(!Number.isSafeInteger(a.startEventId)||a.startEventId<=0))throw Error('invalid');assignment=a;}catch{fail(409,'Ungültiger freier Auftrag #'+i.id);}}
       return {id:i.id,subject:i.subject,municipalities,...(assignment?{orderNumber:assignment.orderNumber,assignment}:{})};
     });
     return {admin,project,tracker,field,issues,tasks,defaultStatusId:trackers.find(t=>t.id===tracker)?.default_status?.id};
   }
   function taskStarted(store:Awaited<ReturnType<typeof greenStore>>,task:GreenTask){return store.issues.some(i=>i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start')&&readEvent(i).actor.id===task.assignment?.leader&&readEvent(i).sources.some(s=>s.id===task.id));}
-  function selectableTasks(store:Awaited<ReturnType<typeof greenStore>>,actor:number){return store.tasks.filter(t=>!t.assignment||t.assignment.permanent||t.assignment.leader===actor&&!taskStarted(store,t)).map(t=>{const {assignment,...source}=t;return {...source,...(assignment?.leader===actor&&!taskStarted(store,t)?{assignment}: {})};});}
-  async function greenCatalogue(c:GreenScope&{actor?:Person}){const store=await greenStore(c);return c.actor?selectableTasks(store,c.actor.id):store.tasks.filter(t=>!t.assignment||t.assignment.permanent);}
+  type GreenStore=Awaited<ReturnType<typeof greenStore>>;
+  const acceptanceSubject=(startId:number,taskId:number)=>'DK Grünpflege-Auftragsübernahme '+startId+' '+taskId;
+  function acceptedOrders(store:GreenStore,startId:number):GreenTask[]{
+    const prefix='DK Grünpflege-Auftragsübernahme '+startId+' ',seen=new Set<number>();
+    return store.issues.filter(i=>i.subject.startsWith(prefix)).map(i=>{
+      try{const m=/^DERKUMPEL-GREEN-ACCEPT\/1(?:\r\n|\n|\r)/.exec(i.description??'');if(!m)throw Error('marker');const data=JSON.parse(i.description!.slice(m[0].length)) as {startEventId:number;source:GreenTask};const t=data.source;if(data.startEventId!==startId||!Number.isSafeInteger(t.id)||t.id<=0||i.subject!==acceptanceSubject(startId,t.id)||seen.has(t.id)||typeof t.subject!=='string'||!Array.isArray(t.municipalities)||!t.municipalities.every(x=>typeof x==='string')||t.assignment)throw Error('invalid');seen.add(t.id);return t;}catch{return fail(409,'Ungültige Auftragsübernahme #'+i.id);}
+    }).sort((a,b)=>a.id-b.id);
+  }
+  function linkedOrders(store:GreenStore,startId:number){return store.tasks.filter(t=>t.assignment?.startEventId===startId);}
+  function combinedSources(store:GreenStore,startId:number,begun:Pick<GreenEvent,'sources'>):SourceRef[]{return [...begun.sources,...acceptedOrders(store,startId)].sort((a,b)=>a.id-b.id);}
+  function linkedRunning(store:GreenStore,startId:number){const issue=store.issues.find(i=>i.id===startId&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));if(!issue)return false;const e=readEvent(issue);return !store.issues.some(i=>i.subject===eventSubject(e.actor.id,e.operationId,'stop'));}
+  function selectableTasks(store:GreenStore,actor:number){return store.tasks.filter(t=>!t.assignment||(t.assignment.startEventId!==undefined?t.assignment.permanent&&!linkedRunning(store,t.assignment.startEventId):t.assignment.permanent||t.assignment.leader===actor&&!taskStarted(store,t))).map(t=>{const {assignment,...source}=t;return {...source,...(assignment?.startEventId===undefined&&assignment?.leader===actor&&!taskStarted(store,t)?{assignment}: {})};});}
+  async function greenCatalogue(c:GreenScope&{actor?:Person}){const store=await greenStore(c);return c.actor?selectableTasks(store,c.actor.id):store.tasks.filter(t=>!t.assignment||t.assignment.permanent&&(t.assignment.startEventId===undefined||!linkedRunning(store,t.assignment.startEventId)));}
   type Participation={employee:number;start:string;end:string};
   type Usage=ResourceUsage;
   type GreenEvent={version:1;stoppedBy?:Person;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
@@ -316,8 +327,8 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     let sources:SourceRef[];
     if(phase!=='start'){
       const begun=await find(eventSubject(c.actor.id,operationId,'start'));if(!begun)fail(409,'Arbeitsbeginn noch nicht synchronisiert');
-      if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees)||JSON.stringify(begun.data.sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
-      sources=begun.data.sources;
+      if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
+      sources=prior?.data.sources??(phase==='finish'?(await find(eventSubject(c.actor.id,operationId,'stop')))?.data.sources??combinedSources(store,begun.issue.id,begun.data):combinedSources(store,begun.issue.id,begun.data));
       if(JSON.stringify(begun.data.excluded)!==JSON.stringify(b.excluded===undefined?undefined:[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b)))fail(409,'Kolonnenausnahmen stimmen nicht mit Arbeitsbeginn überein');
     }else if(prior){sources=prior.data.sources;}
     else{sources=ids.map(id=>{const task=selectableTasks(store,c.actor.id).find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' ist nicht mehr verfügbar oder nicht zugewiesen. Einsatz lokal erhalten.');const {assignment,...source}=task;return source;});}
@@ -363,26 +374,50 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     for(const i of store.issues.filter(i=>i.subject.startsWith('DK Grünpflege-Einsatz '))){
       try{records.push({id:i.id,updatedAt:i.updated_on,event:readEvent(i)});}catch{warnings.push('Einsatzereignis #'+i.id+' konnte nicht gelesen werden.');}
     }
-    const overview=crewOverview(records,who.members);
-    return {...overview,warnings:[...warnings,...overview.warnings]};
+    // Extend the read projection, not the immutable start snapshot.
+    const expanded=records.map(record=>record.event.phase==='start'?{...record,event:{...record.event,sources:combinedSources(store,record.id,record.event)}}:record);
+    const overview=crewOverview(expanded,who.members);
+    return {...overview,crews:overview.crews.map(crew=>({...crew,pendingOrders:linkedOrders(store,crew.startEventId).filter(t=>!crew.sources.some(s=>s.id===t.id)).map(({assignment:_,...task})=>task)})),warnings:[...warnings,...overview.warnings]};
   });
   app.post('/api/rapport/green/assign',async r=>{
     const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten dürfen Aufträge zuweisen.');
-    const b=obj(r.body),requestId=uid(b.requestId),subject=str(b.subject,200),town=str(b.town,100),orderNumber=str(b.orderNumber,100),leader=Number(b.leader),team=[...new Set(arr(b.team,100).map(Number))].sort((a,b)=>a-b);
-    if(!subject||!town||!orderNumber||/[\r\n]/.test(subject+town+orderNumber)||subject.startsWith('DK Grünpflege-Einsatz ')||typeof b.permanent!=='boolean'||!team.includes(leader)||team.some(id=>!c.members.has(id)))fail(400,'Bezeichnung, Ort, Auftragsnummer und gültige Kolonne mit Erfasser erforderlich.');
+    const b=obj(r.body),startEventId=b.startEventId===undefined?undefined:Number(b.startEventId),requestId=uid(b.requestId),subject=str(b.subject,200),town=str(b.town,100),orderNumber=str(b.orderNumber,100),leader=Number(b.leader),team=[...new Set(arr(b.team,100).map(Number))].sort((a,b)=>a-b);
+    if(!subject||!town||!orderNumber||/[\r\n]/.test(subject+town+orderNumber)||subject.startsWith('DK Grünpflege-Einsatz ')||subject.startsWith('DK Grünpflege-Auftragsübernahme ')||typeof b.permanent!=='boolean'||!team.includes(leader)||team.some(id=>!c.members.has(id)))fail(400,'Bezeichnung, Ort, Auftragsnummer und gültige Kolonne mit Erfasser erforderlich.');
     return serialized(async()=>{
       const store=await greenStore(c),existing=store.tasks.filter(t=>t.assignment?.requestId===requestId);
       if(existing.length>1)fail(409,'Doppelte Auftragskennung');
-      if(existing[0]){const e=existing[0],a=e.assignment!;if(e.subject!==subject||!e.municipalities.includes(town)||a.leader!==leader||a.orderNumber!==orderNumber||a.permanent!==b.permanent||a.createdBy.id!==c.actor.id||JSON.stringify(a.team)!==JSON.stringify(team))fail(409,'Auftrag bereits mit anderen Daten angelegt');return {id:e.id};}
+      if(existing[0]){const e=existing[0],a=e.assignment!;if(e.subject!==subject||!e.municipalities.includes(town)||a.leader!==leader||a.orderNumber!==orderNumber||a.permanent!==b.permanent||a.createdBy.id!==c.actor.id||a.startEventId!==startEventId||JSON.stringify(a.team)!==JSON.stringify(team))fail(409,'Auftrag bereits mit anderen Daten angelegt');return {id:e.id};}
+      if(startEventId!==undefined){const i=store.issues.find(i=>i.id===startEventId&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));if(!i||!linkedRunning(store,startEventId))fail(409,'Kolonne ist nicht mehr in Arbeit.');const e=readEvent(i);if(e.actor.id!==leader||JSON.stringify(e.employees)!==JSON.stringify(team))fail(409,'Kolonne oder Kolonnenführung hat sich geändert.');if(combinedSources(store,i.id,e).length+linkedOrders(store,i.id).filter(t=>!acceptedOrders(store,i.id).some(a=>a.id===t.id)).length>=50)fail(409,'Maximal 50 Aufträge pro Einsatz.');}
       const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses,closed=store.defaultStatusId;
       if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt geschlossenen Standardstatus.');
-      const assignment:FreeTask={requestId,leader,team,permanent:b.permanent as boolean,orderNumber,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString()};
+      const assignment:FreeTask={requestId,leader,team,permanent:b.permanent as boolean,orderNumber,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString(),...(startEventId!==undefined?{startEventId}:{})};
       const description='Auftragsnummer: '+orderNumber+'\nOrt: '+town+'\nAufgabenart: '+(assignment.permanent?'Daueraufgabe':'Einmalauftrag')+'\nDERKUMPEL-GREEN-TASK/1\n'+JSON.stringify(assignment);
       const created=await store.admin<{issue:Issue}>('/issues.json','POST',{issue:{project_id:store.project.id,tracker_id:store.tracker,status_id:closed,is_private:true,subject,description,custom_fields:[{id:store.field,value:town}]}});
       const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
       const raw=issue.custom_fields?.find(f=>f.id===store.field)?.value;
       if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject||issue.status.id!==closed||!(Array.isArray(raw)?raw.includes(town):raw===town)||!issue.description?.includes(JSON.stringify(assignment)))fail(409,'Redmine hat den Auftrag nicht vollständig übernommen. Bitte technisches Ticket #'+issue.id+' prüfen.');
+      if(notifyGreen)void notifyGreen(issue.id,leader).catch(()=>app.log.warn('Grünpflege-Push nicht zugestellt'));
       return {id:issue.id};
+    });
+  });
+  app.get('/api/rapport/green/active/:operation',async(r,reply)=>{
+    reply.header('Cache-Control','no-store');const c=await context(r),operation=uid((r.params as {operation:string}).operation),store=await greenStore(c);
+    const matches=store.issues.filter(i=>i.subject===eventSubject(c.actor.id,operation,'start'));if(matches.length!==1)return {pending:[],accepted:[]};
+    const i=matches[0]!,begun=readEvent(i),accepted=acceptedOrders(store,i.id),running=linkedRunning(store,i.id);
+    return {baseSourceIds:begun.sources.map(s=>s.id),accepted,pending:running?linkedOrders(store,i.id).filter(t=>!accepted.some(a=>a.id===t.id)).map(({assignment:_,...task})=>task):[]};
+  });
+  app.post('/api/rapport/green/active/:operation/accept/:id',async r=>{
+    const c=await context(r),params=r.params as {operation:string;id:string},operation=uid(params.operation),id=Number(params.id);
+    return serialized(async()=>{const store=await greenStore(c),matches=store.issues.filter(i=>i.subject===eventSubject(c.actor.id,operation,'start'));if(matches.length!==1)fail(404,'Einsatz nicht gefunden');
+      const i=matches[0]!,begun=readEvent(i),accepted=acceptedOrders(store,i.id),prior=accepted.find(t=>t.id===id);if(prior)return {task:prior,baseSourceIds:begun.sources.map(s=>s.id)};
+      if(!linkedRunning(store,i.id))fail(409,'Einsatz bereits beendet.');const task=linkedOrders(store,i.id).find(t=>t.id===id&&t.assignment?.leader===c.actor.id);if(!task)fail(404,'Auftrag nicht zugewiesen.');
+      if(combinedSources(store,i.id,begun).length>=50)fail(409,'Maximal 50 Aufträge pro Einsatz.');
+      const {assignment:_,...source}=task,subject=acceptanceSubject(i.id,id),description='DERKUMPEL-GREEN-ACCEPT/1\n'+JSON.stringify({startEventId:i.id,source});
+      const closed=store.defaultStatusId,statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses;if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt geschlossenen Standardstatus.');
+      const created=await store.admin<{issue:Issue}>('/issues.json','POST',{issue:{project_id:store.project.id,tracker_id:store.tracker,status_id:closed,is_private:true,subject,description}});
+      const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
+      if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject||issue.status.id!==closed||issue.description?.replace(/\r\n/g,'\n')!==description)fail(409,'Auftragsübernahme nicht vollständig gespeichert.');
+      return {task:source,baseSourceIds:begun.sources.map(s=>s.id)};
     });
   });
   app.post('/api/rapport/green/crews/:id/stop',async r=>{
@@ -392,7 +427,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       if(!i)fail(404,'Arbeitsbeginn nicht gefunden');const begun=readEvent(i),actor=c.members.get(begun.actor.id);if(!actor)fail(409,'Ursprünglicher Erfasser nicht mehr im Bauhof.');
       const existing=store.issues.filter(i=>i.subject===eventSubject(begun.actor.id,begun.operationId,'stop'));
       if(existing.length>1)fail(409,'Doppeltes Arbeitsende');if(existing[0])return {id:existing[0].id,endedAt:readEvent(existing[0]).endedAt};
-      const endedAt=new Date().toISOString();const result=await greenEvent({...c,actor}, {actorId:actor.id,operationId:begun.operationId,phase:'stop',employees:begun.employees,excluded:begun.excluded,sourceIds:begun.sources.map(s=>s.id),startedAt:begun.startedAt,endedAt},{id:c.actor.id,name:c.actor.name});
+      const endedAt=new Date().toISOString();const result=await greenEvent({...c,actor}, {actorId:actor.id,operationId:begun.operationId,phase:'stop',employees:begun.employees,excluded:begun.excluded,sourceIds:combinedSources(store,id,begun).map(s=>s.id),startedAt:begun.startedAt,endedAt},{id:c.actor.id,name:c.actor.name});
       return {...result,endedAt};
     });
   });
