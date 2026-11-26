@@ -21,7 +21,7 @@ Use Mantine components and theme tokens, not ad-hoc component libraries. Prefer 
 - Primary design range 360–430px portrait.
 - Technical lower bound 320px.
 - No horizontal scrolling in core flows.
-- Bottom navigation on mobile: Arbeit, Tickets, Karte, Sync, Mehr.
+- Bottom navigation on mobile: four stable field-work destinations (Arbeit, Tickets, Grünpflege, Rapporte) and Mehr. The bottom drawer groups every available destination including Meine Kolonne, Karte, Synchronisation, Einstellungen and dispatcher-only areas. Never add a sixth dock item. Sync remains reachable from the connection chip and carries its queue count in Mehr. The drawer is safe-area aware, scrollable on short displays, keyboard accessible, and closes after navigation.
 - Desktop/tablet may use a side navigation and two-column detail layout.
 - Primary controls >= 52px where practical; minimum touch target 48px.
 - Form text >= 16px.
