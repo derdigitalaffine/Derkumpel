@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {api} from '../api';
 import {getSetting,setSetting,db} from '../db';
-import {queueCapture,replayRapportQueue} from '../rapportQueue';
+import {replayRapportQueue} from '../rapportQueue';
 import {formatDuration} from '../rapport';
 import {fromInputTime,inputTime,today} from '../rapportBook';
 import {filterTasks,roundedDuration,type GreenTask} from '../green';
@@ -30,7 +30,14 @@ export function GreenPage(){
   const stop=()=>change({duration:roundedDuration(session.runningAt!,Date.now()),runningAt:null});
   const save=async()=>{if(!actor||!startAt||!chosen.length||!recipients.length||!session.duration||running||busy)return;setBusy(true);setError('');setNotice('');
     const operationId=session.operationId??crypto.randomUUID();const next={...session,operationId};setSession(next);
-    try{await setSetting('green-session:'+actor,next);const old=await db.rapportQueue.get(operationId);if(!old){await queueCapture({actorId:actor,date:session.start.slice(0,10),employees:recipients,line:{id:operationId,start:startAt,end:new Date(Date.parse(startAt)+session.duration*60000).toISOString(),kind:'work',activity:'Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):''),order:'',sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}});}const cleared={...session,selected:[],excluded:[],duration:0,runningAt:null,note:'',operationId:undefined};await setSetting('green-session:'+actor,cleared);setSession(cleared);setNotice('Einsatz lokal gesichert. Übertragungen und Konflikte findest du unter Rapporte → Erfassen.');await replayRapportQueue();}catch(e){setError(errorText(e));}finally{setBusy(false);}
+    try{
+      const cleared={...session,selected:[],excluded:[],duration:0,runningAt:null,note:'',operationId:undefined};
+      await db.transaction('rw',db.settings,db.rapportQueue,async()=>{
+        const old=await db.rapportQueue.get(operationId);if(!old){const body={actorId:actor,date:session.start.slice(0,10),employees:recipients,line:{id:operationId,start:startAt,end:new Date(Date.parse(startAt)+session.duration*60000).toISOString(),kind:'work' as const,activity:'Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):''),order:'',sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}};await db.rapportQueue.add({id:operationId,ownerId:actor,createdAt:Date.now(),body,state:'pending'});}
+        await db.settings.put({key:'green-session:'+actor,value:cleared});
+      });
+      setSession(cleared);setNotice('Einsatz lokal gesichert. Übertragungen und Konflikte findest du unter Rapporte → Erfassen.');await replayRapportQueue();
+    }catch(e){setError(errorText(e));}finally{setBusy(false);}
   };
   return <Stack maw={950} mx="auto" gap="md">
     <Group justify="space-between"><Title order={1} size="h2">Grünpflege</Title><Button component={Link} to="/rapport/book" h={48} variant="light">Rapporte</Button></Group>
@@ -58,7 +65,7 @@ export function GreenPage(){
           <Select label="Dauer in Viertelstunden" value={String(session.duration)} data={[{value:'0',label:'Bitte wählen'},...Array.from({length:96},(_,i)=>({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'}))]} onChange={v=>change({duration:Number(v??0)})} searchable disabled={busy}/>
           <SimpleGrid cols={2}>{[15,30,45,60].map(n=><Button key={n} h={52} variant="light" disabled={busy||session.duration+n>1440} onClick={()=>change({duration:session.duration+n})}>+{n} min</Button>)}</SimpleGrid>
           <Button h={60} variant="outline" disabled={!chosen.length||!recipients.length||busy||session.duration>0} onClick={start}>Aufgabe beginnen</Button>
-          <Text size="xs" c="dimmed">Stoppuhr: Dauer wird auf die nächste Viertelstunde gerundet (mindestens 15 Minuten) und kann vor Übernahme korrigiert werden. Läuft auch bei geschlossenem Bildschirm über Zeitstempel weiter.</Text>
+          <Text size="xs" c="dimmed">Stoppuhr: Dauer wird auf die nächstgelegene Viertelstunde gerundet (mindestens 15 Minuten) und kann vor Übernahme korrigiert werden. Läuft auch bei geschlossenem Bildschirm über Zeitstempel weiter.</Text>
           <Text size="sm">Ende: {startAt&&session.duration?inputTime(new Date(Date.parse(startAt)+session.duration*60000).toISOString()).replace('T',' '):'–'}</Text>
         </>}
         <Textarea label="Ergänzende Tätigkeit (optional)" value={session.note} onChange={e=>change({note:e.currentTarget.value})} disabled={busy}/>
