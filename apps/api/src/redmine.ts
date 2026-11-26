@@ -86,7 +86,7 @@ export async function fetchCurrentUser(config: AppConfig, creds: CredentialEnvel
 
 const internalProjects=new Set<number>();
 export function rememberInternalRapportProject(id:number){internalProjects.add(id);}
-export function internalRapportProject(id:unknown,name?:unknown):boolean {return internalProjects.has(Number(id))||[Number(process.env.RAPPORT_PROJECT_ID),Number(process.env.RAPPORT_CATALOG_PROJECT_ID)].filter(n=>n>0).includes(Number(id))||(typeof name==='string'&&['derkumpel',(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel').toLocaleLowerCase('de')].includes(name.toLocaleLowerCase('de')));}
+export function internalRapportProject(id:unknown,name?:unknown):boolean {return internalProjects.has(Number(id))||[Number(process.env.RAPPORT_PROJECT_ID),Number(process.env.RAPPORT_CATALOG_PROJECT_ID)].filter(n=>n>0).includes(Number(id))||(typeof name==='string'&&['derkumpel','grünpflegearbeiten','grünfplegearbeiten','gruenpflegearbeiten','grunpflegearbeiten',(process.env.GREEN_PROJECT_IDENTIFIER||'').toLocaleLowerCase('de'),(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel').toLocaleLowerCase('de')].includes(name.toLocaleLowerCase('de')));}
 function ordinaryIssue(issue:Record<string,unknown>):boolean{return !internalRapportProject((issue.project as {id?:number}|undefined)?.id,(issue.project as {name?:string}|undefined)?.name);}
 
 async function listIssues(config: AppConfig, creds: CredentialEnvelope, params: Record<string, string>): Promise<Array<Record<string, unknown>>> {
