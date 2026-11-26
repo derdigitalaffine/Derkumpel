@@ -1,7 +1,7 @@
 import { api, ApiError, AuthRequiredError } from './api';
 import { db,getSetting,type RapportCaptureBody,type RapportQueueRecord } from './db';
 import type { CurrentUser } from './types';
-export async function currentGreenEvents(){const actor=await getSetting<CurrentUser|null>('lastUser',null);return actor?db.greenEvents.where('ownerId').equals(actor.id).sortBy('createdAt'):[];}
+export async function currentGreenEvents(){const actor=await getSetting<CurrentUser|null>('lastUser',null);if(!actor)return [];const events=await db.greenEvents.where('ownerId').equals(actor.id).sortBy('createdAt');const order={start:0,stop:1,finish:2};return events.sort((a,b)=>a.body.operationId===b.body.operationId?order[a.body.phase]-order[b.body.phase]:a.createdAt-b.createdAt);}
 export async function currentRapportQueue():Promise<RapportQueueRecord[]>{
   const actor=await getSetting<CurrentUser|null>('lastUser',null);
   if(!actor)return [];
@@ -16,10 +16,10 @@ async function replay(){
   const rows=await currentRapportQueue(),events=await currentGreenEvents();
   if(!rows.some(r=>r.state!=='conflict')&&!events.some(e=>e.state!=='conflict'))return;
   const me=await api.me();
-  for(const event of events){if(event.ownerId!==me.id||event.state==='conflict')continue;if(event.body.phase==='stop'&&await db.greenEvents.get(event.body.operationId+':start'))continue;try{await api.greenEvent(event.body);await db.greenEvents.delete(event.id);}catch(e){if(e instanceof AuthRequiredError)throw e;await db.greenEvents.update(event.id,{state:e instanceof ApiError&&[400,403,404,409,422].includes(e.status)?'conflict':'retrying',message:e instanceof Error?e.message:'Einsatzübertragung fehlgeschlagen'});}}
+  for(const event of events){if(event.ownerId!==me.id||event.state==='conflict')continue;if(event.body.phase!=='start'&&await db.greenEvents.get(event.body.operationId+':start'))continue;if(event.body.phase==='finish'&&await db.greenEvents.get(event.body.operationId+':stop'))continue;try{await api.greenEvent(event.body);await db.greenEvents.delete(event.id);}catch(e){if(e instanceof AuthRequiredError)throw e;await db.greenEvents.update(event.id,{state:e instanceof ApiError&&[400,403,404,409,422].includes(e.status)?'conflict':'retrying',message:e instanceof Error?e.message:'Einsatzübertragung fehlgeschlagen'});}}
   for(const record of rows){
     if(record.ownerId!==me.id||record.state==='conflict')continue;
-    if(record.body.line.greenOperationId&&await db.greenEvents.get(record.body.line.greenOperationId+':stop'))continue;
+    if(record.body.line.greenOperationId&&await db.greenEvents.get(record.body.line.greenOperationId+':finish'))continue;
     try{
       const response=await api.rapportCapture(record.body);
       const failures=response.results.filter(r=>!r.ok);

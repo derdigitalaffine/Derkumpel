@@ -16,9 +16,9 @@ const errorText=(e:unknown)=>e instanceof Error?e.message:'Anfrage fehlgeschlage
 const steps=['Kolonne','Ort','Aufgaben','Arbeitszeit','Kontrolle'];
 export function GreenPage(){
   const [actor,setActor]=useState(0),[people,setPeople]=useState<Person[]>([]),[tasks,setTasks]=useState<GreenTask[]>([]),[session,setSession]=useState<Session>(initial),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[search,setSearch]=useState(''),[teamSearch,setTeamSearch]=useState(''),[now,setNow]=useState(Date.now()),[attempt,setAttempt]=useState(0),[cached,setCached]=useState(false);
-  const ref=useRef(session),action=useRef(false);const events=useDexieLive(useCallback(currentGreenEvents,[]),[]);
-  const put=async(next:Session)=>{await setSetting('green-session:'+actor,next);ref.current=next;setSession(next);};
-  const change=async(patch:Partial<Session>)=>{if(action.current||!actor)return;action.current=true;setBusy(true);try{await put({...ref.current,...patch});}catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
+  const ref=useRef(session),action=useRef(false),writes=useRef<Promise<void>>(Promise.resolve()),writeFailed=useRef(false);const events=useDexieLive(useCallback(currentGreenEvents,[]),[]);
+  const change=async(patch:Partial<Session>)=>{if(action.current||!actor)return;const next={...ref.current,...patch};ref.current=next;setSession(next);writes.current=writes.current.then(()=>setSetting('green-session:'+actor,next)).then(()=>{writeFailed.current=false;}).catch(e=>{writeFailed.current=true;setError(errorText(e));});await writes.current;};
+  const flush=async()=>{await writes.current;if(writeFailed.current)throw Error('Lokaler Entwurf nicht gespeichert. Bitte erneut versuchen.');};
   useEffect(()=>{let active=true;setLoading(true);setError('');async function load(){
     let me=await getSetting<CurrentUser|null>('lastUser',null);let data:{people:Person[];tasks:GreenTask[]}|undefined;
     if(navigator.onLine){try{const [user,roster,result]=await Promise.all([api.me(),api.rapportUsers(),api.greenTasks()]);me=user;data={people:roster.users,tasks:result.tasks};await setSetting('green-cache',{ownerId:me.id,data});}catch(e){if(e instanceof AuthRequiredError||e instanceof ApiError&&[401,403].includes(e.status))throw e;if(active)setError(errorText(e));}}
@@ -36,25 +36,27 @@ export function GreenPage(){
   const visible=filterTasks(tasks,session.town,session.includeUnassigned,search),chosen=session.lockedTasks??tasks.filter(t=>session.selected.includes(t.id)),recipients=session.lockedEmployees??session.team.filter(id=>!session.excluded.includes(id)&&people.some(p=>p.id===id));
   const missing=session.selected.some(id=>!tasks.some(t=>t.id===id));
   const toggle=(items:number[],id:number)=>items.includes(id)?items.filter(x=>x!==id):[...items,id];
-  const event=(s:Session,phase:'start'|'stop'):GreenEventBody=>({actorId:actor,operationId:s.operationId!,phase,employees:s.lockedEmployees!,sourceIds:s.lockedTasks!.map(t=>t.id),startedAt:s.startedAt!});
+  const event=(s:Session,phase:'start'|'stop'|'finish'):GreenEventBody=>({actorId:actor,operationId:s.operationId!,phase,employees:s.lockedEmployees!,sourceIds:s.lockedTasks!.map(t=>t.id),startedAt:s.startedAt!});
   const enqueue=async(body:GreenEventBody)=>{const id=body.operationId+':'+body.phase;if(!await db.greenEvents.get(id))await db.greenEvents.add({id,ownerId:actor,createdAt:Date.now(),body,state:'pending'});};
   const begin=async()=>{if(action.current||!chosen.length||!recipients.length||missing||locked)return;action.current=true;setBusy(true);setError('');try{
-    const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(startedAt),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,step:3};
+    await flush();const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(startedAt),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,step:3};
     await db.transaction('rw',db.settings,db.greenEvents,async()=>{await enqueue(event(next,'start'));await db.settings.put({key:'green-session:'+actor,value:next});});ref.current=next;setSession(next);setNow(t);void replayRapportQueue().catch(()=>undefined);
   }catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
-  const stop=async()=>{if(action.current||!running)return;const t=Date.now();if(t<=session.runningAt!)return;await change({endedAt:new Date(t).toISOString(),duration:roundedDuration(session.runningAt!,t),runningAt:null,step:4});};
+  const stop=async()=>{if(action.current||!running)return;const t=Date.now();if(t<=session.runningAt!)return;action.current=true;setBusy(true);setError('');try{
+    await flush();const next={...ref.current,endedAt:new Date(t).toISOString(),duration:roundedDuration(session.runningAt!,t),runningAt:null,step:4};
+    await db.transaction('rw',db.settings,db.greenEvents,async()=>{await enqueue(event(next,'start'));await enqueue({...event(next,'stop'),endedAt:next.endedAt});await db.settings.put({key:'green-session:'+actor,value:next});});
+    ref.current=next;setSession(next);void replayRapportQueue().catch(()=>undefined);
+  }catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
   const save=async()=>{if(action.current||!chosen.length||!recipients.length||!session.duration||running)return;action.current=true;setBusy(true);setError('');try{
-    const start=fromInputTime(session.start);if(!start)throw Error('Ungültiger Arbeitsbeginn');const end=new Date(Date.parse(start)+session.duration*60000).toISOString();
+    await flush();const start=fromInputTime(session.start);if(!start)throw Error('Ungültiger Arbeitsbeginn');const end=new Date(Date.parse(start)+session.duration*60000).toISOString();
     if(session.duration%15!==0||session.duration>1440)throw Error('Bitte Viertelstundenraster verwenden.');
     const operationId=session.operationId??crypto.randomUUID(),startedAt=session.startedAt??start,endedAt=session.endedAt??end;
     const next={...session,operationId,startedAt,endedAt,lockedTasks:chosen,lockedEmployees:recipients};
     const activity=('Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):'')).trim();
     const body={actorId:actor,date:session.start.slice(0,10),employees:recipients,line:{id:operationId,start,end,kind:'work' as const,activity,order:'',greenOperationId:operationId,sourceKind:'green' as const,sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}};
     const cleared={...initial(),team:session.team,town:session.town,includeUnassigned:session.includeUnassigned};
-    await db.transaction('rw',db.settings,db.greenEvents,db.rapportQueue,async()=>{if(!session.startedAt||!session.operationId||session.runningAt!==null)await enqueue(event(next,'start'));
-      // Legacy timer migration also needs a start event; its previous operation was never sent.
-      if(session.startedAt&&!await db.greenEvents.get(operationId+':start')&&!session.endedAt)await enqueue(event(next,'start'));
-      await enqueue({...event(next,'stop'),endedAt,start,end,activity});
+    await db.transaction('rw',db.settings,db.greenEvents,db.rapportQueue,async()=>{await enqueue(event(next,'start'));
+      await enqueue({...event(next,'stop'),endedAt});await enqueue({...event(next,'finish'),endedAt,start,end,activity});
       if(!await db.rapportQueue.get(operationId))await db.rapportQueue.add({id:operationId,ownerId:actor,createdAt:Date.now(),body,state:'pending'});
       await db.settings.put({key:'green-session:'+actor,value:cleared});});
     ref.current=cleared;setSession(cleared);setNotice('Einsatz und Rapport lokal gesichert. Die Synchronisation überträgt Beginn, Ende und anschließend die Rapporte.');void replayRapportQueue().catch(()=>undefined);
@@ -64,7 +66,7 @@ export function GreenPage(){
   return <Stack maw={760} mx="auto" gap="md">
     <Group justify="space-between"><Title order={1} size="h2">Grünpflege</Title><Button component={Link} to="/settings?tab=advanced" variant="default">Einrichtung</Button></Group>
     {error&&<Alert color="red">{error}</Alert>}{notice&&<Alert color="green" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}{cached&&<Alert color="orange">Offline-Katalog · Einsatzdaten werden lokal gesichert.</Alert>}
-    {events.length>0&&<Paper withBorder p="sm"><Stack gap="xs"><Text fw={700}>{events.length} Einsatzereignisse warten auf Redmine</Text>{events.filter(e=>e.message).map(e=><Group key={e.id} justify="space-between"><Text size="sm" c="red">{e.body.phase==='start'?'Beginn':'Ende'}: {e.message}</Text><Button variant="light" disabled={!navigator.onLine} onClick={()=>void retryGreenEvent(e.id).catch(x=>setError(errorText(x)))}>Erneut versuchen</Button></Group>)}</Stack></Paper>}
+    {events.length>0&&<Paper withBorder p="sm"><Stack gap="xs"><Text fw={700}>{events.length} Einsatzereignisse warten auf Redmine</Text>{events.filter(e=>e.message).map(e=><Group key={e.id} justify="space-between"><Text size="sm" c="red">{e.body.phase==='start'?'Beginn':e.body.phase==='stop'?'Ende':'Rapportfreigabe'}: {e.message}</Text><Button variant="light" disabled={!navigator.onLine} onClick={()=>void retryGreenEvent(e.id).catch(x=>setError(errorText(x)))}>Erneut versuchen</Button></Group>)}</Stack></Paper>}
     {loading?<Text>Grünpflege wird geladen …</Text>:!actor?<Button onClick={()=>setAttempt(a=>a+1)}>Erneut laden</Button>:<>
     <Paper withBorder p="md"><Stack gap="xs"><Group justify="space-between"><Text fw={700}>Schritt {step+1} von 5</Text><Badge>{steps[step]}</Badge></Group><Progress value={(step+1)*20}/><Text size="sm" c="dimmed">{recipients.length} Personen · {chosen.length} Aufgaben · {session.town==='*'?'Alle Orte':session.town}</Text></Stack></Paper>
     {step===0&&<Paper withBorder p="md"><Stack><Title order={2} size="h3">Wer arbeitet mit?</Title><TextInput label="Kollegen suchen" value={teamSearch} onChange={e=>setTeamSearch(e.currentTarget.value)}/><ScrollArea.Autosize mah={430}><Stack>{people.filter(p=>p.name.toLocaleLowerCase('de').includes(teamSearch.toLocaleLowerCase('de'))).map(p=><Checkbox size="lg" key={p.id} disabled={busy||locked} checked={session.team.includes(p.id)} label={p.name+(p.id===actor?' (Du)':'')} onChange={()=>void change({team:toggle(session.team,p.id)})}/>)}</Stack></ScrollArea.Autosize>{session.team.length>0&&<details><summary>Ausnahmen für diesen Einsatz</summary><Stack mt="sm">{people.filter(p=>session.team.includes(p.id)).map(p=><Checkbox key={p.id} label={p.name+' nicht rapportieren'} checked={session.excluded.includes(p.id)} disabled={busy||locked} onChange={()=>void change({excluded:toggle(session.excluded,p.id)})}/>)}</Stack></details>}</Stack></Paper>}

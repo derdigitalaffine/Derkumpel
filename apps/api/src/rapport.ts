@@ -259,7 +259,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     }
     if(!project||!Number.isSafeInteger(project.id)||[c.s.project,c.s.catalogProject].includes(project.id))fail(503,'Grünpflegeprojekt muss vom Rapportspeicher getrennt sein.');
     rememberInternalRapportProject(project.id);
-    const trackers=(await admin<{trackers:{id:number;name:string}[]}>('/trackers.json')).trackers;
+    const trackers=(await admin<{trackers:Tracker[]}>('/trackers.json')).trackers;
     const tracker=chosen.greenTrackerId??(process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):unique(trackers,'grünpflegearbeiten','Tracker')??unique(trackers,'grünfplegearbeiten','Tracker'));
     if(!tracker||!project.trackers?.some(t=>t.id===tracker))fail(503,'Tracker „Grünpflegearbeiten“ fehlt im technischen Projekt.');
     const fields=(await admin<{custom_fields:{id:number;name:string;customized_type:string}[]}>('/custom_fields.json')).custom_fields.filter(f=>f.customized_type==='issue');
@@ -274,10 +274,10 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const municipalities=[...new Set((Array.isArray(raw)?raw:[raw]).filter((v):v is string=>typeof v==='string').map(v=>v.trim().normalize('NFC')).filter(Boolean))];
       return {id:i.id,subject:i.subject,municipalities};
     });
-    return {admin,project,tracker,field,issues,tasks};
+    return {admin,project,tracker,field,issues,tasks,defaultStatusId:trackers.find(t=>t.id===tracker)?.default_status?.id};
   }
   async function greenCatalogue(c:C){return (await greenStore(c)).tasks;}
-  type GreenEvent={version:1;operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'};
+  type GreenEvent={version:1;operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
@@ -285,7 +285,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   async function greenEvent(c:C,body:unknown){
     const b=obj(body),operationId=uid(b.operationId),phase=b.phase;
-    if(phase!=='start'&&phase!=='stop')fail(400,'Ungültiges Einsatzereignis');
+    if(phase!=='start'&&phase!=='stop'&&phase!=='finish')fail(400,'Ungültiges Einsatzereignis');
     if(b.actorId!==c.actor.id)fail(403,'Erfasser stimmt nicht überein');
     const startedAt=instant(b.startedAt);
     const store=await greenStore(c),subject=eventSubject(c.actor.id,operationId,phase);
@@ -296,7 +296,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(!ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<=0))fail(400,'Ungültige Aufgabenauswahl');
     const prior=await find(subject);
     let sources:SourceRef[];
-    if(phase==='stop'){
+    if(phase!=='start'){
       const begun=await find(eventSubject(c.actor.id,operationId,'start'));if(!begun)fail(409,'Arbeitsbeginn noch nicht synchronisiert');
       if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees)||JSON.stringify(begun.data.sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
       sources=begun.data.sources;
@@ -304,14 +304,20 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     else{sources=ids.map(id=>{const task=store.tasks.find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' wurde aus dem Katalog entfernt. Einsatz lokal erhalten.');return task;});}
     if(JSON.stringify(sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Aufgabenauswahl stimmt nicht überein');
     const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase};
-    if(phase==='stop'){
-      data.endedAt=instant(b.endedAt);data.start=instant(b.start);data.end=instant(b.end);data.activity=str(b.activity??'');
-      if(Date.parse(data.endedAt)<=Date.parse(startedAt)||Date.parse(data.end)<=Date.parse(data.start)||Date.parse(data.end)-Date.parse(data.start)>86400000||(Date.parse(data.end)-Date.parse(data.start))%900000!==0)fail(400,'Ungültige Einsatzdauer');
+    if(phase!=='start'){
+      data.endedAt=instant(b.endedAt);
+      if(Date.parse(data.endedAt)<=Date.parse(startedAt))fail(400,'Ungültige tatsächliche Einsatzdauer');
+      if(phase==='finish'){
+        const stopped=await find(eventSubject(c.actor.id,operationId,'stop'));
+        if(!stopped||stopped.data.endedAt!==data.endedAt)fail(409,'Arbeitsende noch nicht eindeutig synchronisiert');
+        data.start=instant(b.start);data.end=instant(b.end);data.activity=str(b.activity??'');
+        if(Date.parse(data.end)<=Date.parse(data.start)||Date.parse(data.end)-Date.parse(data.start)>86400000||(Date.parse(data.end)-Date.parse(data.start))%900000!==0)fail(400,'Ungültige Rapportdauer');
+      }
     }
     if(prior){const comparable=(d:GreenEvent)=>JSON.stringify({...d,actor:{id:d.actor.id,name:''}});if(comparable(prior.data)!==comparable(data))fail(409,'Einsatzereignis bereits mit abweichenden Daten gespeichert');return {id:prior.issue.id};}
     const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses;
-    const closed=store.issues.find(i=>statuses.some(s=>s.id===i.status.id&&s.is_closed))?.status.id??statuses.find(s=>s.is_closed)?.id;
-    if(!closed)fail(503,'Kein geschlossener Status für technische Grünpflege-Einsätze verfügbar');
+    const closed=store.defaultStatusId;
+    if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt einen geschlossenen Standardstatus (Erledigt), damit technische Ereignisse ohne Workflow angelegt werden können.');
     const places=[...new Set(sources.flatMap(s=>s.municipalities??[]))];
     const created=await store.admin<{issue:Issue}>('/issues.json','POST',{issue:{project_id:store.project.id,tracker_id:store.tracker,status_id:closed,is_private:true,subject,description:'DERKUMPEL-GREEN/1\n'+JSON.stringify(data),...(places.length===1?{custom_fields:[{id:store.field,value:places[0]}]}:{})}});
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
@@ -320,7 +326,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   app.post('/api/rapport/green/event',async r=>{const c=await context(r);return serialized(()=>greenEvent(c,r.body));});
   async function greenCaptureSources(c:C,value:unknown,line:Line,employees:number[]){
-    const operationId=uid(value),store=await greenStore(c),subject=eventSubject(c.actor.id,operationId,'stop');
+    const operationId=uid(value),store=await greenStore(c),subject=eventSubject(c.actor.id,operationId,'finish');
     const matches=store.issues.filter(i=>i.subject===subject);if(matches.length!==1)fail(409,'Arbeitsende noch nicht eindeutig synchronisiert');
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+matches[0]!.id+'.json');
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject)fail(409,'Einsatzkennung stimmt nicht');
