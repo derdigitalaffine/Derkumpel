@@ -29,6 +29,7 @@ export type TicketBrowserStatus = 'open' | 'closed' | '*';
 export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
 
 export const api = {
+  rapportUsers: () => request<{ users: { id: number; name: string }[]; missingGroups: string[] }>('/api/rapport/users'),
   login: (username: string, password: string) => request<{ user: CurrentUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   me: () => request<CurrentUser>('/api/auth/me'),

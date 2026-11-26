@@ -129,3 +129,6 @@ Online issue creation should be supported so field workers rarely need classic R
 ## Future Rapportzettel
 
 A complete electronic Rapportzettel/timekeeping system is planned later and may require a different backend. Current `Zeit buchen` can integrate Redmine time entries, but architecture must allow a future separate module/service without rewriting the PWA shell, identity or issue client.
+
+### Rapport draft (initial scope)
+The authenticated read-only roster endpoint uses the current Redmine user's permissions to list members of exactly `Disponenten Bauhof` and `Bauhofmitarbeiter`. Duplicate IDs are merged. Durations are temporary component state in integer minutes; a full workday sets 468 minutes. No persistence, outbox, ticket association, or Redmine time entry is created. Access failures are shown rather than bypassed with privileged credentials.
