@@ -7,7 +7,7 @@ const admin=need('RAPPORT_DIRECTORY_KEY'),service=need('RAPPORT_SERVICE_KEY');if
 const get=async(key,path)=>{const r=await fetch(new URL(path,url),{headers:{'X-Redmine-API-Key':key,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('REST-Prüfung '+path+' fehlgeschlagen: '+r.status);return r.json();};
 const check=(condition,msg)=>{if(!condition)throw Error(msg);console.log('OK: '+msg);};
 try{
-  const actor=(await get(service,'/users/current.json')).user;check(actor.admin!==true,'Servicekonto ist nicht Administrator (Redmine-Angabe)');
+  const actor=(await get(service,'/users/current.json')).user;check(actor.admin!==true,'Servicekonto meldet keine Adminrolle');const denied=await fetch(new URL('/custom_fields.json',url),{headers:{'X-Redmine-API-Key':service,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(15000)});check(denied.status===403,'Servicekonto hat keinen Zugriff auf administrative Felddefinitionen');
   const groups=(await get(admin,'/groups.json')).groups;
   for(const name of ['Disponenten Bauhof','Bauhofmitarbeiter']){const group=groups.find(g=>g.name===name);check(!!group,'Gruppe '+name);const d=(await get(admin,'/groups/'+group.id+'.json?include=users')).group;check(Array.isArray(d.users),'Mitglieder lesbar: '+name);}
   const projectIds=[integer('RAPPORT_PROJECT_ID'),integer('RAPPORT_CATALOG_PROJECT_ID')];check(projectIds[0]!==projectIds[1],'Getrennte Projekte');

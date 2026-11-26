@@ -12,7 +12,7 @@
 - REST bietet keine transaktionale Eindeutigkeit oder Compare-and-Swap. Der BFF serialisiert Schreibzugriffe lokal; gleichzeitige native Redmine-Änderungen sind nicht atomar abgesichert. Dubletten werden erkannt, nicht automatisch verschmolzen.
 - Native Statusänderung durch Disponenten umgeht die fachliche Vorprüfung des BFF. Eine absolute Sperre gegen Administratoren ist ohne Plugin nicht möglich.
 - Sammelerfassung nach erfolgreichem Verzeichnisabruf auch offline möglich. IndexedDB-Outbox speichert Vorgänge vor der Übertragung, wiederholt bei Verbindung und bewahrt Konflikte zur manuellen Entscheidung. Bei Teilfehlern bleiben nur unbestätigte Mitarbeiter in der Queue. Ein Benutzerwechsel lässt unbestätigte Vorgänge für den ursprünglichen Benutzer zurück; sie werden nie unter dem neuen Konto übertragen. Tagesrapport-Editor und Einreichung/Prüfung sind derzeit online.
-- PDF wird auf Abruf generiert, keine unveränderliche Archivkopie; Standardfont WinAnsi. Korrektur nach Abschluss bleibt gesperrt; separater Korrekturbeleg ist noch nicht implementiert.
+- Einzel- und Sammel-PDF werden auf Abruf generiert, keine unveränderliche Archivkopie; Standardfont WinAnsi. Korrektur nach Abschluss bleibt gesperrt; separater Korrekturbeleg ist noch nicht implementiert.
 - Maschine/Material als separate Positionen pro Person, nicht automatisch kopiert. Für gemeinsame Ressourcennutzung nur im verantwortlichen Rapport erfassen. Stammdaten in Redmine umbenennen bzw. schließen.
 - Die Auftragsreferenz ist eine freie Nummer; #ID kann über den persönlichen Redmine-Zugang geprüft werden. Keine Volltext-Auftragssuche. Kein automatischer Zeitbuchungseintrag.
 
