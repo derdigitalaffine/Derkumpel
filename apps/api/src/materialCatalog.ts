@@ -14,10 +14,10 @@ export function parseMaterials(text:string):{items:MaterialItem[];warnings:strin
 export function materialRow(item:MaterialItem):string{return [item.code,item.name,item.unit,item.category,item.price===undefined?'':String(item.price),...(item.kind==='machine'?['Maschine']:[])].join(' | ');}
 
 /** Change only the selected row, preserving comments and unrelated data. */
-export function classifyMaterial(description:string,code:string,kind:'machine'|'material'):string{
+export function classifyMaterial(description:string,code:string,kind:'machine'|'material',unit?:string):string{
  return description.split(/(\r\n|\r|\n)/).map(line=>{
    if(line.trim().startsWith('#')||line.split('|')[0]?.trim().toLowerCase()!==code.toLowerCase())return line;
    const cols=line.split('|').map(v=>v.trim());while(cols.length<5)cols.push('');
-   cols[5]=kind==='machine'?'Maschine':'Material';return cols.join(' | ');
+   if(unit!==undefined)cols[2]=unit;cols[5]=kind==='machine'?'Maschine':'Material';return cols.join(' | ');
  }).join('');
 }

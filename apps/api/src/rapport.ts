@@ -608,7 +608,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const items=[...parsed.items],added:MaterialItem[]=[];
     for(const r of resources){
       const name=r.name.trim(),unit=r.kind==='machine'?'min':r.unit.trim();
-      if(!name||!unit||/[\r\n|]/.test(name+unit))fail(400,'Ressourcenname oder Einheit ungültig.');
+      if(!name||!unit||name.startsWith('#')||/[\r\n|]/.test(name+unit))fail(400,'Ressourcenname oder Einheit ungültig.');
       const matches=items.filter(m=>equipmentKey(m.name)===equipmentKey(name));
       if(matches.some(m=>(m.kind??'material')!==r.kind))fail(409,'„'+name+'“ ist im Materialkatalog als anderer Ressourcentyp eingetragen. Bitte Stammdaten korrigieren.');
       if(matches.some(m=>r.kind==='machine'||equipmentKey(m.unit)===equipmentKey(unit)))continue;
@@ -647,14 +647,14 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');
       if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen.');
       const current=parsed.items.find(x=>x.code.toLowerCase()===code.toLowerCase());if(!current)fail(404,'Katalogeintrag nicht gefunden');
-      const old=current.kind??'material';if(old===kind)return {ticketId:issue.id,...parsed};
+      const unit=b.unit===undefined?undefined:str(b.unit,40);if(unit!==undefined&&(!unit||/[\r\n|]/.test(unit)||kind==='machine'))fail(400,'Materialeinheit ungültig');const old=current.kind??'material';if(old===kind&&(unit===undefined||current.unit===unit))return {ticketId:issue.id,...parsed};
       if(old!==b.previous)fail(409,'Ressourcentyp wurde bereits geändert. Bitte neu laden.');
       const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
       if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
-      const description=classifyMaterial(issue.description??'',code,kind);
+      const description=classifyMaterial(issue.description??'',code,kind,unit);
       await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description,notes:note(c,'Ressourcentyp geändert: '+current.code+' → '+(kind==='machine'?'Maschine':'Material'))}});
       const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
-      const result=parseMaterials(updated.description??'');if((result.items.find(x=>x.code===current.code)?.kind??'material')!==kind||!result.items.some(x=>x.code===current.code))fail(409,'Ressourcentyp nicht übernommen');
+      const result=parseMaterials(updated.description??'');if((result.items.find(x=>x.code===current.code)?.kind??'material')!==kind||!result.items.some(x=>x.code===current.code&&(unit===undefined||x.unit===unit)))fail(409,'Ressourcentyp nicht übernommen');
       return {ticketId:issue.id,...result};
     });
   });
