@@ -121,11 +121,11 @@ export function RapportPage() {
     {batches.length > 0 && <Stack gap="sm">
       <Title order={2} size="h4">Rapport-Entwurf</Title>
       {batches.map(batch => <Paper key={batch.id} withBorder p="md" className="surface-card"><Stack gap="xs">
-        <Group justify="space-between"><Text fw={800}>{formatDuration(batch.entries[0].minutes)} h je Person</Text><Badge variant="light">{batch.entries.length} Personen</Badge></Group>
-        <Text size="sm" fw={650}>{new Date(batch.entries[0].startAt).toLocaleString('de-DE')} – {new Date(batch.entries[0].endAt).toLocaleString('de-DE')}</Text>
+        <Group justify="space-between"><Text fw={800}>{formatDuration(batch.entries[0]!.minutes)} h je Person</Text><Badge variant="light">{batch.entries.length} Personen</Badge></Group>
+        <Text size="sm" fw={650}>{new Date(batch.entries[0]!.startAt).toLocaleString('de-DE')} – {new Date(batch.entries[0]!.endAt).toLocaleString('de-DE')}</Text>
         {batch.entries.map(entry => <Text key={entry.employee.id} size="sm">{entry.employee.name} · {formatDuration(entry.minutes)} h</Text>)}
-        {batch.entries[0].activity && <Text style={{ overflowWrap: 'anywhere' }}>Tätigkeit: {batch.entries[0].activity}</Text>}
-        <Text size="xs" c="dimmed">Erfasst von {batch.entries[0].recordedBy.name} · {new Date(batch.entries[0].recordedAt).toLocaleString('de-DE')}</Text>
+        {batch.entries[0]!.activity && <Text style={{ overflowWrap: 'anywhere' }}>Tätigkeit: {batch.entries[0]!.activity}</Text>}
+        <Text size="xs" c="dimmed">Erfasst von {batch.entries[0]!.recordedBy.name} · {new Date(batch.entries[0]!.recordedAt).toLocaleString('de-DE')}</Text>
         <Button h={48} color="red" variant="subtle" onClick={() => setBatches(old => old.filter(item => item.id !== batch.id))}>Eintrag entfernen</Button>
       </Stack></Paper>)}
       <Paper withBorder p="md"><Stack gap="xs"><Text fw={800}>Summen je Mitarbeiter</Text>{people.filter(person => totals.has(person.id)).map(person => <Group key={person.id} justify="space-between"><Text>{person.name}</Text><Text fw={700}>{formatDuration(totals.get(person.id) ?? 0)} h</Text></Group>)}</Stack></Paper>

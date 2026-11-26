@@ -20,7 +20,7 @@ describe('rapport draft', () => {
     const a = { id: 1, name: 'A' }, b = { id: 2, name: 'B' };
     const rows = makeRapportEntries([a,b,b], [1,2,2,99], a, 510, ' Grünpflege ', '2026-11-26T08:00:00Z', '2026-11-26T07:00:00Z');
     expect(rows).toEqual([a,b].map(employee => ({employee, recordedBy:a, minutes:510, activity:'Grünpflege', recordedAt:'2026-11-26T08:00:00Z', startAt:'2026-11-26T07:00:00.000Z', endAt:'2026-11-26T15:30:00.000Z'})));
-    expect(makeRapportEntries([b], [2], a, 15, ' ', 'now', '2026-11-26T07:00:00Z')[0].activity).toBeUndefined();
+    expect(makeRapportEntries([b], [2], a, 15, ' ', 'now', '2026-11-26T07:00:00Z')[0]?.activity).toBeUndefined();
     expect(makeRapportEntries([b], [2], a, 0, '', 'now', '2026-11-26T07:00:00Z')).toEqual([]);
   });
 });
