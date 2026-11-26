@@ -19,7 +19,7 @@ export type OutboxRecord = {
   conflict?: { server: unknown; local: unknown; reason: string };
   lastError?: string;
 };
-export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
+export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{sourceIds?:number[];id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
 export type RapportQueueRecord={id:string;ownerId:number;createdAt:number;body:RapportCaptureBody;state:'pending'|'retrying'|'conflict';message?:string};
 export type SettingRecord = { key: string; value: unknown };
 export type SyncStateRecord = { key: string; value: unknown };

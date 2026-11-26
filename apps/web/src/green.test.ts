@@ -1,0 +1,3 @@
+import {describe,it,expect} from 'vitest';
+import {filterTasks,roundedDuration} from './green';
+describe('green care',()=>{it('filters recurring tasks by municipality including optional unassigned',()=>{const tasks=[{id:1,subject:'Friedhof',municipalities:['Otterberg']},{id:2,subject:'Hecke',municipalities:[]},{id:3,subject:'Spielplatz',municipalities:['Otterbach']}];expect(filterTasks(tasks,'Otterberg',false,'').map(t=>t.id)).toEqual([1]);expect(filterTasks(tasks,'Otterberg',true,'').map(t=>t.id)).toEqual([1,2]);expect(filterTasks(tasks,'*',false,'#3').map(t=>t.id)).toEqual([3]);});it('rounds elapsed time to quarter hours',()=>{expect(roundedDuration(0,1000)).toBe(15);expect(roundedDuration(0,24*60000)).toBe(30);expect(roundedDuration(0,0)).toBe(0);});});

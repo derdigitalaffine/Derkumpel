@@ -139,6 +139,7 @@ export function WorkPage() {
       </Text>}
     </Group>
 
+    <Button component={Link} to="/green" h={52} variant="light">Grünpflege</Button>
     <Button component={Link} to="/rapport" h={52} variant="light" leftSection={<UIIcon name="clock" size={20} />}>Arbeitszeit / Rapport</Button>
 
     <Box className="summary-strip">

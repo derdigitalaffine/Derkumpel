@@ -1,5 +1,5 @@
 export type Person={id:number;name:string};
-export type RapportLine={id:string;start:string;end:string;kind:'work'|'pause';activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[];recordedBy?:Person;recordedAt?:string};
+export type RapportLine={sources?:{id:number;subject:string}[];sourceIds?:number[];id:string;start:string;end:string;kind:'work'|'pause';activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[];recordedBy?:Person;recordedAt?:string};
 export type RapportReport={id:number;version:1;owner:Person;date:string;state:'draft'|'submitted'|'review'|'returned'|'closed';revision:string;lines:RapportLine[];material:string;submitted?:{by:Person;at:string};reviewed?:{by:Person;at:string};returnNote?:string;history?:{by:string;at:string;note:string}[]};
 export type Catalog={machines:{id:number;name:string}[];materials:{id:number;name:string}[]};
 export const stateLabels={draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben',closed:'Abgeschlossen'};

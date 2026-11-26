@@ -20,3 +20,6 @@
 Die RAPPORT_SUMMARY_*_FIELD_ID-Variablen ermöglichen native Abfragen. OWNER (Integer, Benutzer-ID), DATE (Datum), WORK/TARGET/PAUSE/DIFFERENCE/MACHINES (Integer in Minuten), COUNT (Integer). Alle als filterbare Issue-Felder für Tagesrapport definieren, nicht öffentlich; Service-Rolle schreibt, Prüfrolle liest, abgeschlossener Status ist schreibgeschützt. Diese Felder werden aus dem JSON bei jeder Speicherung abgeleitet. Die Standard-API erstellt keine Tracker/Felddefinitionen/Workflows automatisch.
 
 Einrichtungscheck nach dem Anlegen: `node --env-file=.env scripts/check-rapport.mjs` (Node 22+). Führt ausschließlich lesende REST-Aufrufe aus; die manuellen Schreibschutztests bleiben verpflichtend.
+
+## Grünpflege (optionales Fachmodul)
+GREEN_ENABLED=true, GREEN_TRACKER_ID und GREEN_MUNICIPALITY_FIELD_ID setzen. Ortsgemeinde als sichtbares Text-/Listenfeld am Grünpflege-Tracker. Die App liest alle Status des Trackers mit den persönlichen Redmine-Rechten, verändert diese Tickets niemals. Mehrere Aufgaben werden als Quellen einer gemeinsamen Rapportposition gespeichert; die Zeit wird nicht pro Ticket vervielfacht. Kolonne, Timer und Auswahl bleiben auf dem Tablet benutzerbezogen gespeichert. Die bestehende Outbox überträgt nach Verbindung. Gemeinsame Ressourcen bleiben bis zur fachlichen Entscheidung aus der Sammelerfassung ausgeschlossen.

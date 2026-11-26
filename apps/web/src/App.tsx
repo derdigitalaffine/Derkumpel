@@ -10,6 +10,7 @@ import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RapportBookPage } from './pages/RapportBookPage';
+import { GreenPage } from './pages/GreenPage';
 import { RapportPage } from './pages/RapportPage';
 import { WorkPage } from './pages/WorkPage';
 import { IssueRoute } from './pages/IssueRoute';
@@ -74,6 +75,7 @@ export function App() {
   return <Layout><Routes>
     <Route path="/" element={<WorkPage />} />
     <Route path="/rapport" element={<RapportPage />} />
+    <Route path="/green" element={<GreenPage />} />
     <Route path="/rapport/book" element={<RapportBookPage />} />
     <Route path="/tickets" element={<TicketsPage />} />
     <Route path="/issues/:id" element={<IssueRoute />} />
