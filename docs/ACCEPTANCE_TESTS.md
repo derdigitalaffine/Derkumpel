@@ -150,3 +150,6 @@
 - Vier unveränderliche Schnellzugriffe plus Mehr, alle Menüpunkte im gruppierten Vollmenü (einschließlich Karte, Meine Kolonne, Sync, Einstellungen sowie Disponentenbereiche nach Berechtigungsprüfung). Keine horizontalen Menüüberläufe bei 320/360/390/430 px; Touch-Ziele mindestens 48 px, Safe Areas und kurze Querformat-Displays beachten.
 - Mehr öffnet einen scrollbaren Mantine-Drawer, schließt bei Auswahl, Escape, Overlay oder Wechsel zum Desktop. Aktive Route und Sync-Konflikte bleiben erkennbar. Navigation ist auch offline erreichbar; serverseitige Berechtigungen unverändert.
 - Automatisierte Tests für Menüvollständigkeit, Rollenfilter, Schnellzugriffe und Unterrouten; reale Viewport-/Geräteprüfung zusätzlich erforderlich.
+
+## Kolonnen-Push-Deeplinks
+- Kolonnenaufträge verwenden einen expliziten Typ, getrennte Tags und `/green/mine?order=<id>`. Bestehende Fenster wechseln über bestätigte Router-Nachrichten oder `WindowClient.navigate()`; bei Fehler oder null wird ein anderes Fenster bzw. ein neues Fenster verwendet. Ältere generische Kolonnenbenachrichtigungen werden erkannt. Fremd-URLs werden abgewiesen. Service-Worker-Skript aktualisiert sich ohne Verlust lokaler Daten; physische Push-Klicks separat testen.

@@ -65,6 +65,14 @@ export function verifyEventToken(provided: string | undefined, expected: string)
   return timingSafeEqual(a, b);
 }
 
+/** Explicit internal destination; never accepts an arbitrary URL from an event. */
+export function pushPayload(event:PushEvent,greenAssignment=false){
+  return {title:'DerKumpel',body:greenAssignment?'Neuer Auftrag für die Kolonne':`${labels[event.kind]} · Ticket #${event.issue_id}`,
+    url:greenAssignment?'/green/mine?order='+event.issue_id:`/issues/${event.issue_id}`,
+    tag:greenAssignment?'crew-order-'+event.issue_id:`issue-${event.issue_id}`,
+    ...(greenAssignment?{kind:'crew-assignment',orderId:event.issue_id}:{})};
+}
+
 /** Only push endpoints and per-device settings; never credentials or issue data. */
 export class PushRegistry {
   private store: Store;
@@ -123,17 +131,12 @@ export class PushRegistry {
       const expired: string[] = [];
       let delivered = 0;
       let failed = 0;
-      const payload = JSON.stringify({
-        title: 'DerKumpel',
-        body: greenAssignment ? 'Neuer Auftrag für die Kolonne' : `${labels[event.kind]} · Ticket #${event.issue_id}`,
-        url: greenAssignment ? '/green/mine?order='+event.issue_id : `/issues/${event.issue_id}`,
-        tag: `issue-${event.issue_id}`,
-      });
+      const payload = JSON.stringify(pushPayload(event,greenAssignment));
       for (let start = 0; start < targets.length; start += 8) {
         await Promise.all(targets.slice(start, start + 8).map(async (entry) => {
           try {
             await webPush.sendNotification(entry.subscription, payload, {
-              TTL: 3600, timeout: 5000, urgency: 'normal', topic: `issue-${event.issue_id}`,
+              TTL: 3600, timeout: 5000, urgency: 'normal', topic: greenAssignment ? `crew-order-${event.issue_id}` : `issue-${event.issue_id}`,
             });
             delivered += 1;
           } catch (err) {

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import webPush from 'web-push';
-import { normalizePreferences, PushRegistry, safeEvent, validPushEndpoint, verifyEventToken } from './push.js';
+import { normalizePreferences, pushPayload, PushRegistry, safeEvent, validPushEndpoint, verifyEventToken } from './push.js';
 
 const temporary: string[] = [];
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -16,6 +16,13 @@ describe('push security boundary', () => {
     expect(safeEvent({ ...input, user_ids: ['not-an-id'] })).toBeUndefined();
     expect(safeEvent({ ...input, kind: 'admin' })).toBeUndefined();
     expect(safeEvent({ ...input, user_ids: Array.from({ length: 201 }, (_, i) => i + 1) })).toBeUndefined();
+  });
+
+  it('uses a distinct typed crew notification and preserves normal issue routing',()=>{
+    const event={event_id:'green-assignment-123',issue_id:123,kind:'assignment' as const,user_ids:[1]};
+    expect(pushPayload(event,true)).toEqual({title:'DerKumpel',body:'Neuer Auftrag für die Kolonne',url:'/green/mine?order=123',tag:'crew-order-123',kind:'crew-assignment',orderId:123});
+    expect(pushPayload(event)).toMatchObject({url:'/issues/123',tag:'issue-123'});
+    expect(pushPayload(event)).not.toHaveProperty('orderId');
   });
 
   it('uses safe default preferences and honors explicit opt-outs', () => {
