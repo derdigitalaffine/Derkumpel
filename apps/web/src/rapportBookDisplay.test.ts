@@ -1,7 +1,8 @@
 import {describe,it,expect} from 'vitest';
-import {displayDate,parseDisplayDate,displayStamp,shiftMonth,primaryReport,type RapportReport} from './rapportBook';
+import {displayDate,parseDisplayDate,displayStamp,shiftMonth,primaryReport,quarterHours,isQuarterInstant,floorQuarterInstant,ceilQuarterInstant,type RapportReport} from './rapportBook';
 describe('German rapport presentation',()=>{
  it('uses four-digit years and validates German input',()=>{expect(displayDate('2026-11-26')).toBe('26.11.2026');expect(parseDisplayDate('29.02.2024')).toBe('2024-02-29');expect(parseDisplayDate('29.02.2026')).toBe('');expect(parseDisplayDate('2026-11-26')).toBe('');expect(displayStamp('2026-12-31T23:30:00Z')).toBe('01.01.2027 · 00:30');});
+ it('offers exactly 96 quarter hours and preserves actual event time separately',()=>{expect(quarterHours).toHaveLength(96);expect(quarterHours.slice(0,4)).toEqual(['00:00','00:15','00:30','00:45']);expect(quarterHours[95]).toBe('23:45');expect(isQuarterInstant('2026-11-26T06:15:01Z')).toBe(false);expect(floorQuarterInstant('2026-11-26T06:17:23Z')).toBe('2026-11-26T06:15:00.000Z');expect(ceilQuarterInstant('2026-11-26T06:17:23Z')).toBe('2026-11-26T06:30:00.000Z');});
  it('moves archive by calendar months',()=>{expect(shiftMonth('2026-01-31',1)).toBe('2026-02-01');expect(shiftMonth('2026-12-31',1)).toBe('2027-01-01');});
  it('selects only the effective own daily report',()=>{const base:RapportReport={id:1,version:1,date:'2026-11-26',owner:{id:5,name:'A'},state:'closed',lines:[],revision:'r1',material:''};const correction:RapportReport={...base,id:2,state:'draft',correction:{reportId:1,reason:'Test',createdBy:base.owner,createdAt:'2026-11-26T08:00:00Z'}};expect(primaryReport([base,correction],base.date,5)?.id).toBe(1);expect(primaryReport([base,{...correction,state:'closed'}],base.date,5)?.id).toBe(2);expect(primaryReport([base],base.date,9)).toBeUndefined();});
 });

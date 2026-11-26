@@ -102,6 +102,7 @@ describe('Rapport REST boundary',()=>{
       const foreign={...pending,actorId:2};const check=await app.inject({method:'POST',url:'/api/rapport/capture/check',headers:{'x-test-user':'bob'},payload:foreign});expect(check.json().results[0].reportId).toBeUndefined();expect(check.json().results[0].overlaps).toBeUndefined();
     }finally{await app.close();}
   });
+  it('rejects off-grid new captures without creating a report',async()=>{const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));try{const result=await app.inject({method:'POST',url:'/api/rapport/capture',headers:{'x-test-user':'alice'},payload:{actorId:1,date:'2026-11-26',employees:[1],line:{...line,start:'2026-11-26T06:07:00Z',end:'2026-11-26T06:22:00Z'}}});expect(result.json().results[0]).toMatchObject({ok:false,status:400});expect(issues.size).toBe(0);}finally{await app.close();}});
   it('accepts Redmine CRLF descriptions and retries an already stored 30-minute capture exactly once',async()=>{
     const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');
     app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));

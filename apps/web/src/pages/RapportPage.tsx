@@ -5,8 +5,8 @@ import { api } from '../api';
 import { getSetting, setSetting, type RapportQueueRecord } from '../db';
 import { useDexieLive } from '../live';
 import { currentRapportQueue,queueCapture,replayRapportQueue,retryRapportQueue,discardRapportQueue,rescheduleRapportQueue } from '../rapportQueue';
-import { GermanDateField,GermanDateTimeField } from '../components/RapportDateFields';
-import { fromInputTime,inputTime,today,displayDate,displayStamp } from '../rapportBook';
+import { GermanDateField,GermanDateTimeField,QuarterTimeField } from '../components/RapportDateFields';
+import { fromInputTime,inputTime,today,displayDate,displayStamp,isQuarterInstant } from '../rapportBook';
 import type { CurrentUser } from '../types';
 import { formatDuration, fullDayMinutes, rankRapportPeople, type RapportPerson } from '../rapport';
 
@@ -43,7 +43,7 @@ export function RapportPage() {
   const [editError,setEditError]=useState('');
   const [preview,setPreview]=useState<Awaited<ReturnType<typeof api.rapportCaptureCheck>>['results']>([]);
   const editConflict=async(item:RapportQueueRecord)=>{setEditing(item);setEditStart(inputTime(item.body.line.start));setEditEnd(inputTime(item.body.line.end));setEditActivity(item.body.line.activity);setEditError('');setPreview([]);setSaving(true);try{const result=await api.rapportCaptureCheck(item.body);setPreview(result.results);}catch(e){setEditError(e instanceof Error?e.message:String(e));}finally{setSaving(false);}};
-  const saveConflict=async()=>{if(!editing)return;const start=fromInputTime(editStart,editing.body.line.start),end=fromInputTime(editEnd,editing.body.line.end);if(!start||!end||Date.parse(end)<=Date.parse(start)||Date.parse(end)-Date.parse(start)>86400000){setEditError('Bitte gültigen Zeitraum bis maximal 24 Stunden wählen.');return;}setSaving(true);setEditError('');try{await rescheduleRapportQueue(editing.id,start,end,editStart.slice(0,10),editActivity);setEditing(null);}catch(e){setEditError(e instanceof Error?e.message:String(e));}finally{setSaving(false);}};
+  const saveConflict=async()=>{if(!editing)return;const start=fromInputTime(editStart,editing.body.line.start),end=fromInputTime(editEnd,editing.body.line.end);if(!start||!end||!isQuarterInstant(start)||!isQuarterInstant(end)||Date.parse(end)<=Date.parse(start)||Date.parse(end)-Date.parse(start)>86400000){setEditError('Bitte gültigen Zeitraum bis maximal 24 Stunden wählen.');return;}setSaving(true);setEditError('');try{await rescheduleRapportQueue(editing.id,start,end,editStart.slice(0,10),editActivity);setEditing(null);}catch(e){setEditError(e instanceof Error?e.message:String(e));}finally{setSaving(false);}};
 
   useEffect(() => {
     let active=true;setLoading(true);setError('');setPeople([]);setMissing([]);setActor(null);
@@ -75,7 +75,7 @@ export function RapportPage() {
   const selectedPeople = people.filter(person => selected.includes(person.id));
   const visible = rankRapportPeople(people.filter(person => person.name.toLocaleLowerCase('de').includes(search.trim().toLocaleLowerCase('de')) && (filter === 'all' || (filter === 'favorites' ? preferences.favorites.includes(person.id) : filter === 'frequent' ? (preferences.counts[person.id] ?? 0) > 0 : filter === 'selected' ? selected.includes(person.id) : person.groups?.includes(filter)))), preferences.favorites, preferences.counts, actor?.id);
   const toggle = (id: number) => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]);
-  const canAdd = !!actor && !loading && !error && !!startAt && minutes > 0 && selectedPeople.length > 0;
+  const canAdd = !!actor && !loading && !error && !!startAt && isQuarterInstant(startAt) && minutes > 0 && minutes%15===0 && selectedPeople.length > 0;
   const addBatch=async()=>{
     if(!actor||!canAdd||!startAt||!endAt||saving)return;
     setSaving(true);setCaptureError('');setNotice('');
@@ -112,7 +112,7 @@ export function RapportPage() {
         <Title order={2} size="h4">2. Arbeitszeit je Person</Title>
         <SimpleGrid cols={{base:1,xs:2}} spacing="xs">
           <GermanDateField label="Arbeitstag" value={date} onChange={next=>{setDate(next);if(useFullDay)setMinutes(fullDayMinutes(next));}}/>
-          <TextInput type="time" label="Beginn" size="lg" value={time} onChange={e=>setTime(e.currentTarget.value)} error={!startAt?'Bitte gültigen Beginn wählen.':undefined} />
+          <QuarterTimeField label="Beginn" value={time} onChange={setTime} error={!startAt?'Bitte gültigen Beginn wählen.':undefined}/>
         </SimpleGrid>
         <Select label="Dauer (15-Minuten-Blöcke)" size="lg" searchable data={durationOptions} value={String(minutes)} onChange={v=>{setUseFullDay(false);setMinutes(Number(v ?? 0));}} allowDeselect={false} />
         <Text fw={700} aria-live="polite">Ende: {endAt ? displayStamp(endAt.toISOString()) : '–'}</Text>

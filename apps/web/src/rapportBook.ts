@@ -47,3 +47,9 @@ export function primaryReport(reports:RapportReport[],date:string,ownerId:number
   const effective=effectiveReports(reports.filter(r=>r.date===date&&r.owner.id===ownerId));
   return effective.length===1?effective[0]:undefined;
 }
+
+export const quarterHours=Array.from({length:96},(_,i)=>String(Math.floor(i/4)).padStart(2,'0')+':'+String(i%4*15).padStart(2,'0'));
+export const isQuarterInstant=(value:string)=>Number.isFinite(Date.parse(value))&&Date.parse(value)%900000===0;
+export function floorQuarterInstant(value:string):string {const ms=Date.parse(value);return Number.isFinite(ms)?new Date(Math.floor(ms/900000)*900000).toISOString():'';}
+export function ceilQuarterInstant(value:string):string {const ms=Date.parse(value);return Number.isFinite(ms)?new Date(Math.ceil(ms/900000)*900000).toISOString():'';}
+export function quarterOptions(value:string){return [...quarterHours.map(t=>({value:t,label:t})),...(!value||quarterHours.includes(value)?[]:[{value,label:value+' (Altbestand)',disabled:true}])];}
