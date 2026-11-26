@@ -6,7 +6,7 @@ import {getSetting,setSetting,db} from '../db';
 import {replayRapportQueue} from '../rapportQueue';
 import {formatDuration} from '../rapport';
 import {fromInputTime,inputTime,today} from '../rapportBook';
-import {filterTasks,roundedDuration,type GreenTask} from '../green';
+import {filterTasks,municipalities,roundedDuration,type GreenTask} from '../green';
 import type {CurrentUser} from '../types';
 type Person={id:number;name:string;groups:string[]};
 type Session={team:number[];town:string;includeUnassigned:boolean;selected:number[];excluded:number[];start:string;duration:number;runningAt:number|null;note:string;operationId?:string};
@@ -22,8 +22,9 @@ export function GreenPage(){
   }void load().catch(e=>{if(active)setError(errorText(e));}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[attempt]);
   useEffect(()=>{if(session.runningAt===null)return;const t=window.setInterval(()=>setNow(Date.now()),1000);return()=>window.clearInterval(t);},[session.runningAt]);
   const change=(patch:Partial<Session>)=>{const next={...session,...patch};setSession(next);if(actor)void setSetting('green-session:'+actor,next).then(()=>setPersistError(false)).catch(()=>setPersistError(true));};
-  const towns=[...new Set(tasks.flatMap(t=>t.municipalities))].sort((a,b)=>a.localeCompare(b,'de'));
-  const visible=filterTasks(tasks,session.town,session.includeUnassigned,search),chosen=tasks.filter(t=>session.selected.includes(t.id)),recipients=session.team.filter(id=>!session.excluded.includes(id)&&people.some(p=>p.id===id));
+  const towns=municipalities(tasks);
+  const activeTown=towns.includes(session.town)?session.town:'*';
+  const visible=filterTasks(tasks,activeTown,session.includeUnassigned,search),chosen=tasks.filter(t=>session.selected.includes(t.id)),recipients=session.team.filter(id=>!session.excluded.includes(id)&&people.some(p=>p.id===id));
   const toggle=(items:number[],id:number)=>items.includes(id)?items.filter(x=>x!==id):[...items,id];
   const running=session.runningAt!==null,startAt=fromInputTime(session.start),effective=running?roundedDuration(session.runningAt!,now):session.duration;
   const start=()=>{const t=Date.now();setNow(t);change({runningAt:t,start:inputTime(new Date(t).toISOString()),duration:0,operationId:crypto.randomUUID()});};
@@ -50,12 +51,12 @@ export function GreenPage(){
         <ScrollArea.Autosize mah={240}><Stack gap="xs">{[...people].sort((a,b)=>Number(session.team.includes(b.id))-Number(session.team.includes(a.id))||a.name.localeCompare(b.name,'de')).filter(p=>p.name.toLocaleLowerCase('de').includes(teamSearch.toLocaleLowerCase('de'))).map(p=><Checkbox key={p.id} size="lg" disabled={running||busy} label={p.name+(p.id===actor?' (Du)':'')} checked={session.team.includes(p.id)} onChange={()=>change({team:toggle(session.team,p.id)})}/>)}</Stack></ScrollArea.Autosize>
         {session.team.length>0&&<details><summary>Ausnahmen für diesen Einsatz</summary><Stack mt="sm">{people.filter(p=>session.team.includes(p.id)).map(p=><Checkbox key={p.id} size="lg" label={p.name+' nicht rapportieren'} checked={session.excluded.includes(p.id)} disabled={busy} onChange={()=>change({excluded:toggle(session.excluded,p.id)})}/>)}</Stack></details>}
       </Stack></Paper>
-      <Paper withBorder p="md" className="surface-card"><Stack gap="sm"><Title order={2} size="h4">Ortsgemeinde & Aufgaben</Title>
-        <SimpleGrid cols={{base:2,sm:3}}>{towns.map(t=><Button key={t} h={50} disabled={running||busy} variant={session.town===t?'filled':'light'} styles={{label:{whiteSpace:'normal'}}} onClick={()=>change({town:t,selected:[]})}>{t}</Button>)}<Button h={50} variant={session.town==='*'?'filled':'default'} disabled={running||busy} onClick={()=>change({town:'*',selected:[]})}>Alle Orte</Button></SimpleGrid>
+      <Paper withBorder p="md" className="surface-card"><Stack gap="sm"><Group justify="space-between"><Title order={2} size="h4">Ortsgemeinde & Aufgaben</Title><Button h={48} variant="light" disabled={running||busy||loading||!navigator.onLine} onClick={()=>setAttempt(a=>a+1)}>Aktualisieren</Button></Group><Text size="sm" c="dimmed">Orte aus dem Redmine-Feld „Ort“ der Grünpflegearbeiten. Keine manuelle Ortsliste.</Text>{!towns.length&&<Alert variant="light">Noch keine Ortsangaben in den sichtbaren Grünpflegearbeiten. Aufgaben ohne Ort können eingeblendet werden.</Alert>}
+        <SimpleGrid cols={{base:2,sm:3}}>{towns.map(t=><Button key={t} h={50} disabled={running||busy} variant={activeTown===t?'filled':'light'} styles={{label:{whiteSpace:'normal'}}} onClick={()=>change({town:t,selected:[]})}>{t} ({tasks.filter(task=>task.municipalities.includes(t)).length})</Button>)}<Button h={50} variant={activeTown==='*'?'filled':'default'} disabled={running||busy} onClick={()=>change({town:'*',selected:[]})}>Alle Orte</Button></SimpleGrid>
         <Checkbox size="lg" label="Auch ohne Ortsangabe" checked={session.includeUnassigned} disabled={running||busy} onChange={e=>change({includeUnassigned:e.currentTarget.checked})}/>
         <TextInput label="Aufgaben suchen" value={search} onChange={e=>setSearch(e.currentTarget.value)}/>
         <Text size="sm" c="dimmed">{visible.length} Aufgaben · {chosen.length} ausgewählt</Text>
-        <ScrollArea.Autosize mah={420}><Stack gap="xs">{visible.map(t=><Paper key={t.id} withBorder p="sm"><Checkbox size="lg" disabled={running||busy} checked={session.selected.includes(t.id)} onChange={()=>change({selected:toggle(session.selected,t.id)})} label={<Stack gap={2}><Text fw={700}>{t.subject}</Text><Text size="xs" c="dimmed">#{t.id} · {t.municipalities.join(', ')||'Ohne Ortsangabe'}</Text></Stack>}/></Paper>)}</Stack></ScrollArea.Autosize>
+        {!visible.length&&<Text c="dimmed" size="sm">Keine passenden Aufgaben vorhanden.</Text>}<ScrollArea.Autosize mah={420}><Stack gap="xs">{visible.map(t=><Paper key={t.id} withBorder p="sm"><Checkbox size="lg" disabled={running||busy} checked={session.selected.includes(t.id)} onChange={()=>change({selected:toggle(session.selected,t.id)})} label={<Stack gap={2}><Text fw={700}>{t.subject}</Text><Text size="xs" c="dimmed">#{t.id} · {t.municipalities.join(', ')||'Ohne Ortsangabe'}</Text></Stack>}/></Paper>)}</Stack></ScrollArea.Autosize>
         {chosen.length>0&&<Text size="sm">Auswahl: {chosen.map(t=>'#'+t.id+' '+t.subject).join('; ')}</Text>}
       </Stack></Paper>
       <Paper withBorder p="md" className="surface-card"><Stack gap="sm"><Title order={2} size="h4">Einsatzzeit</Title>

@@ -191,7 +191,31 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const ids=[...new Set(arr(value??[],50).map(x=>{if(typeof x!=='number'||!Number.isSafeInteger(x)||x<=0)fail(400,'Ungültige Auftragsreferenz');return x;}))];
     const result:SourceRef[]=[];for(const id of ids){const {issue}=await redmineJson<{issue:Issue}>(config,c.creds,'/issues/'+id+'.json');if([c.s.project,c.s.catalogProject].includes(issue.project.id))fail(400,'Interne Vorgänge sind keine Aufträge');result.push({id:issue.id,subject:issue.subject});}return result;
   }
-  app.get('/api/rapport/green/tasks',async r=>{const c=await context(r);if(process.env.GREEN_ENABLED==='false'&&!c.s.automatic)return fail(503,'Grünpflege ist noch nicht eingerichtet');const admin=keyApi(config,c.s.directoryKey);const tracker=process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):(await admin<{trackers:{id:number;name:string}[]}>('/trackers.json')).trackers.find(t=>t.name.toLocaleLowerCase('de')==='grünpflege')?.id;const field=process.env.GREEN_MUNICIPALITY_FIELD_ID?idEnv('GREEN_MUNICIPALITY_FIELD_ID'):(await admin<{custom_fields:{id:number;name:string;customized_type:string}[]}>('/custom_fields.json')).custom_fields.find(f=>f.customized_type==='issue'&&['ortsgemeinde','ort'].includes(f.name.toLocaleLowerCase('de')))?.id;if(!tracker||!field)fail(503,'Grünpflege-Tracker oder Ortsgemeindefeld nicht verfügbar.');const personal:Get=<T>(path:string)=>redmineJson<T>(config,c.creds,path);const issues=await pages<Issue>(personal,'/issues.json?tracker_id='+tracker+'&status_id=*');const tasks=issues.filter(i=>i.tracker.id===tracker&&![c.s.project,c.s.catalogProject].includes(i.project.id)).map(i=>{const raw=i.custom_fields?.find(f=>f.id===field)?.value;return {id:i.id,subject:i.subject,municipalities:(Array.isArray(raw)?raw:raw===undefined||raw===null?[]:[raw]).map(x=>String(x).trim()).filter(Boolean)};});return {tasks};});
+  app.get('/api/rapport/green/tasks',async (r,reply)=>{
+    reply.header('Cache-Control','no-store');
+    const c=await context(r);
+    const admin=keyApi(config,c.s.directoryKey);
+    const normalized=(name:string)=>name.trim().normalize('NFC').toLocaleLowerCase('de');
+    function unique(items:{id:number;name:string}[],name:string,kind:string){
+      const matches=items.filter(x=>normalized(x.name)===name);
+      if(matches.length>1)fail(503,kind+' nicht eindeutig: '+name);
+      return matches[0]?.id;
+    }
+    const trackers=(await admin<{trackers:{id:number;name:string}[]}>('/trackers.json')).trackers;
+    const tracker=process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):unique(trackers,'grünpflegearbeiten','Tracker')??unique(trackers,'grünfplegearbeiten','Tracker');
+    if(!tracker)fail(503,'Der Redmine-Tracker „Grünpflegearbeiten“ wurde noch nicht gefunden.');
+    const fields=(await admin<{custom_fields:{id:number;name:string;customized_type:string}[]}>('/custom_fields.json')).custom_fields.filter(f=>f.customized_type==='issue');
+    const field=process.env.GREEN_MUNICIPALITY_FIELD_ID?idEnv('GREEN_MUNICIPALITY_FIELD_ID'):unique(fields,'ort','Ticketfeld');
+    if(!field)fail(503,'Das benutzerdefinierte Ticketfeld „Ort“ wurde nicht gefunden.');
+    const personal:Get=<T>(path:string)=>redmineJson<T>(config,c.creds,path);
+    const issues=await pages<Issue>(personal,'/issues.json?tracker_id='+tracker+'&status_id=*');
+    const tasks=issues.filter(i=>i.tracker.id===tracker&&![c.s.project,c.s.catalogProject].includes(i.project.id)).map(i=>{
+      const raw=i.custom_fields?.find(f=>f.id===field)?.value;
+      const municipalities=[...new Set((Array.isArray(raw)?raw:[raw]).filter((v):v is string=>typeof v==='string').map(v=>v.trim().normalize('NFC')).filter(Boolean))];
+      return {id:i.id,subject:i.subject,municipalities};
+    });
+    return {tasks};
+  });
   app.get('/api/rapport/users',async r=>{const c=await context(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
   app.get('/api/rapport/reports',async r=>{const c=await context(r),q=r.query as {from?:string;to?:string;all?:string};if(!validDate(q.from)||!validDate(q.to)||q.from>q.to)return fail(400,'Ungültiger Zeitraum');if(q.all==='1'&&!c.dispatcher)return fail(403,'Nur Disponenten');const reports=[...await list(c),...await listCorrections(c)].map(i=>decode(i,c.s)).filter(d=>d.date>=q.from!&&d.date<=q.to!&&(q.all==='1'||d.owner.id===c.actor.id));return {reports,dispatcher:c.dispatcher};});
   app.post('/api/rapport/reports/:id/correction',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten');if(!c.s.correctionTracker)fail(503,'Korrekturtracker nicht eingerichtet');const reason=str(obj(r.body).reason,1000);if(!reason)fail(400,'Korrekturbegründung erforderlich');return serialized(async()=>{const {r:original}=await detail(c,Number((r.params as {id:string}).id));if(original.state!=='closed')fail(409,'Nur abgeschlossene Rapporte korrigieren');const existing=(await listCorrections(c)).map(i=>decode(i,c.s)).filter(d=>d.correction?.reportId===original.id);if(existing.length)fail(409,'Zu diesem Beleg besteht bereits eine Korrektur. Bitte diese öffnen oder den aktuell abgeschlossenen Korrekturbeleg korrigieren.');const data:Data={version:1,owner:original.owner,date:original.date,lines:original.lines,material:original.material,correction:{reportId:original.id,reason,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString()}};const created=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.correctionTracker,status_id:c.s.statuses.draft,subject:'Rapportkorrektur '+original.id,...payload(c,data)}});const actual=(await detail(c,created.issue.id)).r;if(actual.correction?.reportId!==original.id||actual.state!=='draft')fail(409,'Korrektur nicht vollständig angelegt');return actual;});});
