@@ -220,6 +220,8 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const fields=(await admin<{custom_fields:{id:number;name:string;customized_type:string}[]}>('/custom_fields.json')).custom_fields.filter(f=>f.customized_type==='issue');
     const field=process.env.GREEN_MUNICIPALITY_FIELD_ID?idEnv('GREEN_MUNICIPALITY_FIELD_ID'):unique(fields,'ort','Ticketfeld');
     if(!field)fail(503,'Das benutzerdefinierte Ticketfeld „Ort“ wurde nicht gefunden.');
+    // Catalogue records are usually created directly as closed (Erledigt), without a workflow.
+    // Explicit wildcard is mandatory: Redmine otherwise defaults to open issues.
     const issues=await pages<Issue>(admin,'/issues.json?project_id='+project.id+'&tracker_id='+tracker+'&status_id=*');
     return issues.filter(i=>i.project.id===project.id&&i.tracker.id===tracker).map(i=>{
       const raw=i.custom_fields?.find(f=>f.id===field)?.value;

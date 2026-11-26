@@ -25,11 +25,12 @@ export function GreenPage(){
   const towns=municipalities(tasks);
   const activeTown=towns.includes(session.town)?session.town:'*';
   const visible=filterTasks(tasks,activeTown,session.includeUnassigned,search),chosen=tasks.filter(t=>session.selected.includes(t.id)),recipients=session.team.filter(id=>!session.excluded.includes(id)&&people.some(p=>p.id===id));
+  const missingTasks=session.selected.filter(id=>!tasks.some(t=>t.id===id));
   const toggle=(items:number[],id:number)=>items.includes(id)?items.filter(x=>x!==id):[...items,id];
   const running=session.runningAt!==null,startAt=fromInputTime(session.start),effective=running?roundedDuration(session.runningAt!,now):session.duration;
   const start=()=>{const t=Date.now();setNow(t);change({runningAt:t,start:inputTime(new Date(t).toISOString()),duration:0,operationId:crypto.randomUUID()});};
   const stop=()=>change({duration:roundedDuration(session.runningAt!,Date.now()),runningAt:null});
-  const save=async()=>{if(!actor||!startAt||!chosen.length||!recipients.length||!session.duration||running||busy)return;setBusy(true);setError('');setNotice('');
+  const save=async()=>{if(!actor||!startAt||!chosen.length||missingTasks.length||!recipients.length||!session.duration||running||busy)return;setBusy(true);setError('');setNotice('');
     const operationId=session.operationId??crypto.randomUUID();const next={...session,operationId};setSession(next);
     try{
       const cleared={...session,selected:[],excluded:[],duration:0,runningAt:null,note:'',operationId:undefined};
@@ -57,6 +58,7 @@ export function GreenPage(){
         <TextInput label="Aufgaben suchen" value={search} onChange={e=>setSearch(e.currentTarget.value)}/>
         <Text size="sm" c="dimmed">{visible.length} Aufgaben · {chosen.length} ausgewählt</Text>
         {!visible.length&&<Text c="dimmed" size="sm">Keine passenden Aufgaben vorhanden.</Text>}<ScrollArea.Autosize mah={420}><Stack gap="xs">{visible.map(t=><Paper key={t.id} withBorder p="sm"><Checkbox size="lg" disabled={running||busy} checked={session.selected.includes(t.id)} onChange={()=>change({selected:toggle(session.selected,t.id)})} label={<Stack gap={2}><Text fw={700}>{t.subject}</Text><Text size="xs" c="dimmed">#{t.id} · {t.municipalities.join(', ')||'Ohne Ortsangabe'}</Text></Stack>}/></Paper>)}</Stack></ScrollArea.Autosize>
+        {missingTasks.length>0&&<Alert color="orange" title="Aufgaben nicht mehr im Katalog">{missingTasks.map(id=>'#'+id).join(', ')} wurden entfernt oder sind nicht mehr verfügbar. Bitte Auswahl prüfen.<Button mt="xs" h={48} variant="default" disabled={running||busy} onClick={()=>change({selected:session.selected.filter(id=>!missingTasks.includes(id))})}>Nicht verfügbare Aufgaben aus Auswahl entfernen</Button></Alert>}
         {chosen.length>0&&<Text size="sm">Auswahl: {chosen.map(t=>'#'+t.id+' '+t.subject).join('; ')}</Text>}
       </Stack></Paper>
       <Paper withBorder p="md" className="surface-card"><Stack gap="sm"><Title order={2} size="h4">Einsatzzeit</Title>
@@ -65,13 +67,13 @@ export function GreenPage(){
           <Title order={2} ta="center">{formatDuration(session.duration)} h</Title>
           <Select label="Dauer in Viertelstunden" value={String(session.duration)} data={[{value:'0',label:'Bitte wählen'},...Array.from({length:96},(_,i)=>({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'}))]} onChange={v=>change({duration:Number(v??0)})} searchable disabled={busy}/>
           <SimpleGrid cols={2}>{[15,30,45,60].map(n=><Button key={n} h={52} variant="light" disabled={busy||session.duration+n>1440} onClick={()=>change({duration:session.duration+n})}>+{n} min</Button>)}</SimpleGrid>
-          <Button h={60} variant="outline" disabled={!chosen.length||!recipients.length||busy||session.duration>0} onClick={start}>Aufgabe beginnen</Button>
+          <Button h={60} variant="outline" disabled={!chosen.length||!!missingTasks.length||!recipients.length||busy||session.duration>0} onClick={start}>Aufgabe beginnen</Button>
           <Text size="xs" c="dimmed">Stoppuhr: Dauer wird auf die nächstgelegene Viertelstunde gerundet (mindestens 15 Minuten) und kann vor Übernahme korrigiert werden. Läuft auch bei geschlossenem Bildschirm über Zeitstempel weiter.</Text>
           <Text size="sm">Ende: {startAt&&session.duration?inputTime(new Date(Date.parse(startAt)+session.duration*60000).toISOString()).replace('T',' '):'–'}</Text>
         </>}
         <Textarea label="Ergänzende Tätigkeit (optional)" value={session.note} onChange={e=>change({note:e.currentTarget.value})} disabled={busy}/>
         <Text fw={700}>Gesamtaufwand: {formatDuration(effective*recipients.length)} Personenstunden</Text>
-        <Button h={60} loading={busy} disabled={running||!startAt||!session.duration||!chosen.length||!recipients.length||persistError} onClick={()=>void save()}>In {recipients.length} Tagesrapporte übernehmen</Button>
+        <Button h={60} loading={busy} disabled={running||!startAt||!session.duration||!chosen.length||!!missingTasks.length||!recipients.length||persistError} onClick={()=>void save()}>In {recipients.length} Tagesrapporte übernehmen</Button>
         {!running&&session.duration>0&&<Button h={48} variant="subtle" disabled={busy} onClick={()=>change({duration:0,operationId:undefined})}>Zeit zurücksetzen</Button>}
         <Button component={Link} to="/rapport" h={48} variant="default">Übertragungen anzeigen</Button>
       </Stack></Paper>
