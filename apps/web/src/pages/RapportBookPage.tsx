@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Checkbox, Group, Paper, Progress, Select, SimpleGrid, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link,useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { db,getSetting,setSetting } from '../db';
 import type { CurrentUser } from '../types';
@@ -54,7 +54,8 @@ function LineEditor({line,disabled,catalog,update,remove}:{line:RapportLine;disa
 }
 export function RapportBookPage(){
   const network=useNetwork();const [offline,setOffline]=useState(!navigator.onLine);const [localDrafts,setLocalDrafts]=useState<number[]>([]);
-  const [date,setDate]=useState(today);const [tab,setTab]=useState('day');const [reports,setReports]=useState<RapportReport[]>([]);const [dispatcher,setDispatcher]=useState(false);const [actor,setActor]=useState(0);const [catalog,setCatalog]=useState<Catalog>(emptyCatalog);
+  const [params]=useSearchParams();const requestedReport=Number(params.get('report'));const requestedDate=params.get('date');
+  const [date,setDate]=useState(()=>requestedDate&&/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)?requestedDate:today());const [tab,setTab]=useState('day');const [reports,setReports]=useState<RapportReport[]>([]);const [dispatcher,setDispatcher]=useState(false);const [actor,setActor]=useState(0);const [catalog,setCatalog]=useState<Catalog>(emptyCatalog);
   const [selected,setSelected]=useState<number[]>([]);const [current,setCurrent]=useState<RapportReport|null>(null);const [dirty,setDirty]=useState(false);const [reason,setReason]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [message,setMessage]=useState('');const [search,setSearch]=useState('');const [filter,setFilter]=useState('pending');const [newName,setNewName]=useState('');const [kind,setKind]=useState('machine');
   const from=tab==='week'?weekStart(date):tab==='archive'?date.slice(0,7)+'-01':date;const to=tab==='week'?shiftDay(from,6):tab==='archive'?new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(5,7)),0)).toISOString().slice(0,10):date;
   const refresh=async()=>{const r=await api.rapportList(from,to,tab==='review');setReports(r.reports);setDispatcher(r.dispatcher);};
@@ -82,11 +83,13 @@ export function RapportBookPage(){
   const save=async()=>{if(!current)return;setBusy(true);setError('');try{const next=await api.rapportSave(current.id,{revision:current.revision,lines:current.lines,material:current.material,reason});await db.rapportDrafts.delete(actor+':'+current.id);setLocalDrafts(old=>old.filter(i=>i!==current.id));setCurrent(next);setDirty(false);setReason('');setMessage('Rapport gespeichert.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
   const transition=async(action:string)=>{if(!current||dirty)return;setBusy(true);setError('');try{const next=await api.rapportTransition(current.id,{revision:current.revision,action,reason});setCurrent(next);setReason('');setMessage('Status aktualisiert.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
   const submitWeek=async()=>{setBusy(true);setError('');const failures:string[]=[];for(const id of selected){try{const r=await api.rapportDetail(id);await api.rapportTransition(id,{revision:r.revision,action:'submit'});}catch(e){failures.push('#'+id+': '+errorText(e));}}try{await refresh();}catch(e){failures.push(errorText(e));}setSelected([]);setError(failures.join('; '));setMessage(failures.length?'Teilweise eingereicht.':'Ausgewählte Rapporte eingereicht.');setBusy(false);};
+  const [openedLink,setOpenedLink]=useState(false);
+  useEffect(()=>{if(!busy&&actor&&!openedLink&&Number.isSafeInteger(requestedReport)&&requestedReport>0){setOpenedLink(true);void open(requestedReport);}},[busy,actor,openedLink,requestedReport]);
   const canEdit=!!current&&current.state!=='closed'&&(dispatcher||(current.owner.id===actor&&['draft','returned'].includes(current.state)));
   const addLine=(type:'work'|'pause')=>{if(!current)return;const start=[...current.lines].filter(l=>l.end&&inputTime(l.end).slice(0,10)===current.date).sort((a,b)=>b.end.localeCompare(a.end))[0]?.end??fromInputTime(current.date+'T07:00');const end=new Date(Date.parse(start)+15*60000).toISOString();edit({...current,lines:[...current.lines,{id:crypto.randomUUID(),start,end,kind:type,activity:'',order:'',machines:[],materials:[]}]});};
   const visible=reports.filter(r=>(tab!=='archive'||r.state==='closed')&&r.owner.name.toLocaleLowerCase('de').includes(search.toLocaleLowerCase('de'))&&(tab!=='review'||filter==='all'||(filter==='pending'?['submitted','review'].includes(r.state):r.state===filter)));
   return <Stack maw={950} mx="auto" gap="md">
-    <Group justify="space-between"><Title order={1} size="h2">Rapporte</Title><Group gap="xs"><Button component={Link} to="/green" variant="default" h={48}>Grünpflege</Button><Button component={Link} to="/rapport" variant="light" h={48}>+ Erfassen</Button></Group></Group>
+    <Group justify="space-between"><Title order={1} size="h2">Rapporte</Title><Group gap="xs"><Button component={Link} to="/settings?tab=advanced" variant="default" h={48}>Einrichtung</Button><Button component={Link} to="/green" variant="default" h={48}>Grünpflege</Button><Button component={Link} to="/rapport" variant="light" h={48}>+ Erfassen</Button></Group></Group>
     <SimpleGrid cols={2} spacing="xs">{[['day','Mein Tag'],['week','Meine Woche'],['archive','Archiv'],...(dispatcher?[['review','Prüfcenter'],['catalog','Stammdaten']]:[])].map(([key,label])=><Button key={key} h={48} variant={tab===key?'filled':'default'} onClick={()=>changeTab(key!)} disabled={busy}>{label}</Button>)}</SimpleGrid>
     {offline&&<Alert color="orange">Offline: bereits geladene eigene Rapporte können lokal korrigiert werden. Übernahme nach Redmine, Einreichung und Prüfung nur online.</Alert>}
     {error&&<Alert color="red" title="Rapportwesen">{error}</Alert>}{message&&<Alert color="green" onClose={()=>setMessage('')} withCloseButton>{message}</Alert>}

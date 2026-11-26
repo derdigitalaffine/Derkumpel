@@ -27,7 +27,7 @@ export type PushConfig = { enabled: boolean; publicKey: string | null };
 export type DevicePushSubscription = { endpoint: string; keys: { p256dh: string; auth: string }; expirationTime?: number | null };
 
 export type TicketBrowserStatus = 'open' | 'closed' | '*';
-export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
+export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number; filterUnavailable?:boolean };
 
 export type TechnicalSelection={storageProjectId:number|null;storageTrackerId:number|null;greenProjectId:number|null;greenTrackerId:number|null;greenFieldId:number|null};
 export type TechnicalSettings={selection:TechnicalSelection;defaults:TechnicalSelection;projects:{id:number;name:string;identifier:string;isPublic:boolean}[];trackers:{id:number;name:string;defaultStatusId:number|null}[];fields:{id:number;name:string;format:string}[];mode:string};
@@ -48,7 +48,8 @@ export const api = {
   rapportOrder: (id:number) => request<{id:number;subject:string}>(`/api/rapport/order/${id}`),
   rapportCatalog: () => request<Catalog>('/api/rapport/catalog'),
   rapportAddCatalog: (kind:string,name:string) => request<{id:number;name:string}>('/api/rapport/catalog',{method:'POST',body:JSON.stringify({kind,name})}),
-  rapportCapture: (body:unknown) => request<{results:{employee:number;ok:boolean;message?:string;reportId?:number}[]}>('/api/rapport/capture',{method:'POST',body:JSON.stringify(body)}),
+  rapportCaptureCheck: (body:unknown) => request<{results:{employee:number;stored:boolean;editable:boolean;overlap:boolean;reportId?:number;overlaps?:{start:string;end:string;activity:string}[]}[]}>('/api/rapport/capture/check',{method:'POST',body:JSON.stringify(body)}),
+  rapportCapture: (body:unknown) => request<{results:{employee:number;ok:boolean;message?:string;reportId?:number;status?:number;conflict?:{kind:'overlap';reportId?:number}}[]}>('/api/rapport/capture',{method:'POST',body:JSON.stringify(body)}),
   rapportUsers: () => request<{ users: { id: number; name: string; groups: string[] }[]; missingGroups: string[]; dispatcher?: boolean }>('/api/rapport/users'),
   login: (username: string, password: string) => request<{ user: CurrentUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),

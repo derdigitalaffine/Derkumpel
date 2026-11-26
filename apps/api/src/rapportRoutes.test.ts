@@ -79,6 +79,20 @@ describe('Rapport REST boundary',()=>{
       const tasks=await app.inject({method:'GET',url:'/api/rapport/green/tasks',headers:{'x-test-user':'alice'}});expect(tasks.statusCode).toBe(200);expect(tasks.json().tasks).toHaveLength(2);
     }finally{await app.close();}
   });
+  it('returns structured overlap conflicts and checks original capture without changing data',async()=>{
+    const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
+    const headers={'x-test-user':'alice'},body={actorId:1,date:'2026-11-26',employees:[1],line};
+    const send=(url:string,payload:object)=>app.inject({method:'POST',url,headers,payload});
+    try{expect((await send('/api/rapport/capture',body)).json().results[0].ok).toBe(true);
+      const pending={...body,line:{...line,id:'overlap-123',end:'2026-11-26T06:30:00.000Z'}};
+      const snapshot=JSON.stringify(issues.get(100));
+      const conflict=await send('/api/rapport/capture',pending);expect(conflict.json().results[0]).toMatchObject({ok:false,status:409,conflict:{kind:'overlap',reportId:100}});
+      expect((await send('/api/rapport/capture/check',pending)).json().results[0]).toMatchObject({stored:false,editable:true,overlap:true,reportId:100});
+      expect((await send('/api/rapport/capture/check',body)).json().results[0]).toMatchObject({stored:true,editable:false});
+      expect(JSON.stringify(issues.get(100))).toBe(snapshot);
+      const foreign={...pending,actorId:2};const check=await app.inject({method:'POST',url:'/api/rapport/capture/check',headers:{'x-test-user':'bob'},payload:foreign});expect(check.json().results[0].reportId).toBeUndefined();expect(check.json().results[0].overlaps).toBeUndefined();
+    }finally{await app.close();}
+  });
   it('accepts Redmine CRLF descriptions and retries an already stored 30-minute capture exactly once',async()=>{
     const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');
     app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));

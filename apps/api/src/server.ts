@@ -292,7 +292,7 @@ app.get('/api/meta/:kind', async (request, reply) => {
   const { kind } = request.params as { kind: string };
   const target = metaRoutes[kind];
   if (!target) return reply.code(404).send({ error: 'unknown_meta' });
-  if(kind==='projects'){const result=await redmineJson<{projects:{id:number;name:string;identifier?:string}[];total_count?:number}>(config,credentials(request),target);const projects=result.projects.filter(p=>!internalRapportProject(p.id,p.name)&&!internalRapportProject(p.id,p.identifier));return {...result,projects,total_count:Math.max(projects.length,(result.total_count??result.projects.length)-(result.projects.length-projects.length))};}
+  if(kind==='projects'){const creds=credentials(request);const projects:{id:number;name:string;identifier?:string}[]=[];let offset=0;for(;offset<100000;){const page=await redmineJson<{projects:typeof projects;total_count?:number}>(config,creds,'/projects.json?limit=100&offset='+offset);projects.push(...page.projects);offset+=page.projects.length;if(!page.projects.length||offset>=(page.total_count??offset))break;}const visible=projects.filter(p=>!internalRapportProject(p.id,p.name)&&!internalRapportProject(p.id,p.identifier));return {projects:visible,total_count:visible.length};}
   return redmineJson(config, credentials(request), target);
 });
 

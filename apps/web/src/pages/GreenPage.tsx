@@ -42,7 +42,7 @@ export function GreenPage(){
     }catch(e){setError(errorText(e));}finally{setBusy(false);}
   };
   return <Stack maw={950} mx="auto" gap="md">
-    <Group justify="space-between"><Title order={1} size="h2">Grünpflege</Title><Button component={Link} to="/rapport/book" h={48} variant="light">Rapporte</Button></Group>
+    <Group justify="space-between"><Title order={1} size="h2">Grünpflege</Title><Group gap="xs"><Button component={Link} to="/settings?tab=advanced" h={48} variant="default">Einrichtung</Button><Button component={Link} to="/rapport/book" h={48} variant="light">Rapporte</Button></Group></Group>
     <Alert variant="light">Aufgaben sind wiederverwendbare Redmine-Vorgänge. Ihr Status bleibt unverändert. Mehrere Aufgaben ergeben einen gemeinsamen Zeitabschnitt pro Person.</Alert>
     {error&&<Alert color="red">{error}</Alert>}{notice&&<Alert color="green">{notice}</Alert>}{persistError&&<Alert color="red">Der aktuelle Einsatz konnte nicht lokal gespeichert werden.</Alert>}
     {loading?<Text role="status">Aufgaben werden geladen …</Text>:!actor?<Button h={48} onClick={()=>setAttempt(a=>a+1)}>Erneut laden</Button>:<>

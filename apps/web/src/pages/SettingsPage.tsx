@@ -9,7 +9,7 @@ import { useDexieLive } from '../live';
 import { currentRapportQueue } from '../rapportQueue';
 import { boundsAround, prefetchOfflineMap } from '../mapOffline';
 import type { NamedRef, PublicConfig } from '../types';
-import { Link } from 'react-router-dom';
+import { Link,useSearchParams } from 'react-router-dom';
 import { UIIcon, type IconName } from '../components/UIIcon';
 
 const DEFAULT_NOTIFICATIONS: PushPreferences = { assignment: true, status: true, comment: true, priority: true, dates: true };
@@ -22,6 +22,7 @@ function SectionHeading({ icon, title, description }: { icon: IconName; title: s
 }
 
 export function SettingsPage() {
+  const [params,setParams]=useSearchParams();const tab=params.get('tab')==='advanced'?'advanced':'general';
   const pendingCount = useDexieLive(useCallback(async () => await db.outbox.count()+(await currentRapportQueue()).length+await db.rapportDrafts.where('ownerId').equals((await getSetting<{id:number}|null>('lastUser',null))?.id??0).count(), []), 0);
   const [retention, setRetention] = useState(30);
   const [trackers, setTrackers] = useState<NamedRef[]>([]);
@@ -101,7 +102,7 @@ export function SettingsPage() {
 
     {pendingCount > 0 && <Alert color="orange" variant="light" title={`${pendingCount} lokale Änderung(en) noch offen`}>Die Änderungen werden auf diesem Gerät geschützt. <Button component={Link} to="/sync" variant="subtle" color="orange" size="compact-sm" rightSection={<UIIcon name="chevron-right" size={14} />}>Zum Sync-Center</Button></Alert>}
 
-    <Tabs defaultValue="general" keepMounted={false}><Tabs.List grow><Tabs.Tab value="general">Allgemein</Tabs.Tab><Tabs.Tab value="advanced">Erweiterte Settings</Tabs.Tab></Tabs.List><Tabs.Panel value="advanced" pt="md"><AdvancedSettings/></Tabs.Panel><Tabs.Panel value="general" pt="md"><Stack gap="md">
+    <Tabs value={tab} onChange={v=>setParams(v==='advanced'?{tab:'advanced'}:{})} keepMounted={false}><Tabs.List grow><Tabs.Tab value="general">Allgemein</Tabs.Tab><Tabs.Tab value="advanced">Erweiterte Settings</Tabs.Tab></Tabs.List><Tabs.Panel value="advanced" pt="md"><AdvancedSettings/></Tabs.Panel><Tabs.Panel value="general" pt="md"><Stack gap="md"><Card withBorder className="surface-card"><Stack gap="sm"><SectionHeading icon="settings" title="Erweiterte Settings" description="Redmine-Projekte, Tracker, Ortsfeld und Rapportspeicher konfigurieren und prüfen."/><Button component={Link} to="/settings?tab=advanced" h={52} variant="light">Erweiterte Settings öffnen</Button><Text size="xs" c="dimmed">Globale Einstellungen benötigen ein Redmine-Administratorkonto.</Text></Stack></Card>
     <Card withBorder className="surface-card settings-section">
       <Stack gap="lg">
         <SectionHeading icon="download" title="Offline-Daten" description="Wie lange abgeschlossene oder nicht mehr zugewiesene Aufträge auf dem Gerät bleiben." />

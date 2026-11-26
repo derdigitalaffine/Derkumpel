@@ -1,6 +1,6 @@
 import { ActionIcon, Alert, Badge, Box, Button, Drawer, Group, Paper, SegmentedControl, Select, Skeleton, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type TicketBrowserStatus } from '../api';
+import { api, ApiError, AuthRequiredError, type TicketBrowserStatus } from '../api';
 import { db, getSetting, setSetting } from '../db';
 import { IssueCard } from '../components/IssueCard';
 import { CompactIssueRow } from '../components/CompactIssueRow';
@@ -36,33 +36,25 @@ export function TicketsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(0);
+  const [initialized,setInitialized]=useState(false);
+  const [filterNotice,setFilterNotice]=useState('');
 
   useEffect(() => {
     void getSetting('ticketCompactView', true).then(setCompact);
     let disposed = false;
-    void getSetting<BrowserState>('ticketBrowser', { status: '*' }).then((saved) => { if (!disposed) setBrowser(saved); });
-    void Promise.all([
-      getSetting<NamedRef[]>('trackersMeta', []),
-      getSetting<NamedRef[]>('projectsMeta', []),
-    ]).then(([cachedTrackers, cachedProjects]) => {
-      if (disposed) return;
-      setTrackers(cachedTrackers);
-      setProjects(cachedProjects);
-    });
-    if (navigator.onLine) {
-      void Promise.all([
-        api.meta<TrackerList>('trackers'),
-        api.meta<ProjectList>('projects'),
-      ]).then(async ([trackerResult, projectResult]) => {
-        if (disposed) return;
-        setTrackers(trackerResult.trackers);
-        setProjects(projectResult.projects);
-        await Promise.all([
-          setSetting('trackersMeta', trackerResult.trackers),
-          setSetting('projectsMeta', projectResult.projects),
-        ]);
-      }).catch(() => undefined);
-    }
+    void (async()=>{
+      const [saved,cachedTrackers,cachedProjects]=await Promise.all([getSetting<BrowserState>('ticketBrowser',{status:'*'}),getSetting<NamedRef[]>('trackersMeta',[]),getSetting<NamedRef[]>('projectsMeta',[])]);
+      if(disposed)return;setTrackers(cachedTrackers);setProjects(cachedProjects);
+      let next=saved;
+      if(navigator.onLine){
+        const [tr,pr]=await Promise.allSettled([api.meta<TrackerList>('trackers'),api.meta<ProjectList>('projects')]);
+        if(disposed)return;
+        if(tr.status==='fulfilled'){setTrackers(tr.value.trackers);void setSetting('trackersMeta',tr.value.trackers);}
+        if(pr.status==='fulfilled'){setProjects(pr.value.projects);void setSetting('projectsMeta',pr.value.projects);
+          if(saved.projectId&&!pr.value.projects.some(p=>p.id===saved.projectId)){next={...next,projectId:undefined};setFilterNotice('Der gespeicherte Projektfilter ist nicht mehr verfügbar und wurde zurückgesetzt.');}}
+      }
+      if(!disposed){setBrowser(next);setInitialized(true);}
+    })().catch(()=>{if(!disposed)setInitialized(true);});
     return () => { disposed = true; };
   }, []);
 
@@ -93,11 +85,13 @@ export function TicketsPage() {
       const offset = append ? issues.length : 0;
       const page = await api.browseIssues({ status: state.status, trackerId: state.trackerId, projectId: state.projectId, offset, limit: PAGE_SIZE });
       if (token !== requestId.current) return; // stale filter responses must not override the new selection
-      setIssues((current) => append ? [...current, ...page.issues] : page.issues);
+      if(page.filterUnavailable&&state.projectId){setIssues([]);setTotal(0);setProjects(old=>old.filter(p=>p.id!==state.projectId));setFilterNotice('Dieses Projekt ist nicht mehr verfügbar. Der Projektfilter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined}));return;}
+      setIssues((current) => append ? [...current, ...page.issues.filter(i=>!current.some(c=>c.id===i.id))] : page.issues);
       setTotal(page.total_count);
     } catch (caught) {
       if (token !== requestId.current) return;
-      if (!append) await loadOffline(state, token);
+      if(caught instanceof AuthRequiredError||(caught instanceof ApiError&&[401,403,404].includes(caught.status))){setIssues([]);setTotal(0);if(state.projectId&&caught instanceof ApiError&&[403,404].includes(caught.status)){setFilterNotice('Projekt nicht zugänglich. Der Filter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined}));return;}}else if (!append) await loadOffline(state, token);
+      if(token!==requestId.current)return;
       setError(caught instanceof Error ? `Ticketbrowser konnte nicht aktualisiert werden: ${caught.message}` : 'Ticketbrowser konnte nicht aktualisiert werden.');
     } finally {
       if (token === requestId.current) { setLoading(false); setLoadingMore(false); }
@@ -105,10 +99,11 @@ export function TicketsPage() {
   };
 
   useEffect(() => {
+    if(!initialized)return;
     void setSetting('ticketBrowser', browser);
     void load(browser, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [browser.status, browser.trackerId, browser.projectId]);
+  }, [initialized,browser.status, browser.trackerId, browser.projectId]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('de-DE');
@@ -186,6 +181,7 @@ export function TicketsPage() {
       </Stack>
     </Drawer>
 
+    {filterNotice&&<Alert color="blue" withCloseButton onClose={()=>setFilterNotice('')}>{filterNotice}</Alert>}
     {error && <Alert color={navigator.onLine ? 'orange' : 'blue'} variant="light">{error}</Alert>}
 
     {loading ? <BrowserSkeleton /> : filtered.length === 0 ? <Paper className="empty-state" p="xl">

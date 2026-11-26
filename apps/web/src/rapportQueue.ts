@@ -23,7 +23,8 @@ async function replay(){
       if(!failures.length&&response.results.length===record.body.employees.length){await db.rapportQueue.delete(record.id);continue;}
       const success=new Set(response.results.filter(r=>r.ok).map(r=>r.employee));
       const employees=record.body.employees.filter(id=>!success.has(id));
-      await db.rapportQueue.update(record.id,{body:{...record.body,employees},state:'conflict',message:failures.map(r=>'#'+r.employee+': '+r.message).join('; ')||'Unvollständige Antwort'});
+      const conflicts=failures.flatMap(r=>r.conflict?[{employee:r.employee,...r.conflict}]:[]);const retryable=failures.length>0&&failures.every(r=>r.status!==undefined&&r.status>=500);
+      await db.rapportQueue.update(record.id,{body:{...record.body,employees},state:retryable?'retrying':'conflict',conflicts,message:failures.map(r=>'#'+r.employee+': '+r.message).join('; ')||'Unvollständige Antwort'});
     }catch(error){
       if(error instanceof AuthRequiredError)throw error;
       const permanent=error instanceof ApiError&&[400,403,404,409,422].includes(error.status);
@@ -34,8 +35,21 @@ async function replay(){
 export function replayRapportQueue():Promise<void>{if(!running)running=replay().finally(()=>{running=undefined;});return running;}
 export async function retryRapportQueue(id:string){
   const r=(await currentRapportQueue()).find(x=>x.id===id);if(!r)return;
-  await db.rapportQueue.update(id,{state:'pending',message:undefined});await replayRapportQueue();
+  await db.rapportQueue.update(id,{state:'pending',message:undefined,conflicts:undefined});await replayRapportQueue();
 }
 export async function discardRapportQueue(id:string){
   if((await currentRapportQueue()).some(r=>r.id===id))await db.rapportQueue.delete(id);
+}
+
+export async function rescheduleRapportQueue(id:string,start:string,end:string,date:string,activity:string){
+  if(running)await running;
+  const r=(await currentRapportQueue()).find(x=>x.id===id);
+  if(!r||r.state!=='conflict')throw Error('Vorgang ist nicht mehr im Konflikt.');
+  // Check original operation before changing its identity, including unknown outcomes from older versions.
+  const check=await api.rapportCaptureCheck(r.body);
+  if(check.results.length!==r.body.employees.length||r.body.employees.some(id=>!check.results.some(x=>x.employee===id))||check.results.some(x=>x.stored||!x.editable))throw Error('Mindestens ein Vorgang wurde bereits gespeichert oder der Rapport ist gesperrt. Bitte erneut übertragen bzw. Tagesrapport prüfen.');
+  if(!navigator.onLine)throw Error('Für die Konfliktauflösung ist eine Verbindung erforderlich.');
+  const newId=crypto.randomUUID(),body={...r.body,date,line:{...r.body.line,id:newId,start,end,activity}};
+  await db.transaction('rw',db.rapportQueue,async()=>{const current=await db.rapportQueue.get(id);if(!current||current.state!=='conflict'||JSON.stringify(current.body)!==JSON.stringify(r.body))throw Error('Vorgang wurde zwischenzeitlich geändert.');await db.rapportQueue.add({...r,id:newId,body,state:'pending',message:undefined,conflicts:undefined});await db.rapportQueue.delete(id);});
+  await replayRapportQueue();
 }
