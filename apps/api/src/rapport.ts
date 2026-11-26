@@ -1,3 +1,4 @@
+import {holidaySubject,holidayTemplate,parseHolidays,validHolidayYear,overtimeRows,type HolidayCalendar,type Holiday} from './holidays.js';
 import { equipmentSubject,equipmentTemplate,equipmentNames,equipmentAdditions,equipmentKey } from './equipmentCatalog.js';
 import { materialSubject,materialTemplate,parseMaterials,materialRow,type MaterialItem } from './materialCatalog.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -388,7 +389,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       // Do not move or abandon existing records when changing the storage project.
       const prev=selected();let oldProjectId=prev.storageProjectId;
       if(!oldProjectId){const all=await allProjects(admin);oldProjectId=all.find(p=>p.identifier===(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel'))?.id??all.find(p=>p.name.toLocaleLowerCase('de')==='derkumpel')?.id??null;}
-      if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: |DK Materialkatalog$|DK Arbeitsgerätekatalog$)/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
+      if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: |DK Materialkatalog$|DK Arbeitsgerätekatalog$|DK Feiertage RLP )/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
       if(setupPending)await setupPending.catch(()=>undefined);
       const ready=await automaticSettings(config,next);
       await persistSelection(next);selection=next;setupCache={value:ready,until:Date.now()+30000};resetInternalRapportProjects([ready.project,ready.catalogProject,...(next.greenProjectId?[next.greenProjectId]:[])]);
@@ -412,6 +413,45 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     return {tasks:await greenCatalogue({s})};
   });
   app.get('/api/rapport/users',async r=>{const c=await identity(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
+  // Holiday tickets remain editable in Redmine. A missing year is initialized once,
+  // but existing descriptions are never regenerated or silently overwritten.
+  async function holidayCalendar(c:C,year:number,items?:Issue[]):Promise<HolidayCalendar>{
+    if(!validHolidayYear(year))fail(400,'Kalenderjahr muss zwischen 2000 und 2100 liegen.');
+    if(!c.s.automatic)fail(409,'Feiertagskalender benötigt automatischen DerKumpel-Speichermodus.');
+    const subject=holidaySubject(year);
+    const matches=(items??await pages<Issue>(c.service,'/issues.json?project_id='+c.s.project+'&status_id=*')).filter(i=>i.project.id===c.s.project&&i.subject===subject);
+    if(matches.length>1)fail(409,'Mehrere Feiertagskalender für '+year+' vorhanden.');
+    let id=matches[0]?.id;
+    if(!id){const created=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.tracker,status_id:c.s.statuses.draft,is_private:true,subject,description:holidayTemplate(year)}});id=created.issue.id;}
+    const {issue}=await c.service<{issue:Issue}>('/issues/'+id+'.json');
+    if(issue.project.id!==c.s.project||issue.subject!==subject)fail(409,'Feiertagskalender nicht eindeutig.');
+    const description=issue.description??'';
+    return {year,ticketId:issue.id,revision:revision(issue),description,...parseHolidays(description,year)};
+  }
+  app.get('/api/rapport/review/access',async r=>({allowed:(await identity(r)).dispatcher}));
+  app.get('/api/rapport/holidays/:year',async r=>{const c=await context(r),year=Number((r.params as {year:string}).year);return serialized(()=>holidayCalendar(c,year));});
+  app.put('/api/rapport/holidays/:year',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen Feiertage');
+    const year=Number((r.params as {year:string}).year),b=obj(r.body);
+    if(typeof b.description!=='string'||b.description.length>30000)fail(400,'Kalenderbeschreibung ungültig');
+    const description=b.description;
+    if(!validHolidayYear(year))fail(400,'Kalenderjahr ungültig');
+    const parsed=parseHolidays(description,year);if(parsed.warnings.length)fail(400,parsed.warnings.join('; '));
+    return serialized(async()=>{const calendar=await holidayCalendar(c,year);if(calendar.revision!==b.revision)fail(409,'Feiertagskalender wurde geändert. Bitte neu laden.');
+      await c.service('/issues/'+calendar.ticketId+'.json','PUT',{issue:{description,notes:note(c,'Feiertagskalender '+year+' geändert')}});
+      const actual=await holidayCalendar(c,year);if(actual.description.replace(/\r\n|\r/g,'\n')!==description.replace(/\r\n|\r/g,'\n'))fail(409,'Feiertagskalender nicht vollständig übernommen.');return actual;});
+  });
+  app.get('/api/rapport/review',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten');
+    const q=r.query as {from?:string;to?:string};
+    if(!validDate(q.from)||!validDate(q.to)||q.from>q.to||Date.parse(q.to)-Date.parse(q.from)>366*86400000)fail(400,'Zeitraum ungültig (maximal 367 Tage)');
+    const from=q.from,to=q.to,first=Number(from.slice(0,4)),last=Number(to.slice(0,4));if(!validHolidayYear(first)||!validHolidayYear(last))fail(400,'Kalenderjahr ungültig');
+    const items=c.s.automatic?await pages<Issue>(c.service,'/issues.json?project_id='+c.s.project+'&status_id=*'):[...await list(c),...await listCorrections(c)];
+    const reports=items.filter(i=>i.project.id===c.s.project&&(!c.s.automatic||/^Rapport [0-9]+ \d{4}-\d{2}-\d{2}$/.test(i.subject)||/^Rapportkorrektur [0-9]+$/.test(i.subject))).map(i=>decode(i,c.s)).filter(d=>d.date>=from&&d.date<=to);
+    const holidays:Holiday[]=[],calendarWarnings:string[]=[];
+    for(let year=first;year<=last;year++){try{const cal=await serialized(async()=>holidayCalendar(c,year));if(cal.warnings.length)calendarWarnings.push(...cal.warnings.map(w=>year+': '+w));else holidays.push(...cal.holidays);}catch(e){calendarWarnings.push(year+': '+(e instanceof Error?e.message:'Feiertagskalender nicht verfügbar'));}}
+    return {reports,holidays,calendarWarnings,overtime:calendarWarnings.length?[]:overtimeRows(reports,holidays)};
+  });
   app.get('/api/rapport/reports',async r=>{const c=await context(r),q=r.query as {from?:string;to?:string;all?:string};if(!validDate(q.from)||!validDate(q.to)||q.from>q.to)return fail(400,'Ungültiger Zeitraum');if(q.all==='1'&&!c.dispatcher)return fail(403,'Nur Disponenten');const reports=(c.s.automatic?(await pages<Issue>(c.service,'/issues.json?project_id='+c.s.project+'&status_id=*')).filter(i=>i.project.id===c.s.project&&(/^Rapport [0-9]+ [0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(i.subject)||/^Rapportkorrektur [0-9]+$/.test(i.subject))):[...await list(c),...await listCorrections(c)]).map(i=>decode(i,c.s)).filter(d=>d.date>=q.from!&&d.date<=q.to!&&(q.all==='1'||d.owner.id===c.actor.id));return {reports,dispatcher:c.dispatcher};});
   app.post('/api/rapport/reports/:id/correction',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten');if(!c.s.correctionTracker)fail(503,'Korrekturtracker nicht eingerichtet');const reason=str(obj(r.body).reason,1000);if(!reason)fail(400,'Korrekturbegründung erforderlich');return serialized(async()=>{const {r:original}=await detail(c,Number((r.params as {id:string}).id));if(original.state!=='closed')fail(409,'Nur abgeschlossene Rapporte korrigieren');const existing=(await listCorrections(c)).map(i=>decode(i,c.s)).filter(d=>d.correction?.reportId===original.id);if(existing.length)fail(409,'Zu diesem Beleg besteht bereits eine Korrektur. Bitte diese öffnen oder den aktuell abgeschlossenen Korrekturbeleg korrigieren.');const data:Data={version:1,owner:original.owner,date:original.date,lines:original.lines,material:original.material,correction:{reportId:original.id,reason,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString()}};const created=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.correctionTracker,status_id:c.s.statuses.draft,subject:'Rapportkorrektur '+original.id,...payload(c,data)}});const actual=(await detail(c,created.issue.id)).r;if(actual.correction?.reportId!==original.id||actual.state!=='draft')fail(409,'Korrektur nicht vollständig angelegt');return actual;});});
   app.get('/api/rapport/reports/:id',async r=>{const c=await context(r),{r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);return d;});
