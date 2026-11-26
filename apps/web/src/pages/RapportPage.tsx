@@ -60,7 +60,7 @@ export function RapportPage() {
   for (const entry of entries) totals.set(entry.employee.id, (totals.get(entry.employee.id) ?? 0) + entry.minutes);
   const total = entries.reduce((sum, entry) => sum + entry.minutes, 0);
   const selectedPeople = people.filter(person => selected.includes(person.id));
-  const visible = rankRapportPeople(people.filter(person => person.name.toLocaleLowerCase('de').includes(search.trim().toLocaleLowerCase('de')) && (filter === 'all' || (filter === 'favorites' ? preferences.favorites.includes(person.id) : filter === 'frequent' ? (preferences.counts[person.id] ?? 0) > 0 : filter === 'selected' ? selected.includes(person.id) : person.groups?.includes(filter))), preferences.favorites, preferences.counts, actor?.id);
+  const visible = rankRapportPeople(people.filter(person => person.name.toLocaleLowerCase('de').includes(search.trim().toLocaleLowerCase('de')) && (filter === 'all' || (filter === 'favorites' ? preferences.favorites.includes(person.id) : filter === 'frequent' ? (preferences.counts[person.id] ?? 0) > 0 : filter === 'selected' ? selected.includes(person.id) : person.groups?.includes(filter)))), preferences.favorites, preferences.counts, actor?.id);
   const toggle = (id: number) => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]);
   const canAdd = !!actor && !loading && !error && !!startAt && minutes > 0 && selectedPeople.length > 0;
   const addBatch = () => {
