@@ -8,3 +8,20 @@ export function parseDuration(value: string): number | null {
   const minutes = clock ? Number(clock[1]) * 60 + Number(clock[2]) : /^\d{1,2}(?:[.,]\d+)?$/.test(trimmed) ? Math.round(Number(trimmed.replace(',', '.')) * 60) : NaN;
   return Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440 ? minutes : null;
 }
+
+export type RapportPerson = { id: number; name: string };
+export type RapportDraftEntry = {
+  employee: RapportPerson;
+  recordedBy: RapportPerson;
+  minutes: number;
+  activity?: string;
+  recordedAt: string;
+};
+export function makeRapportEntries(people: RapportPerson[], selectedIds: number[], recordedBy: RapportPerson, minutes: number, activity: string, recordedAt: string): RapportDraftEntry[] {
+  if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 1440) return [];
+  const selected = new Set(selectedIds);
+  const unique = new Map(people.map(person => [person.id, person]));
+  return [...unique.values()].filter(person => selected.has(person.id)).map(employee => ({
+    employee, recordedBy, minutes, activity: activity.trim() || undefined, recordedAt,
+  }));
+}

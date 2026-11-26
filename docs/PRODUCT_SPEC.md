@@ -132,3 +132,5 @@ A complete electronic Rapportzettel/timekeeping system is planned later and may 
 
 ### Rapport draft (initial scope)
 The authenticated read-only roster endpoint uses the current Redmine user's permissions to list members of exactly `Disponenten Bauhof` and `Bauhofmitarbeiter`. Duplicate IDs are merged. Durations are temporary component state in integer minutes; a full workday sets 468 minutes. No persistence, outbox, ticket association, or Redmine time entry is created. Access failures are shown rather than bypassed with privileged credentials.
+
+The draft supports multi-select of eligible staff, defaulting to the authenticated user if eligible. Each group entry creates a separate in-memory row per selected employee with duration, optional activity, authenticated recorder ID/name and capture timestamp. Multiple batches may be added or removed; totals are displayed per employee and overall. No write endpoint or durable audit log exists yet.
