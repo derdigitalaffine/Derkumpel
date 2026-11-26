@@ -5,7 +5,7 @@ const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
 const local=(s:string)=>new Date(s).toLocaleTimeString('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'});
 const escape=(s:string)=>Array.from(s).map(c=>{const n=c.charCodeAt(0);return n>=32&&n<=255?'\\'+n.toString(8).padStart(3,'0'):'?';}).join('');
 const wrap=(s:string,n:number)=>{const text=s.replace(/\s+/g,' ');const result:string[]=[];for(let i=0;i<text.length;i+=n)result.push(text.slice(i,i+n));return result.length?result:[''];};
-export function rapportPdf(d:Input):Buffer {
+function reportPages(d:Input):string[] {
   const rows=d.lines.flatMap(l=>{const cells=[d.date.split('-').reverse().join('.'),local(l.start),local(l.end),fmt(Math.round((Date.parse(l.end)-Date.parse(l.start))/60000)),l.kind==='pause'?'Pause':l.activity,l.machines.map(m=>m.name).join('; '),l.machines.map(m=>fmt(m.minutes)).join('; '),l.order];const wrapped=cells.map((c,i)=>wrap(c,[12,8,8,8,48,14,9,12][i]!));const count=Math.max(...wrapped.map(c=>c.length));return Array.from({length:Math.ceil(count/4)},(_,p)=>wrapped.map(c=>c.slice(p*4,p*4+4)));});
   const material=[d.material,...d.lines.flatMap(l=>l.materials.map(m=>m.name+' '+m.quantity+' '+m.unit))].filter(Boolean).join('; ');
   const materialLines=wrap(material,125);const pages:string[]=[];
@@ -21,6 +21,11 @@ export function rapportPdf(d:Input):Buffer {
     const sum=d.lines.filter(l=>l.kind==='work').reduce((n,l)=>n+Math.round((Date.parse(l.end)-Date.parse(l.start))/60000),0);
     text(35,92,'Gesamtarbeitszeit: '+fmt(sum)+' h',11,true);text(35,62,'Datum: '+d.date,10);text(300,62,'Geprüft: '+(d.reviewed?.by.name??'—'),10);text(555,62,'Eingereicht: '+(d.submitted?.by.name??'—'),10);text(300,47,d.reviewed?.at??'',8);text(555,47,d.submitted?.at??'',8);text(35,25,'DerKumpel · Seite '+(p+1)+' / '+total,8);pages.push(stream);
   }
+  return pages;
+}
+export function rapportPdf(d:Input):Buffer{return rapportPdfMany([d]);}
+export function rapportPdfMany(reports:Input[]):Buffer {
+  const pages=reports.flatMap(reportPages);
   const objects:string[]=['<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'];
   const ids:number[]=[];for(const stream of pages){const id=objects.length+1;ids.push(id);objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+(id+1)+' 0 R >>','<< /Length '+Buffer.byteLength(stream)+' >>\nstream\n'+stream+'endstream');}objects[1]='<< /Type /Pages /Kids ['+ids.map(i=>i+' 0 R').join(' ')+'] /Count '+ids.length+' >>';
   let out='%PDF-1.4\n';const offsets=[0];objects.forEach((o,i)=>{offsets.push(Buffer.byteLength(out));out+=(i+1)+' 0 obj\n'+o+'\nendobj\n';});const xref=Buffer.byteLength(out);out+='xref\n0 '+offsets.length+'\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size '+offsets.length+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n';return Buffer.from(out);

@@ -15,3 +15,8 @@
 - PDF wird auf Abruf generiert, keine unveränderliche Archivkopie; Standardfont WinAnsi. Korrektur nach Abschluss bleibt gesperrt; separater Korrekturbeleg ist noch nicht implementiert.
 - Maschine/Material als separate Positionen pro Person, nicht automatisch kopiert. Für gemeinsame Ressourcennutzung nur im verantwortlichen Rapport erfassen. Stammdaten in Redmine umbenennen bzw. schließen.
 - Die Auftragsreferenz ist eine freie Nummer; #ID kann über den persönlichen Redmine-Zugang geprüft werden. Keine Volltext-Auftragssuche. Kein automatischer Zeitbuchungseintrag.
+
+## Optionale native Auswertungsfelder
+Die RAPPORT_SUMMARY_*_FIELD_ID-Variablen ermöglichen native Abfragen. OWNER (Integer, Benutzer-ID), DATE (Datum), WORK/TARGET/PAUSE/DIFFERENCE/MACHINES (Integer in Minuten), COUNT (Integer). Alle als filterbare Issue-Felder für Tagesrapport definieren, nicht öffentlich; Service-Rolle schreibt, Prüfrolle liest, abgeschlossener Status ist schreibgeschützt. Diese Felder werden aus dem JSON bei jeder Speicherung abgeleitet. Die Standard-API erstellt keine Tracker/Felddefinitionen/Workflows automatisch.
+
+Einrichtungscheck nach dem Anlegen: `node --env-file=.env scripts/check-rapport.mjs` (Node 22+). Führt ausschließlich lesende REST-Aufrufe aus; die manuellen Schreibschutztests bleiben verpflichtend.

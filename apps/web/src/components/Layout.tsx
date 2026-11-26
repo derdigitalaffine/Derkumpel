@@ -11,6 +11,7 @@ const items: Array<{ to: string; label: string; fullLabel: string; icon: IconNam
   { to: '/', label: 'Arbeit', fullLabel: 'Meine Arbeit', icon: 'work' },
   { to: '/tickets', label: 'Tickets', fullLabel: 'Ticket-Browser', icon: 'tickets' },
   { to: '/map', label: 'Karte', fullLabel: 'Auftragskarte', icon: 'map' },
+  { to: '/rapport/book', label: 'Rapporte', fullLabel: 'Tagesrapporte', icon: 'clock' },
   { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
   { to: '/settings', label: 'Mehr', fullLabel: 'Einstellungen', icon: 'settings' },
 ];
@@ -62,7 +63,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <Text size="xs" fw={850} c="dimmed" tt="uppercase" px="sm" mb={6}
           style={{ letterSpacing: '.1em' }}>Arbeitsbereiche</Text>
         {items.map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?location.pathname.startsWith('/rapport'):location.pathname.startsWith(item.to);
           return <NavLink key={item.to} component={Link} to={item.to} active={active}
             label={item.fullLabel} className="desktop-nav-link"
             aria-current={active ? 'page' : undefined}
@@ -79,8 +80,8 @@ export function Layout({ children }: { children: ReactNode }) {
     <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
       bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
       <Group grow gap={3} px={5} pt={7} align="stretch">
-        {items.map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+        {items.filter(item=>item.to!=='/sync').map((item) => {
+          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?location.pathname.startsWith('/rapport'):location.pathname.startsWith(item.to);
           return <UnstyledButton key={item.to} component={Link} to={item.to}
             className="mobile-nav-item" data-active={active}
             aria-current={active ? 'page' : undefined}
