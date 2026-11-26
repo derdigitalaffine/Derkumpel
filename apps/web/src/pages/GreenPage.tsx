@@ -7,7 +7,7 @@ import {currentGreenEvents,replayRapportQueue,retryGreenEvent} from '../rapportQ
 import {useDexieLive} from '../live';
 import {formatDuration} from '../rapport';
 import {GermanDateTimeField} from '../components/RapportDateFields';
-import {fromInputTime,inputTime,today,displayStamp} from '../rapportBook';
+import {fromInputTime,inputTime,today,displayStamp,floorQuarterInstant,isQuarterInstant} from '../rapportBook';
 import {filterTasks,municipalities,roundedDuration,type GreenTask} from '../green';
 import type {CurrentUser} from '../types';
 type Person={id:number;name:string;groups:string[]};
@@ -40,7 +40,7 @@ export function GreenPage(){
   const event=(s:Session,phase:'start'|'stop'|'finish'):GreenEventBody=>({actorId:actor,operationId:s.operationId!,phase,employees:s.lockedEmployees!,sourceIds:s.lockedTasks!.map(t=>t.id),startedAt:s.startedAt!});
   const enqueue=async(body:GreenEventBody)=>{const id=body.operationId+':'+body.phase;if(!await db.greenEvents.get(id))await db.greenEvents.add({id,ownerId:actor,createdAt:Date.now(),body,state:'pending'});};
   const begin=async()=>{if(action.current||!chosen.length||!recipients.length||missing||locked)return;action.current=true;setBusy(true);setError('');try{
-    await flush();const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(startedAt),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,step:3};
+    await flush();const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(floorQuarterInstant(startedAt)),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,step:3};
     await db.transaction('rw',db.settings,db.greenEvents,async()=>{await enqueue(event(next,'start'));await db.settings.put({key:'green-session:'+actor,value:next});});ref.current=next;setSession(next);setNow(t);void replayRapportQueue().catch(()=>undefined);
   }catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
   const stop=async()=>{if(action.current||!running)return;const t=Date.now();if(t<=session.runningAt!)return;action.current=true;setBusy(true);setError('');try{
@@ -49,7 +49,7 @@ export function GreenPage(){
     ref.current=next;setSession(next);void replayRapportQueue().catch(()=>undefined);
   }catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
   const save=async()=>{if(action.current||!chosen.length||!recipients.length||!session.duration||running)return;action.current=true;setBusy(true);setError('');try{
-    await flush();const start=fromInputTime(session.start);if(!start)throw Error('Ungültiger Arbeitsbeginn');const end=new Date(Date.parse(start)+session.duration*60000).toISOString();
+    await flush();const start=fromInputTime(session.start);if(!start||!isQuarterInstant(start))throw Error('Bitte einen Rapportbeginn auf :00, :15, :30 oder :45 wählen.');const end=new Date(Date.parse(start)+session.duration*60000).toISOString();
     if(session.duration%15!==0||session.duration>1440)throw Error('Bitte Viertelstundenraster verwenden.');
     const operationId=session.operationId??crypto.randomUUID(),startedAt=session.startedAt??start,endedAt=session.endedAt??end;
     const next={...session,operationId,startedAt,endedAt,lockedTasks:chosen,lockedEmployees:recipients};

@@ -409,3 +409,8 @@ body {
   .rapport-touch-row { grid-template-columns: 44px minmax(0,1fr) 16px; gap: 6px; padding: 10px 7px; }
   .rapport-touch-time { font-size: .8rem; }
 }
+
+.rapport-inline-trigger { width:100%; min-height:44px; padding:6px; border-radius:5px; text-align:left; overflow-wrap:anywhere; cursor:text; }
+.rapport-inline-trigger:hover,.rapport-inline-trigger:focus-visible { background:var(--mantine-color-default-hover); outline:1px solid var(--mantine-primary-color-filled); }
+.rapport-wide-table td { vertical-align:top; }
+.rapport-wide-table td:has(.mantine-Select-root) { min-width:105px; }
