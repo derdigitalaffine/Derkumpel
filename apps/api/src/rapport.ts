@@ -306,7 +306,8 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   async function greenCatalogue(c:GreenScope&{actor?:Person}){const store=await greenStore(c);return c.actor?selectableTasks(store,c.actor.id):store.tasks.filter(t=>!t.assignment||t.assignment.permanent&&(t.assignment.startEventId===undefined||!linkedRunning(store,t.assignment.startEventId)));}
   type Participation={employee:number;start:string;end:string};
   type Usage=ResourceUsage;
-  type GreenEvent={version:1;completedBy?:Person;completionReason?:string;stoppedBy?:Person;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  type GreenEvent={version:1;leader?:Person;completedBy?:Person;completionReason?:string;stoppedBy?:Person;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  const crewLeader=(event:Pick<GreenEvent,'actor'|'leader'>)=>event.leader??event.actor;
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
@@ -324,16 +325,19 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const ids=[...new Set(arr(b.sourceIds,50).map(Number))].sort((a,b)=>a-b);
     if(!ids.length||ids.some(id=>!Number.isSafeInteger(id)||id<=0))fail(400,'Ungültige Aufgabenauswahl');
     const prior=await find(subject);
-    let sources:SourceRef[];
+    let sources:SourceRef[],leader:Person|undefined;
+    if(phase==='start'&&!prior&&b.leaderId!==undefined){const id=Number(b.leaderId),person=c.members.get(id);if(!person||!employees.includes(id)||(Array.isArray(b.excluded)&&b.excluded.map(Number).includes(id)))fail(400,'Kolonnenführung muss aktiv zur Kolonne gehören.');leader={id:person.id,name:person.name};}
     if(phase!=='start'){
       const begun=await find(eventSubject(c.actor.id,operationId,'start'));if(!begun)fail(409,'Arbeitsbeginn noch nicht synchronisiert');
       if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
+      leader=begun.data.leader;
+      if(b.leaderId!==undefined&&Number(b.leaderId)!==crewLeader(begun.data).id)fail(409,'Kolonnenführung wurde abweichend angegeben.');
       sources=prior?.data.sources??(phase==='finish'?(await find(eventSubject(c.actor.id,operationId,'stop')))?.data.sources??combinedSources(store,begun.issue.id,begun.data):combinedSources(store,begun.issue.id,begun.data));
       if(JSON.stringify(begun.data.excluded)!==JSON.stringify(b.excluded===undefined?undefined:[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b)))fail(409,'Kolonnenausnahmen stimmen nicht mit Arbeitsbeginn überein');
-    }else if(prior){sources=prior.data.sources;}
+    }else if(prior){sources=prior.data.sources;leader=prior.data.leader;if(b.leaderId!==undefined&&Number(b.leaderId)!==crewLeader(prior.data).id)fail(409,'Kolonnenführung wurde abweichend angegeben.');}
     else{sources=ids.map(id=>{const task=selectableTasks(store,c.actor.id).find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' ist nicht mehr verfügbar oder nicht zugewiesen. Einsatz lokal erhalten.');const {assignment,...source}=task;return source;});}
     if(JSON.stringify(sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Aufgabenauswahl stimmt nicht überein');
-    const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase};
+    const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase,...(leader?{leader}:{})};
     if(b.excluded!==undefined){const excluded=[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b);if(excluded.some(id=>!employees.includes(id)))fail(400,'Ungültige Ausnahme in der Kolonne');data.excluded=excluded;}
     if(phase!=='start'){
       data.endedAt=instant(b.endedAt);if(phase==='stop'&&stoppedBy)data.stoppedBy=stoppedBy;
@@ -379,7 +383,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   function recovered(store:GreenStore,id:number){return store.issues.some(i=>i.subject===recoveryReceipt(id)&&i.description?.trim()==='DERKUMPEL-GREEN-RECEIPT/1 '+id);}
   function recoveryEvents(store:GreenStore,c:{actor:Person;dispatcher:boolean},id:number){
     const i=store.issues.find(i=>i.id===id&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));
-    if(!i)fail(404,'Einsatz nicht gefunden');const begun=readEvent(i);if(begun.actor.id!==c.actor.id&&!c.dispatcher)fail(404,'Einsatz nicht gefunden');
+    if(!i)fail(404,'Einsatz nicht gefunden');const begun=readEvent(i);if(begun.actor.id!==c.actor.id&&crewLeader(begun).id!==c.actor.id&&!c.dispatcher)fail(404,'Einsatz nicht gefunden');
     const get=(phase:string)=>{const matches=store.issues.filter(i=>i.subject===eventSubject(begun.actor.id,begun.operationId,phase));if(matches.length>1)fail(409,'Doppelte Einsatzereignisse');return matches[0];};
     const stop=get('stop'),finish=get('finish');if(!stop)fail(409,'Einsatz wurde noch nicht beendet.');const stopped=readEvent(stop);
     if(stopped.startedAt!==begun.startedAt||JSON.stringify(stopped.employees)!==JSON.stringify(begun.employees)||JSON.stringify(stopped.sources.map(s=>s.id))!==JSON.stringify(combinedSources(store,id,begun).map(s=>s.id)))fail(409,'Einsatzdaten sind widersprüchlich.');
@@ -387,17 +391,18 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   function recoveryView(store:GreenStore,c:{actor:Person;dispatcher:boolean},id:number){
     const {begun,stopped,finish,finished}=recoveryEvents(store,c,id);
-    return {id,operationId:begun.operationId,actor:begun.actor,employees:begun.employees,excluded:begun.excluded??[],sources:stopped.sources,startedAt:begun.startedAt,endedAt:stopped.endedAt!,saved:finished?{start:finished.start!,end:finished.end!,activity:finished.activity??'',participation:finished.participation??finished.employees.map(employee=>({employee,start:finished.start!,end:finished.end!})),materials:finished.materials??[],completedBy:finished.completedBy}:undefined,confirmed:finish?recovered(store,finish.id):false};
+    return {id,operationId:begun.operationId,actor:begun.actor,leader:crewLeader(begun),employees:begun.employees,excluded:begun.excluded??[],sources:stopped.sources,startedAt:begun.startedAt,endedAt:stopped.endedAt!,saved:finished?{start:finished.start!,end:finished.end!,activity:finished.activity??'',participation:finished.participation??finished.employees.map(employee=>({employee,start:finished.start!,end:finished.end!})),materials:finished.materials??[],completedBy:finished.completedBy}:undefined,confirmed:finish?recovered(store,finish.id):false};
   }
   function recoveryGroups(e:Pick<GreenEvent,'employees'|'participation'|'start'|'end'>){
     const groups=new Map<string,{employees:number[];start:string;end:string}>();
     for(const p of e.participation??e.employees.map(employee=>({employee,start:e.start!,end:e.end!}))){const key=p.start+'|'+p.end,group=groups.get(key);if(group)group.employees.push(p.employee);else groups.set(key,{employees:[p.employee],start:p.start,end:p.end});}
     return [...groups.values()].sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end));
   }
+  app.get('/api/rapport/green/my-crews',async(r,reply)=>{reply.header('Cache-Control','no-store');const c=await context(r),store=await greenStore(c),overview=projectCrews(store,c.members);return {asOf:overview.asOf,warnings:[],crews:overview.crews.filter(x=>x.actor.id===c.actor.id||x.leader.id===c.actor.id)};});
   app.get('/api/rapport/green/recovery',async(r,reply)=>{
     reply.header('Cache-Control','no-store');const c=await context(r),store=await greenStore(c);
     const overview=projectCrews(store,c.members);
-    return {crews:overview.crews.filter(x=>x.state==='stopped'&&x.actor.id===c.actor.id)};
+    return {crews:overview.crews.filter(x=>x.state==='stopped'&&(x.actor.id===c.actor.id||x.leader.id===c.actor.id))};
   });
   app.get('/api/rapport/green/recovery/:id',async(r,reply)=>{
     reply.header('Cache-Control','no-store');const c=await context(r),store=await greenStore(c);return recoveryView(store,c,Number((r.params as {id:string}).id));
@@ -408,7 +413,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const store=await greenStore(c),{begun,stopped,finish,finished}=recoveryEvents(store,c,id);
       if(finish&&recovered(store,finish.id))return {complete:true,results:[]};
       const reason=finished?.completionReason??str(b.reason??'',500);
-      if(!finished&&c.actor.id!==begun.actor.id&&!reason)fail(400,'Begründung für Nachtrag durch Disponenten erforderlich.');
+      if(!finished&&c.actor.id!==begun.actor.id&&c.actor.id!==crewLeader(begun).id&&!reason)fail(400,'Begründung für Nachtrag durch Disponenten erforderlich.');
       const actor={id:c.actor.id,name:c.actor.name},eventContext={...c,actor:{...begun.actor,groups:c.members.get(begun.actor.id)?.groups??[]}};
       let e=finished,finishId=finish?.id;
       if(!e){
@@ -461,7 +466,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const store=await greenStore(c),existing=store.tasks.filter(t=>t.assignment?.requestId===requestId);
       if(existing.length>1)fail(409,'Doppelte Auftragskennung');
       if(existing[0]){const e=existing[0],a=e.assignment!;if(e.subject!==subject||!e.municipalities.includes(town)||a.leader!==leader||a.orderNumber!==orderNumber||a.permanent!==b.permanent||a.createdBy.id!==c.actor.id||a.startEventId!==startEventId||JSON.stringify(a.team)!==JSON.stringify(team))fail(409,'Auftrag bereits mit anderen Daten angelegt');return {id:e.id};}
-      if(startEventId!==undefined){const i=store.issues.find(i=>i.id===startEventId&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));if(!i||!linkedRunning(store,startEventId))fail(409,'Kolonne ist nicht mehr in Arbeit.');const e=readEvent(i);if(e.actor.id!==leader||JSON.stringify(e.employees)!==JSON.stringify(team))fail(409,'Kolonne oder Kolonnenführung hat sich geändert.');if(combinedSources(store,i.id,e).length+linkedOrders(store,i.id).filter(t=>!acceptedOrders(store,i.id).some(a=>a.id===t.id)).length>=50)fail(409,'Maximal 50 Aufträge pro Einsatz.');}
+      if(startEventId!==undefined){const i=store.issues.find(i=>i.id===startEventId&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));if(!i||!linkedRunning(store,startEventId))fail(409,'Kolonne ist nicht mehr in Arbeit.');const e=readEvent(i);if(crewLeader(e).id!==leader||JSON.stringify(e.employees)!==JSON.stringify(team))fail(409,'Kolonne oder Kolonnenführung hat sich geändert.');if(combinedSources(store,i.id,e).length+linkedOrders(store,i.id).filter(t=>!acceptedOrders(store,i.id).some(a=>a.id===t.id)).length>=50)fail(409,'Maximal 50 Aufträge pro Einsatz.');}
       const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses,closed=store.defaultStatusId;
       if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt geschlossenen Standardstatus.');
       const assignment:FreeTask={requestId,leader,team,permanent:b.permanent as boolean,orderNumber,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString(),...(startEventId!==undefined?{startEventId}:{})};
@@ -478,12 +483,10 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     reply.header('Cache-Control','no-store');const c=await context(r),operation=uid((r.params as {operation:string}).operation),store=await greenStore(c);
     const matches=store.issues.filter(i=>i.subject===eventSubject(c.actor.id,operation,'start'));if(matches.length!==1)return {pending:[],accepted:[]};
     const i=matches[0]!,begun=readEvent(i),accepted=acceptedOrders(store,i.id),running=linkedRunning(store,i.id);
-    return {baseSourceIds:begun.sources.map(s=>s.id),accepted,pending:running?linkedOrders(store,i.id).filter(t=>!accepted.some(a=>a.id===t.id)).map(({assignment:_,...task})=>task):[]};
+    return {baseSourceIds:begun.sources.map(s=>s.id),accepted,pending:running&&crewLeader(begun).id===c.actor.id?linkedOrders(store,i.id).filter(t=>!accepted.some(a=>a.id===t.id)).map(({assignment:_,...task})=>task):[]};
   });
-  app.post('/api/rapport/green/active/:operation/accept/:id',async r=>{
-    const c=await context(r),params=r.params as {operation:string;id:string},operation=uid(params.operation),id=Number(params.id);
-    return serialized(async()=>{const store=await greenStore(c),matches=store.issues.filter(i=>i.subject===eventSubject(c.actor.id,operation,'start'));if(matches.length!==1)fail(404,'Einsatz nicht gefunden');
-      const i=matches[0]!,begun=readEvent(i),accepted=acceptedOrders(store,i.id),prior=accepted.find(t=>t.id===id);if(prior)return {task:prior,baseSourceIds:begun.sources.map(s=>s.id)};
+  async function acceptCrewOrder(c:C,store:GreenStore,i:Issue,id:number){
+      const begun=readEvent(i);if(crewLeader(begun).id!==c.actor.id)fail(404,'Auftrag nicht zugewiesen.');const accepted=acceptedOrders(store,i.id),prior=accepted.find(t=>t.id===id);if(prior)return {task:prior,baseSourceIds:begun.sources.map(s=>s.id)};
       if(!linkedRunning(store,i.id))fail(409,'Einsatz bereits beendet.');const task=linkedOrders(store,i.id).find(t=>t.id===id&&t.assignment?.leader===c.actor.id);if(!task)fail(404,'Auftrag nicht zugewiesen.');
       if(combinedSources(store,i.id,begun).length>=50)fail(409,'Maximal 50 Aufträge pro Einsatz.');
       const {assignment:_,...source}=task,subject=acceptanceSubject(i.id,id),description='DERKUMPEL-GREEN-ACCEPT/1\n'+JSON.stringify({startEventId:i.id,source});
@@ -492,13 +495,14 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
       if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject||issue.status.id!==closed||issue.description?.replace(/\r\n/g,'\n')!==description)fail(409,'Auftragsübernahme nicht vollständig gespeichert.');
       return {task:source,baseSourceIds:begun.sources.map(s=>s.id)};
-    });
-  });
+  }
+  app.post('/api/rapport/green/active/:operation/accept/:id',async r=>{const c=await context(r),params=r.params as {operation:string;id:string},operation=uid(params.operation);return serialized(async()=>{const store=await greenStore(c),matches=store.issues.filter(i=>i.subject===eventSubject(c.actor.id,operation,'start'));if(matches.length!==1)fail(404,'Einsatz nicht gefunden');return acceptCrewOrder(c,store,matches[0]!,Number(params.id));});});
+  app.post('/api/rapport/green/crews/:id/accept/:task',async r=>{const c=await context(r),params=r.params as {id:string;task:string};return serialized(async()=>{const store=await greenStore(c),i=store.issues.find(i=>i.id===Number(params.id)&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));if(!i)fail(404,'Einsatz nicht gefunden');return acceptCrewOrder(c,store,i,Number(params.task));});});
   app.post('/api/rapport/green/crews/:id/stop',async r=>{
-    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten dürfen Kolonnen beenden.');
+    const c=await context(r);
     const id=Number((r.params as {id:string}).id);
     return serialized(async()=>{const store=await greenStore(c),i=store.issues.find(i=>i.id===id&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));
-      if(!i)fail(404,'Arbeitsbeginn nicht gefunden');const begun=readEvent(i),actor=c.members.get(begun.actor.id);if(!actor)fail(409,'Ursprünglicher Erfasser nicht mehr im Bauhof.');
+      if(!i)fail(404,'Arbeitsbeginn nicht gefunden');const begun=readEvent(i);if(!c.dispatcher&&crewLeader(begun).id!==c.actor.id)fail(403,'Nur Kolonnenführung oder Disponenten dürfen Kolonnen beenden.');const actor=c.members.get(begun.actor.id);if(!actor)fail(409,'Ursprünglicher Erfasser nicht mehr im Bauhof.');
       const existing=store.issues.filter(i=>i.subject===eventSubject(begun.actor.id,begun.operationId,'stop'));
       if(existing.length>1)fail(409,'Doppeltes Arbeitsende');if(existing[0])return {id:existing[0].id,endedAt:readEvent(existing[0]).endedAt};
       const endedAt=new Date().toISOString();const result=await greenEvent({...c,actor}, {actorId:actor.id,operationId:begun.operationId,phase:'stop',employees:begun.employees,excluded:begun.excluded,sourceIds:combinedSources(store,id,begun).map(s=>s.id),startedAt:begun.startedAt,endedAt},{id:c.actor.id,name:c.actor.name});
