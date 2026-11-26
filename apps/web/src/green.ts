@@ -13,3 +13,9 @@ export function participationWindows(ids:number[],choices:Record<number,Particip
  if(!Number.isInteger(offset)||!Number.isInteger(minutes)||offset<0||minutes<=0||offset%15||minutes%15||offset+minutes>duration)throw Error('Teilnahmezeit muss innerhalb des Einsatzes liegen (15-Minuten-Raster).');
  return [{employee,start:new Date(base+offset*60000).toISOString(),end:new Date(base+(offset+minutes)*60000).toISOString()}];});
 }
+
+export function groupParticipation(windows:{employee:number;start:string;end:string}[]){
+ const groups=new Map<string,{employees:number[];start:string;end:string}>();
+ for(const w of windows){const key=w.start+'|'+w.end;const g=groups.get(key);if(g)g.employees.push(w.employee);else groups.set(key,{employees:[w.employee],start:w.start,end:w.end});}
+ return [...groups.values()].map(g=>({...g,employees:[...g.employees].sort((a,b)=>a-b)})).sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end));
+}
