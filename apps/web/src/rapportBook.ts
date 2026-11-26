@@ -1,6 +1,6 @@
 export type Person={id:number;name:string};
 export type RapportLine={sources?:{id:number;subject:string}[];sourceIds?:number[];id:string;start:string;end:string;kind:'work'|'pause';activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[];recordedBy?:Person;recordedAt?:string};
-export type RapportReport={id:number;version:1;owner:Person;date:string;state:'draft'|'submitted'|'review'|'returned'|'closed';revision:string;lines:RapportLine[];material:string;submitted?:{by:Person;at:string};reviewed?:{by:Person;at:string};returnNote?:string;history?:{by:string;at:string;note:string}[]};
+export type RapportReport={correction?:{reportId:number;reason:string;createdBy:Person;createdAt:string};id:number;version:1;owner:Person;date:string;state:'draft'|'submitted'|'review'|'returned'|'closed';revision:string;lines:RapportLine[];material:string;submitted?:{by:Person;at:string};reviewed?:{by:Person;at:string};returnNote?:string;history?:{by:string;at:string;note:string}[]};
 export type Catalog={machines:{id:number;name:string}[];materials:{id:number;name:string}[]};
 export const stateLabels={draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben',closed:'Abgeschlossen'};
 export const lineMinutes=(line:RapportLine)=>Math.round((Date.parse(line.end)-Date.parse(line.start))/60000);
@@ -17,3 +17,6 @@ export function fromInputTime(s:string,previous?:string):string {
 export const today=()=>inputTime(new Date().toISOString()).slice(0,10);
 export function shiftDay(d:string,days:number){const date=new Date(d+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);}
 export function weekStart(d:string){const weekday=new Date(d+'T12:00:00Z').getUTCDay();return shiftDay(d,-((weekday+6)%7));}
+
+// Closed amendments supersede their predecessor only after approval. Draft amendments never double-count time.
+export function effectiveReports(reports:RapportReport[]){const superseded=new Set(reports.filter(r=>r.state==='closed'&&r.correction).map(r=>r.correction!.reportId));return reports.filter(r=>!superseded.has(r.id)&&(!r.correction||r.state==='closed'));}

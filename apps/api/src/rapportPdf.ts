@@ -1,6 +1,6 @@
 // A4 landscape, native PDF syntax, standard WinAnsi font; no extra service.
 type Row={sources?:{id:number;subject:string}[];start:string;end:string;kind:string;activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[]};
-type Input={date:string;owner:{name:string};state:string;lines:Row[];material:string;submitted?:{by:{name:string};at:string};reviewed?:{by:{name:string};at:string}};
+type Input={correction?:{reportId:number;reason:string};date:string;owner:{name:string};state:string;lines:Row[];material:string;submitted?:{by:{name:string};at:string};reviewed?:{by:{name:string};at:string}};
 const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
 const local=(s:string)=>new Date(s).toLocaleTimeString('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'});
 const escape=(s:string)=>Array.from(s).map(c=>{const n=c.charCodeAt(0);return n>=32&&n<=255?'\\'+n.toString(8).padStart(3,'0'):'?';}).join('');
@@ -12,7 +12,7 @@ function reportPages(d:Input):string[] {
   const total=Math.max(1,Math.ceil(rows.length/7),Math.ceil(materialLines.length/3));
   for(let p=0;p<total;p++){
     let stream='';const text=(x:number,y:number,s:string,size=10,bold=false)=>{stream+='BT /'+(bold?'F2':'F1')+' '+size+' Tf 1 0 0 1 '+x+' '+y+' Tm ('+escape(s)+') Tj ET\n';};const line=(x:number,y:number,x2:number,y2:number)=>{stream+=x+' '+y+' m '+x2+' '+y2+' l S\n';};
-    text(35,560,'Verbandsgemeinde Otterbach-Otterberg',13,true);text(35,534,'Rapportzettel',18,true);text(420,535,'Arbeitnehmer bzw. Leistender: '+d.owner.name,11,true);text(35,516,d.state==='closed'?'Abgeschlossen':'ENTWURF / '+({draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben'} as Record<string,string>)[d.state],10,true);
+    text(35,560,'Verbandsgemeinde Otterbach-Otterberg',13,true);text(35,534,'Rapportzettel',18,true);text(420,535,'Arbeitnehmer bzw. Leistender: '+d.owner.name,11,true);text(35,516,d.state==='closed'?'Abgeschlossen'+(d.correction?' · Korrektur zu #'+d.correction.reportId:''):'ENTWURF / '+({draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben'} as Record<string,string>)[d.state],10,true);
     const xs=[35,105,153,201,253,550,650,710,807];const top=505,head=475,bottom=153;
     for(const x of xs)line(x,x===153||x===201?491:top,x,bottom);line(xs[0]!,top,xs[8]!,top);line(xs[0]!,head,xs[8]!,head);
     text(155,496,'Arbeitszeit',9,true);['Datum','von','bis','Stunden','Art der Leistung','Maschinen','Stunden','Auftrag Nr.'].forEach((v,i)=>text(xs[i]!+4,482,v,9,true));text(554,496,'Einsatz',9,true);

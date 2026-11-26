@@ -11,7 +11,7 @@ try{
   const groups=(await get(admin,'/groups.json')).groups;
   for(const name of ['Disponenten Bauhof','Bauhofmitarbeiter']){const group=groups.find(g=>g.name===name);check(!!group,'Gruppe '+name);const d=(await get(admin,'/groups/'+group.id+'.json?include=users')).group;check(Array.isArray(d.users),'Mitglieder lesbar: '+name);}
   const projectIds=[integer('RAPPORT_PROJECT_ID'),integer('RAPPORT_CATALOG_PROJECT_ID')];check(projectIds[0]!==projectIds[1],'Getrennte Projekte');
-  const trackerIds=[[integer('RAPPORT_TRACKER_ID')],[integer('RAPPORT_MACHINE_TRACKER_ID'),integer('RAPPORT_MATERIAL_TRACKER_ID')]];
+  const trackerIds=[[integer('RAPPORT_TRACKER_ID'),...['RAPPORT_ARCHIVE_TRACKER_ID','RAPPORT_CORRECTION_TRACKER_ID'].filter(k=>env[k]).map(integer)],[integer('RAPPORT_MACHINE_TRACKER_ID'),integer('RAPPORT_MATERIAL_TRACKER_ID')]];
   for(let i=0;i<2;i++){const p=(await get(service,'/projects/'+projectIds[i]+'.json?include=trackers')).project;check(p.is_public===false,'Projekt '+p.identifier+' privat');for(const id of trackerIds[i])check(p.trackers?.some(t=>t.id===id),'Tracker '+id+' im Projekt aktiv');}
   const statuses=(await get(service,'/issue_statuses.json')).issue_statuses;
   const ids=['DRAFT','SUBMITTED','REVIEW','RETURNED','CLOSED'].map(k=>integer('RAPPORT_STATUS_'+k));check(new Set(ids).size===5,'Fünf unterschiedliche Status');
