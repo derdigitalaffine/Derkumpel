@@ -1,12 +1,12 @@
 import { ActionIcon, Alert, Badge, Button, Checkbox, Group, Modal, Paper, ScrollArea, Select, SimpleGrid, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link,useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getSetting, setSetting, type RapportQueueRecord } from '../db';
 import { useDexieLive } from '../live';
 import { currentRapportQueue,queueCapture,replayRapportQueue,retryRapportQueue,discardRapportQueue,rescheduleRapportQueue } from '../rapportQueue';
 import { GermanDateField,GermanDateTimeField,QuarterTimeField } from '../components/RapportDateFields';
-import { fromInputTime,inputTime,today,displayDate,displayStamp,isQuarterInstant } from '../rapportBook';
+import { fromInputTime,inputTime,rapportRouteDate,rapportDatePath,displayDate,displayStamp,isQuarterInstant } from '../rapportBook';
 import type { CurrentUser } from '../types';
 import { formatDuration, fullDayMinutes, rankRapportPeople, type RapportPerson } from '../rapport';
 
@@ -17,13 +17,15 @@ type Preferences = { favorites: number[]; counts: Record<number, number> };
 
 
 export function RapportPage() {
+  const [params]=useSearchParams();const requestedDate=params.get('date');
   const [people, setPeople] = useState<RapportPerson[]>([]);
   const [actor, setActor] = useState<RapportPerson | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [minutes, setMinutes] = useState(0);
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(()=>rapportRouteDate(requestedDate));
   const [useFullDay, setUseFullDay] = useState(false);
+  useEffect(()=>{const next=rapportRouteDate(requestedDate);setDate(next);setUseFullDay(false);},[requestedDate]);
   const targetMinutes = fullDayMinutes(date);
   const [time, setTime] = useState(defaultStart);
   const [filter, setFilter] = useState('all');
@@ -85,7 +87,7 @@ export function RapportPage() {
     try{await replayRapportQueue();setNotice(navigator.onLine?'Erfassung gespeichert. Übertragungsstatus unten prüfen.':'Offline erfasst. Übertragung bei Verbindung.');}catch(e){setNotice('Erfassung lokal gesichert. Übertragung steht aus.');}finally{setSaving(false);}
   };
   return <Stack maw={900} mx="auto" gap="md">
-    <Group><Button component={Link} to="/" variant="subtle" h={48}>← Meine Arbeit</Button><Button component={Link} to="/rapport/book" h={48} variant="light">Tagesrapporte</Button><Button component={Link} to="/settings?tab=advanced" h={48} variant="default">Einrichtung</Button></Group>
+    <Group><Button component={Link} to="/" variant="subtle" h={48}>← Meine Arbeit</Button><Button component={Link} to={rapportDatePath('/rapport/book',date)} h={48} variant="light">Tagesrapporte</Button><Button component={Link} to="/settings?tab=advanced" h={48} variant="default">Einrichtung</Button></Group>
     <Group justify="space-between" align="center"><Title order={1} size="h2">Arbeitszeit / Rapport</Title><Badge variant="light">Entwurf</Badge></Group>
     <Alert variant="light">Leistungen werden in den persönlichen Tagesrapporten in Redmine vorerfasst. Erst die Einreichung bestätigt den Tagesrapport.</Alert>
     <Paper withBorder p="md" className="surface-card"><Text fw={650}>Erfasst von: {actor?.name??'–'}</Text><Text c="dimmed" size="sm">{queue.length} lokale Vorgänge ausstehend</Text></Paper>{notice&&<Alert color="blue">{notice}</Alert>}
