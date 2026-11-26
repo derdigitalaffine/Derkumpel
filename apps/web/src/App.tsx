@@ -9,6 +9,7 @@ import type { PushPreferences } from './api';
 import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
+import { RapportReviewPage } from './pages/RapportReviewPage';
 import { RapportBookPage } from './pages/RapportBookPage';
 import { GreenPage } from './pages/GreenPage';
 import { RapportPage } from './pages/RapportPage';
@@ -77,6 +78,7 @@ export function App() {
     <Route path="/rapport" element={<RapportPage />} />
     <Route path="/green" element={<GreenPage />} />
     <Route path="/rapport/book" element={<RapportBookPage />} />
+    <Route path="/rapport/review" element={<RapportReviewPage />} />
     <Route path="/tickets" element={<TicketsPage />} />
     <Route path="/issues/:id" element={<IssueRoute />} />
     <Route path="/map" element={<MapPage />} />

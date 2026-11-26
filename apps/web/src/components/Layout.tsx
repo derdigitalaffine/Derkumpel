@@ -5,6 +5,7 @@ import { useCallback, type ReactNode } from 'react';
 import { db } from '../db';
 import { currentRapportQueue,currentGreenEvents } from '../rapportQueue';
 import { useDexieLive } from '../live';
+import {useDispatcher} from './useDispatcher';
 import { UIIcon, type IconName } from './UIIcon';
 
 const items: Array<{ to: string; label: string; fullLabel: string; icon: IconName }> = [
@@ -18,7 +19,7 @@ const items: Array<{ to: string; label: string; fullLabel: string; icon: IconNam
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
-  const location = useLocation();
+  const location = useLocation();const dispatcher=useDispatcher();const navItems=dispatcher?[...items.slice(0,5),{to:'/rapport/review',label:'Abnahme',fullLabel:'Rapportabnahme',icon:'check-circle' as const},...items.slice(5)]:items;
   const network = useNetwork();
   const queue = useDexieLive(useCallback(() => db.outbox.toArray(), []), []);
   const rapportQueue=useDexieLive(useCallback(currentRapportQueue,[]),[]);
@@ -64,8 +65,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <Stack gap="xs">
         <Text size="xs" fw={850} c="dimmed" tt="uppercase" px="sm" mb={6}
           style={{ letterSpacing: '.1em' }}>Arbeitsbereiche</Text>
-        {items.map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?location.pathname.startsWith('/rapport'):location.pathname.startsWith(item.to);
+        {navItems.map((item) => {
+          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?(location.pathname==='/rapport'||location.pathname.startsWith('/rapport/book')):location.pathname.startsWith(item.to);
           return <NavLink key={item.to} component={Link} to={item.to} active={active}
             label={item.fullLabel} className="desktop-nav-link"
             aria-current={active ? 'page' : undefined}
@@ -82,8 +83,8 @@ export function Layout({ children }: { children: ReactNode }) {
     <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
       bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
       <Group grow gap={3} px={5} pt={7} align="stretch">
-        {items.filter(item=>item.to!=='/sync'&&item.to!=='/map').map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?location.pathname.startsWith('/rapport'):location.pathname.startsWith(item.to);
+        {navItems.filter(item=>item.to!=='/sync'&&item.to!=='/map'&&item.to!=='/rapport/review').map((item) => {
+          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?(location.pathname==='/rapport'||location.pathname.startsWith('/rapport/book')):location.pathname.startsWith(item.to);
           return <UnstyledButton key={item.to} component={Link} to={item.to}
             className="mobile-nav-item" data-active={active}
             aria-current={active ? 'page' : undefined}
