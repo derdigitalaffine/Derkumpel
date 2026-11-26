@@ -189,7 +189,7 @@ app.post('/api/auth/login', async (request, reply) => {
 app.post('/api/auth/logout', async (_request, reply) => { clearSession(reply); return { ok: true }; });
 app.get('/api/auth/me', async (request) => (await fetchCurrentUser(config, credentials(request))).user);
 
-registerRapport(app, config, credentials, pushRegistry ? (id,leader)=>pushRegistry.dispatch({event_id:'green-assignment-'+id,issue_id:id,kind:'assignment',user_ids:[leader]},true) : undefined);
+registerRapport(app, config, credentials, pushRegistry ? (id,leader,linkId)=>pushRegistry.dispatch({event_id:'green-assignment-'+(linkId??id),issue_id:id,kind:'assignment',user_ids:[leader]},true) : undefined);
 
 app.get('/api/issues/my', async (request) => {
   const query = request.query as { status?: string };
