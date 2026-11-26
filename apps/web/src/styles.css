@@ -418,3 +418,12 @@ body {
 .green-page{width:100%;min-width:0}.green-team-summary{padding:12px;border:1px solid var(--dk-border);border-radius:14px;background:var(--mantine-color-default-hover);display:grid;gap:8px}.green-team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:6px}.green-team-person{padding:8px;border-radius:9px;background:var(--mantine-color-body);border:1px solid var(--dk-border);min-width:0}.green-team-person[data-excluded=true]{border-color:var(--mantine-color-orange-5)}.green-person-option{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--dk-border);border-radius:8px}.green-person-option:hover{background:var(--mantine-color-default-hover)}
 
 .green-team-summary .mantine-Button-root{min-height:36px}.green-team-summary .mantine-Button-label{white-space:normal}.green-page .mantine-Badge-root{max-width:100%}.green-page .mantine-Paper-root{min-width:0}.green-page .mantine-Button-label{white-space:normal}.green-page .mantine-Button-root{min-height:40px}
+
+.rapport-day-signal{min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:1px solid var(--mantine-color-default-border);border-radius:10px;padding:4px 1px;color:var(--mantine-color-text);background:var(--mantine-color-body);min-width:0}
+.rapport-day-signal[data-signal="missing"]{background:#ffebeb;color:#9e2525;border-color:#efb0b0}
+.rapport-day-signal[data-signal="short"]{background:#fff3ca;color:#755600;border-color:#e4c366}
+.rapport-day-signal[data-signal="complete"]{background:#dff5e7;color:#195c35;border-color:#a1d6ae}
+.rapport-day-signal[data-selected="true"]{outline:2px solid var(--mantine-primary-color-filled);outline-offset:1px;font-weight:800}
+.rapport-day-hours{font-variant-numeric:tabular-nums;min-height:14px;line-height:1.2}
+.rapport-signal-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px}
+.rapport-signal-dot[data-signal="missing"]{background:#d44b4b}.rapport-signal-dot[data-signal="short"]{background:#d9aa23}.rapport-signal-dot[data-signal="complete"]{background:#35985b}
