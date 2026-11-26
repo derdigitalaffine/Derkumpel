@@ -29,7 +29,7 @@ function LineEditor({line,disabled,catalog,update,remove}:{line:RapportLine;disa
       {line.kind==='work'&&<>
         {!!line.sources?.length&&<Stack gap={4}><Text size="sm" fw={700}>Zugeordnete Aufgaben</Text>{line.sources.map(s=><Text key={s.id} size="sm">#{s.id} · {s.subject}</Text>)}</Stack>}
         {!disabled&&<Group align="end"><TextInput label="Auftrag suchen" value={orderSearch} onChange={e=>setOrderSearch(e.currentTarget.value)} style={{flex:1}}/><Button h={48} variant="light" disabled={orderSearch.trim().length<2} onClick={()=>{void api.rapportOrders(orderSearch).then(r=>{setOrders(r.orders);setOrderInfo(r.orders.length?'':'Keine Treffer');}).catch(e=>setOrderInfo(errorText(e)));}}>Suchen</Button></Group>}
-        {!disabled&&orders.length>0&&<Select label="Gefundene Aufträge" searchable data={orders.map(o=>({value:String(o.id),label:'#'+o.id+' · '+o.subject}))} onChange={v=>{if(v)update({...line,order:'#'+v});setOrders([]);}}/>
+        {!disabled&&orders.length>0&&<Select label="Gefundene Aufträge" searchable data={orders.map(o=>({value:String(o.id),label:'#'+o.id+' · '+o.subject}))} onChange={v=>{if(v)update({...line,order:'#'+v});setOrders([]);}}/>}
         <TextInput label="Auftrag (Redmine #Nr. oder freie Nummer)" disabled={disabled} value={line.order} onChange={e=>{setOrderInfo('');update({...line,order:e.currentTarget.value});}}/>
         {/^#\d+$/.test(line.order)&&<Button h={48} variant="light" onClick={()=>{void api.rapportOrder(Number(line.order.slice(1))).then(r=>setOrderInfo(r.subject)).catch(()=>setOrderInfo('Auftrag nicht sichtbar oder nicht vorhanden.'));}}>Redmine-Auftrag prüfen</Button>}{orderInfo&&<Text size="sm">{orderInfo}</Text>}
         <Title order={4} size="h5">Maschineneinsatz</Title>
@@ -66,16 +66,17 @@ export function RapportBookPage(){
       let cache=await getSetting<Cached>('rapport-view-cache',{ownerId:me.id,views:{}});if(cache.ownerId!==me.id)cache={ownerId:me.id,views:{}};
       let data=cache.views[key];let online=false;
       if(network.online){try{const [r,cat,user]=await Promise.all([api.rapportList(from,to,tab==='review'),api.rapportCatalog(),api.me()]);if(user.id!==me.id)throw Error('Benutzerwechsel erkannt');data={...r,catalog:cat};const keys=Object.keys(cache.views);if(keys.length>=30)delete cache.views[keys[0]!];await setSetting('rapport-view-cache',{ownerId:me.id,views:{...cache.views,[key]:data}});online=true;}catch(e){if(!(e instanceof TypeError))throw e;}}
+      if(!online&&tab==='review')throw Error('Prüfcenter ist nur online verfügbar.');
       if(!data)throw Error('Für diesen Zeitraum sind keine Offline-Rapporte verfügbar. Bitte zuerst online öffnen.');
       const drafts=await db.rapportDrafts.where('ownerId').equals(me.id).toArray();
-      if(active){setActor(me.id);setReports(data.reports);setDispatcher(online&&data.dispatcher);setCatalog(data.catalog);setOffline(!online);setLocalDrafts(drafts.map(d=>d.report.id));}
+      if(active){setActor(me.id);setReports(online?data.reports:data.reports.filter(r=>r.owner.id===me.id));setDispatcher(online&&data.dispatcher);setCatalog(data.catalog);setOffline(!online);setLocalDrafts(drafts.map(d=>d.report.id));}
     }
     void load().catch(e=>{if(active)setError(errorText(e));}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};
   },[from,to,tab,network.online]);
   useEffect(()=>{if(!dirty)return;const handler=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',handler);return()=>window.removeEventListener('beforeunload',handler);},[dirty]);
   const guard=()=>!dirty||window.confirm('Tagesrapport wechseln? Der lokale Entwurf bleibt erhalten.');
   const changeTab=(v:string)=>{if(guard())setTab(v);};
-  const open=async(id:number)=>{if(!guard())return;setBusy(true);setError('');try{const draft=await db.rapportDrafts.get(actor+':'+id);if(draft){setCurrent(draft.report);setDirty(true);setReason(draft.reason);}else{const r=offline?reports.find(r=>r.id===id):await api.rapportDetail(id);if(!r)throw Error('Kein lokaler Rapport');setCurrent(r);setDirty(false);setReason('');}}catch(e){setError(errorText(e));}finally{setBusy(false);}};
+  const open=async(id:number)=>{if(!guard())return;setBusy(true);setError('');try{const draft=await db.rapportDrafts.get(actor+':'+id);if(draft){if(offline&&draft.report.owner.id!==actor)throw Error('Fremde Rapporte nur online bearbeiten');setCurrent(draft.report);setDirty(true);setReason(draft.reason);}else{const r=offline?reports.find(r=>r.id===id):await api.rapportDetail(id);if(!r)throw Error('Kein lokaler Rapport');setCurrent(r);setDirty(false);setReason('');}}catch(e){setError(errorText(e));}finally{setBusy(false);}};
   const persistDraft=(r:RapportReport,why:string)=>{if(!actor)return;void db.rapportDrafts.put({key:actor+':'+r.id,ownerId:actor,report:r,reason:why,updatedAt:Date.now()}).then(()=>setLocalDrafts(old=>[...new Set([...old,r.id])])).catch(e=>setError('Lokaler Entwurf nicht gespeichert: '+errorText(e)));};
   const edit=(r:RapportReport)=>{setCurrent(r);setDirty(true);persistDraft(r,reason);};
   const save=async()=>{if(!current)return;setBusy(true);setError('');try{const next=await api.rapportSave(current.id,{revision:current.revision,lines:current.lines,material:current.material,reason});await db.rapportDrafts.delete(actor+':'+current.id);setLocalDrafts(old=>old.filter(i=>i!==current.id));setCurrent(next);setDirty(false);setReason('');setMessage('Rapport gespeichert.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
