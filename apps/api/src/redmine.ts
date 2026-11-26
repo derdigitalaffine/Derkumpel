@@ -84,6 +84,9 @@ export async function fetchCurrentUser(config: AppConfig, creds: CredentialEnvel
   return redmineJson(config, creds, '/users/current.json?include=groups,memberships');
 }
 
+export function internalRapportProject(id:unknown):boolean {return process.env.RAPPORT_ENABLED==='true'&&[Number(process.env.RAPPORT_PROJECT_ID),Number(process.env.RAPPORT_CATALOG_PROJECT_ID)].includes(Number(id));}
+function ordinaryIssue(issue:Record<string,unknown>):boolean{return !internalRapportProject((issue.project as {id?:number}|undefined)?.id);}
+
 async function listIssues(config: AppConfig, creds: CredentialEnvelope, params: Record<string, string>): Promise<Array<Record<string, unknown>>> {
   const result: Array<Record<string, unknown>> = [];
   let offset = 0;
@@ -95,7 +98,7 @@ async function listIssues(config: AppConfig, creds: CredentialEnvelope, params: 
     if (result.length >= total || page.issues.length === 0) break;
     offset += page.issues.length;
   }
-  return result;
+  return result.filter(ordinaryIssue);
 }
 
 async function listAssigned(config: AppConfig, creds: CredentialEnvelope, assignee: string, status: string): Promise<Array<Record<string, unknown>>> {
@@ -124,6 +127,10 @@ export async function fetchIssueBrowser(
   creds: CredentialEnvelope,
   options: { status: string; trackerId?: number; projectId?: number; offset: number; limit: number },
 ): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number }> {
+  if(process.env.RAPPORT_ENABLED==='true') {
+    const all=await listIssues(config,creds,{status_id:options.status, ...(options.projectId?{project_id:String(options.projectId)}:{}), ...(options.trackerId?{tracker_id:String(options.trackerId)}:{})});
+    return {issues:all.slice(options.offset,options.offset+options.limit),total_count:all.length,offset:options.offset,limit:options.limit};
+  }
   const params: Record<string, string> = {
     status_id: options.status,
     offset: String(options.offset),

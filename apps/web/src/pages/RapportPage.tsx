@@ -34,6 +34,7 @@ export function RapportPage() {
   const [saving,setSaving]=useState(false);
   const [captureError,setCaptureError]=useState('');
   const [captureId,setCaptureId]=useState('');
+  const [retryBody,setRetryBody]=useState<{date:string;employees:number[];line:{id:string;start:string;end:string;kind:string;activity:string;order:string;machines:never[];materials:never[]}}|null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true); setError(''); setPeople([]); setMissing([]); setActor(null);
@@ -73,10 +74,11 @@ export function RapportPage() {
     setSaving(true);setCaptureError('');const id=captureId||crypto.randomUUID();setCaptureId(id);
     try {
       const firstEnd=new Date(new Date(startAt).getTime()+minutes*60000).toISOString();
-      const result=await api.rapportCapture({date,employees:selected,line:{id,start:startAt,end:firstEnd,kind:'work',activity,order:'',machines:[],materials:[]}});
+      const body=retryBody??{date,employees:selected,line:{id,start:startAt,end:firstEnd,kind:'work',activity,order:'',machines:[],materials:[]}};setRetryBody(body);
+      const result=await api.rapportCapture(body);
       const failed=result.results.filter(x=>!x.ok);
       if(failed.length){setCaptureError(failed.map(x=>(people.find(p=>p.id===x.employee)?.name??x.employee)+': '+x.message).join('; '));return;}
-      setCaptureId('');
+      setCaptureId('');setRetryBody(null);
     } catch(e){setCaptureError(e instanceof Error?e.message:'Übertragung fehlgeschlagen');return;} finally{setSaving(false);}
     setBatches(old => [...old, { id: nextId, entries: draft }]);
     const counts = { ...preferences.counts };
@@ -126,7 +128,7 @@ export function RapportPage() {
         <Button h={48} variant="subtle" color="gray" onClick={() => {setMinutes(0);setUseFullDay(false);}}>Zeit zurücksetzen</Button>
         <Textarea label="Tätigkeit (optional)" placeholder="z. B. Grünpflege am Friedhof" value={activity} onChange={e => setActivity(e.currentTarget.value)} autosize minRows={2} maxRows={5} maxLength={1000} />
         <Text size="sm" fw={650}>Gesamt für die Auswahl: {formatDuration((minutes ?? 0) * selectedPeople.length)} h</Text>
-        {captureError&&<Alert color="red">{captureError} – erneuter Versuch verwendet dieselbe Vorgangs-ID.</Alert>}
+        {captureError&&<Alert color="red">{captureError} – erneuter Versuch verwendet die ursprüngliche Auswahl und Zeit. Bereits übertragene Leistungen werden nicht erneut angelegt.<Button mt="xs" h={48} variant="default" onClick={()=>{setRetryBody(null);setCaptureId('');setCaptureError('');}}>Wiederholung verwerfen (bereits übertragene bleiben)</Button></Alert>}
         <Button h={56} loading={saving} disabled={!canAdd} onClick={()=>void addBatch()}>In Tagesrapporte übernehmen ({selectedPeople.length})</Button>
       </Stack></Paper>
     </>}

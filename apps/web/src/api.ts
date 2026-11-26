@@ -1,3 +1,4 @@
+import type { RapportReport, Catalog } from './rapportBook';
 import type { CurrentUser, PublicConfig, RedmineIssue } from './types';
 
 export class AuthRequiredError extends Error {}
@@ -29,6 +30,12 @@ export type TicketBrowserStatus = 'open' | 'closed' | '*';
 export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
 
 export const api = {
+  rapportList: (from:string,to:string,all=false) => request<{reports:RapportReport[];dispatcher:boolean}>(`/api/rapport/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&all=${all?'1':'0'}`),
+  rapportDetail: (id:number) => request<RapportReport>(`/api/rapport/reports/${id}`),
+  rapportSave: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}`,{method:'PUT',body:JSON.stringify(body)}),
+  rapportTransition: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}/transition`,{method:'POST',body:JSON.stringify(body)}),
+  rapportCatalog: () => request<Catalog>('/api/rapport/catalog'),
+  rapportAddCatalog: (kind:string,name:string) => request<{id:number;name:string}>('/api/rapport/catalog',{method:'POST',body:JSON.stringify({kind,name})}),
   rapportCapture: (body:unknown) => request<{results:{employee:number;ok:boolean;message?:string;reportId?:number}[]}>('/api/rapport/capture',{method:'POST',body:JSON.stringify(body)}),
   rapportUsers: () => request<{ users: { id: number; name: string; groups: string[] }[]; missingGroups: string[]; dispatcher?: boolean }>('/api/rapport/users'),
   login: (username: string, password: string) => request<{ user: CurrentUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),

@@ -29,7 +29,7 @@ If code and specification conflict, do not silently invent product behavior. Pre
 - The backend/BFF is stateless; durable application state belongs in Redmine or the user's local PWA cache.
 - The PWA must remain usable offline for existing synchronized issues for several hours/up to roughly half a workday.
 - Offline editing covers existing issues: fields, status, assignee, comments/private notes and attachments/photos. New issue creation is online-only future scope.
-- The `Zeit buchen` action is a deliberate integration seam only. The requested read-only Rapport draft is permitted: group roster and temporary duration inputs only. No booking, persistence or sync.
+- The `Zeit buchen` action is a deliberate integration seam only. The REST-only rapport module is opt-in and uses a private Redmine project as its sole central store. Follow docs/RAPPORT_SETUP.md; never expose technical keys or bypass the configured workflow.
 - Never silently discard an offline mutation. Every queued mutation reaches `synced`, `retrying`, or `conflict` state.
 - Auto-merge safe changes. Surface only material conflicts that cannot be safely replayed.
 - All Redmine permissions/workflow decisions are authoritative. Derkumpel must not grant operations Redmine would reject.
@@ -45,7 +45,7 @@ If code and specification conflict, do not silently invent product behavior. Pre
 - Primary actions are at least 48px high; important controls target 52–56px.
 - No hover-only interaction.
 - Simple issue mode always shows title, status, priority, assignee, start/due date, location/address, percent done, description and primary actions when available.
-- Primary issue actions: In Arbeit, unterbrochen, Erledigt, Kommentar, Foto, Zeit buchen and Navigation. Actions must be permission/workflow aware; `Arbeitszeit erfassen` opens the read-only Rapport draft; no time entries are written.
+- Primary issue actions: In Arbeit, unterbrochen, Erledigt, Kommentar, Foto, Zeit buchen and Navigation. Actions must be permission/workflow aware; `Arbeitszeit erfassen` opens the Rapport module; no native time entries are written.
 - Less important history and technical field changes are collapsed under an advanced expander.
 - Sync details live in a dedicated subview, not as constant visual noise.
 - Offline/online state must be understandable without alarming the user.
