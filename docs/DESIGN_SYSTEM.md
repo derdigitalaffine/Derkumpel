@@ -39,7 +39,7 @@ Issue cards emphasize in this order:
 4. due/start timing
 5. assignee/group
 
-The `Meine Arbeit` home has a compact work overview and **three optional quick filters** (all, due today, overdue) before the sticky search toolbar. Tapping a selected urgent quick filter returns to all. Stored personal filters are not lost when using quick filters.
+The `Meine Arbeit` home prioritizes the issue list: compact title, three compact quick filters (all, due today, overdue) and the sticky search toolbar. Secondary module shortcuts appear below the issue list; the global navigation remains available at any scroll position. Tapping a selected urgent quick filter returns to all. Stored personal filters are not lost when using quick filters.
 
 Issue detail simple mode uses sections: Auftrag, Ort & Termin, Aktionen, Beschreibung, Anhänge, Verlauf. `Alle Angaben & Bearbeiten` remains collapsed by default on every open.
 
