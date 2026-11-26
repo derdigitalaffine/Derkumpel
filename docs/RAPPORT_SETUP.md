@@ -14,4 +14,4 @@
 - Aktuell Online-Betrieb; kein persistenter Rapport-Outbox/Offline-Editor. Bei Sammelerfassung sind Teilfehler sichtbar und Wiederholung mit gleicher Vorgangs-ID möglich. Noch nicht übertragene Eingaben nicht als gespeichert betrachten.
 - PDF wird auf Abruf generiert, keine unveränderliche Archivkopie; Standardfont WinAnsi. Korrektur nach Abschluss bleibt gesperrt; separater Korrekturbeleg ist noch nicht implementiert.
 - Maschine/Material als separate Positionen pro Person, nicht automatisch kopiert. Für gemeinsame Ressourcennutzung nur im verantwortlichen Rapport erfassen. Stammdaten in Redmine umbenennen bzw. schließen.
-- Die Auftragsreferenz ist eine freie Nummer (inkl. Redmine #ID), noch keine Suche oder validierte Verknüpfung. Kein automatischer Zeitbuchungseintrag.
+- Die Auftragsreferenz ist eine freie Nummer; #ID kann über den persönlichen Redmine-Zugang geprüft werden. Keine Volltext-Auftragssuche. Kein automatischer Zeitbuchungseintrag.

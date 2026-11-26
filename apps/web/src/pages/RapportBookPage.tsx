@@ -8,11 +8,11 @@ const errorText=(e:unknown)=>e instanceof Error?e.message:'Anfrage fehlgeschlage
 const stamp=(s:string)=>s?new Date(s).toLocaleString('de-DE',{timeZone:'Europe/Berlin',dateStyle:'short',timeStyle:'short'}):'–';
 const emptyCatalog:Catalog={machines:[],materials:[]};
 function TimeField({label,value,disabled,onChange}:{label:string;value:string;disabled:boolean;onChange:(v:string)=>void}){
-  const [raw,setRaw]=useState(()=>inputTime(value));useEffect(()=>setRaw(inputTime(value)),[value]);
+  const [raw,setRaw]=useState(()=>inputTime(value));useEffect(()=>{if(value)setRaw(inputTime(value));},[value]);
   return <TextInput type="datetime-local" label={label} size="lg" disabled={disabled} value={raw} error={raw&&!fromInputTime(raw,value)?'Ungültige oder mehrdeutige Uhrzeit':undefined} onChange={e=>{const s=e.currentTarget.value;setRaw(s);onChange(fromInputTime(s,value));}}/>;
 }
 function LineEditor({line,disabled,catalog,update,remove}:{line:RapportLine;disabled:boolean;catalog:Catalog;update:(l:RapportLine)=>void;remove:()=>void}){
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(false);const [orderInfo,setOrderInfo]=useState('');
   return <Paper p="md" withBorder className="surface-card"><Stack gap="sm">
     <Button variant="subtle" color="dark" h="auto" p="xs" onClick={()=>setOpen(o=>!o)} aria-expanded={open} styles={{label:{whiteSpace:'normal',textAlign:'left',display:'block',width:'100%'}}}>
       <Group justify="space-between"><Text fw={800}>{stamp(line.start)} – {stamp(line.end)}</Text><Badge>{formatDuration(Math.max(0,lineMinutes(line)||0))} h</Badge></Group>
@@ -24,7 +24,8 @@ function LineEditor({line,disabled,catalog,update,remove}:{line:RapportLine;disa
       <SimpleGrid cols={{base:1,sm:2}}><TimeField label="Beginn" value={line.start} disabled={disabled} onChange={start=>update({...line,start})}/><TimeField label="Ende" value={line.end} disabled={disabled} onChange={end=>update({...line,end})}/></SimpleGrid>
       <Textarea label="Art der Leistung" disabled={disabled} value={line.activity} onChange={e=>update({...line,activity:e.currentTarget.value})} autosize minRows={2}/>
       {line.kind==='work'&&<>
-        <TextInput label="Auftrag (Redmine #Nr. oder freie Nummer)" disabled={disabled} value={line.order} onChange={e=>update({...line,order:e.currentTarget.value})}/>
+        <TextInput label="Auftrag (Redmine #Nr. oder freie Nummer)" disabled={disabled} value={line.order} onChange={e=>{setOrderInfo('');update({...line,order:e.currentTarget.value});}}/>
+        {/^#\d+$/.test(line.order)&&<Button h={48} variant="light" onClick={()=>{void api.rapportOrder(Number(line.order.slice(1))).then(r=>setOrderInfo(r.subject)).catch(()=>setOrderInfo('Auftrag nicht sichtbar oder nicht vorhanden.'));}}>Redmine-Auftrag prüfen</Button>}{orderInfo&&<Text size="sm">{orderInfo}</Text>}
         <Title order={4} size="h5">Maschineneinsatz</Title>
         {line.machines.map((m,i)=><Paper withBorder p="xs" key={i}><Stack gap="xs">
           <TextInput label="Maschine (Katalog oder Freitext)" list="rapport-machines" disabled={disabled} value={m.name} onChange={e=>update({...line,machines:line.machines.map((x,j)=>i===j?{...x,name:e.currentTarget.value}:x)})}/>
@@ -40,7 +41,7 @@ function LineEditor({line,disabled,catalog,update,remove}:{line:RapportLine;disa
         </Stack></Paper>)}
         {!disabled&&<Button variant="light" h={48} onClick={()=>update({...line,materials:[...line.materials,{name:'',quantity:1,unit:'Stück'}]})}>+ Material</Button>}
       </>}
-      <datalist id="rapport-machines">{catalog.machines.map(m=><option key={m.id} value={m.name}/>)}</datalist><datalist id="rapport-materials">{catalog.materials.map(m=><option key={m.id} value={m.name}/>)}</datalist>
+      
       {!disabled&&<Button variant="subtle" color="red" h={48} onClick={remove}>Position entfernen</Button>}
     </>}
   </Stack></Paper>;
@@ -62,7 +63,7 @@ export function RapportBookPage(){
   const transition=async(action:string)=>{if(!current||dirty)return;setBusy(true);setError('');try{const next=await api.rapportTransition(current.id,{revision:current.revision,action,reason});setCurrent(next);setReason('');setMessage('Status aktualisiert.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
   const submitWeek=async()=>{setBusy(true);setError('');const failures:string[]=[];for(const id of selected){try{const r=await api.rapportDetail(id);await api.rapportTransition(id,{revision:r.revision,action:'submit'});}catch(e){failures.push('#'+id+': '+errorText(e));}}try{await refresh();}catch(e){failures.push(errorText(e));}setSelected([]);setError(failures.join('; '));setMessage(failures.length?'Teilweise eingereicht.':'Ausgewählte Rapporte eingereicht.');setBusy(false);};
   const canEdit=!!current&&current.state!=='closed'&&(dispatcher||['draft','returned'].includes(current.state));
-  const addLine=(type:'work'|'pause')=>{if(!current)return;const start=fromInputTime(current.date+'T07:00');const end=new Date(Date.parse(start)+15*60000).toISOString();edit({...current,lines:[...current.lines,{id:crypto.randomUUID(),start,end,kind:type,activity:'',order:'',machines:[],materials:[]}]});};
+  const addLine=(type:'work'|'pause')=>{if(!current)return;const start=[...current.lines].filter(l=>l.end&&inputTime(l.end).slice(0,10)===current.date).sort((a,b)=>b.end.localeCompare(a.end))[0]?.end??fromInputTime(current.date+'T07:00');const end=new Date(Date.parse(start)+15*60000).toISOString();edit({...current,lines:[...current.lines,{id:crypto.randomUUID(),start,end,kind:type,activity:'',order:'',machines:[],materials:[]}]});};
   const visible=reports.filter(r=>r.owner.name.toLocaleLowerCase('de').includes(search.toLocaleLowerCase('de'))&&(tab!=='review'||filter==='all'||(filter==='pending'?['submitted','review'].includes(r.state):r.state===filter)));
   return <Stack maw={950} mx="auto" gap="md">
     <Group justify="space-between"><Title order={1} size="h2">Rapporte</Title><Button component={Link} to="/rapport" variant="light" h={48}>+ Erfassen</Button></Group>
@@ -78,10 +79,10 @@ export function RapportBookPage(){
         {tab==='week'&&['draft','returned'].includes(r.state)&&<Checkbox size="lg" aria-label={r.date+' auswählen'} checked={selected.includes(r.id)} onChange={e=>setSelected(old=>e.currentTarget.checked?[...old,r.id]:old.filter(i=>i!==r.id))}/>}
         <Stack gap={2} style={{flex:1}}><Text fw={800}>{r.date} · {r.owner.name}</Text><Text size="sm">{formatDuration(sumWork(r))} h · {stateLabels[r.state]}</Text></Stack><Button h={48} variant="light" disabled={busy} onClick={()=>void open(r.id)}>Öffnen</Button>
       </Group></Paper>)}
-      {current&&<Stack gap="sm"><Group justify="space-between"><Title order={2} size="h3">{current.owner.name} · {current.date}</Title><Badge>{stateLabels[current.state]}</Badge></Group>
-        <Paper withBorder p="md"><SimpleGrid cols={2}><Stack gap={0}><Text c="dimmed" size="sm">Soll</Text><Title order={2}>{formatDuration(fullDayMinutes(current.date))} h</Title></Stack><Stack gap={0}><Text c="dimmed" size="sm">Ist</Text><Title order={2}>{formatDuration(sumWork(current))} h</Title></Stack></SimpleGrid><Progress mt="sm" value={Math.min(100,sumWork(current)/Math.max(1,fullDayMinutes(current.date))*100)}/><Text mt="xs" size="sm">Explizite Pausen: {formatDuration(current.lines.filter(l=>l.kind==='pause').reduce((n,l)=>n+Math.max(0,lineMinutes(l)||0),0))} h</Text></Paper>
+      {current&&<Stack gap="sm"><datalist id="rapport-machines">{catalog.machines.map(m=><option key={m.id} value={m.name}/>)}</datalist><datalist id="rapport-materials">{catalog.materials.map(m=><option key={m.id} value={m.name}/>)}</datalist><Group justify="space-between"><Title order={2} size="h3">{current.owner.name} · {current.date}</Title><Badge>{stateLabels[current.state]}</Badge></Group>
+        <Paper withBorder p="md"><SimpleGrid cols={2}><Stack gap={0}><Text c="dimmed" size="sm">Soll</Text><Title order={2}>{formatDuration(fullDayMinutes(current.date))} h</Title></Stack><Stack gap={0}><Text c="dimmed" size="sm">Ist</Text><Title order={2}>{formatDuration(sumWork(current))} h</Title></Stack></SimpleGrid><Progress mt="sm" value={Math.min(100,sumWork(current)/Math.max(1,fullDayMinutes(current.date))*100)}/><Text mt="xs" size="sm">Zeitlücken: {formatDuration([...current.lines].sort((a,b)=>a.start.localeCompare(b.start)).reduce((n,l,i,a)=>n+(i>0?Math.max(0,Math.round((Date.parse(l.start)-Date.parse(a[i-1]!.end))/60000)||0):0),0))} h (nicht automatisch als Pause gewertet)</Text><Text mt="xs" size="sm">Explizite Pausen: {formatDuration(current.lines.filter(l=>l.kind==='pause').reduce((n,l)=>n+Math.max(0,lineMinutes(l)||0),0))} h</Text></Paper>
         {current.state==='closed'&&<Alert color="green">Abgeschlossen und schreibgeschützt.</Alert>}
-        {current.lines.map(l=><LineEditor key={l.id} line={l} disabled={!canEdit||busy} catalog={catalog} update={line=>edit({...current,lines:current.lines.map(x=>x.id===line.id?line:x)})} remove={()=>edit({...current,lines:current.lines.filter(x=>x.id!==l.id)})}/>)}
+        {[...current.lines].sort((a,b)=>a.start.localeCompare(b.start)).map(l=><LineEditor key={l.id} line={l} disabled={!canEdit||busy} catalog={catalog} update={line=>edit({...current,lines:current.lines.map(x=>x.id===line.id?line:x)})} remove={()=>edit({...current,lines:current.lines.filter(x=>x.id!==l.id)})}/>)}
         {canEdit&&<SimpleGrid cols={2}><Button h={52} variant="light" disabled={busy} onClick={()=>addLine('work')}>+ Leistung</Button><Button h={52} variant="light" disabled={busy} onClick={()=>addLine('pause')}>+ Pause</Button></SimpleGrid>}
         <Textarea label="Materialverbrauch / Bemerkungen" value={current.material} disabled={!canEdit||busy} onChange={e=>edit({...current,material:e.currentTarget.value})}/>
         {dispatcher&&current.state!=='closed'&&<Textarea label="Korrektur- / Rückgabebegründung" value={reason} onChange={e=>setReason(e.currentTarget.value)}/>}

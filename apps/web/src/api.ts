@@ -34,6 +34,7 @@ export const api = {
   rapportDetail: (id:number) => request<RapportReport>(`/api/rapport/reports/${id}`),
   rapportSave: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}`,{method:'PUT',body:JSON.stringify(body)}),
   rapportTransition: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}/transition`,{method:'POST',body:JSON.stringify(body)}),
+  rapportOrder: (id:number) => request<{id:number;subject:string}>(`/api/rapport/order/${id}`),
   rapportCatalog: () => request<Catalog>('/api/rapport/catalog'),
   rapportAddCatalog: (kind:string,name:string) => request<{id:number;name:string}>('/api/rapport/catalog',{method:'POST',body:JSON.stringify({kind,name})}),
   rapportCapture: (body:unknown) => request<{results:{employee:number;ok:boolean;message?:string;reportId?:number}[]}>('/api/rapport/capture',{method:'POST',body:JSON.stringify(body)}),

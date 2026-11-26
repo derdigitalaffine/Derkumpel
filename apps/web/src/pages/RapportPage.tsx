@@ -98,7 +98,7 @@ export function RapportPage() {
     </Paper>
     {loading ? <Text role="status">Mitarbeiter werden geladen …</Text> : error ? <Alert color="red" title="Mitarbeiterliste nicht verfügbar"><Stack><Text>{error}</Text><Button h={48} onClick={() => setAttempt(n => n + 1)}>Erneut laden</Button></Stack></Alert> : <>
       {missing.length > 0 && <Alert color="orange">In Redmine nicht gefunden: {missing.join(', ')}</Alert>}
-      <Paper withBorder p="md" className="surface-card"><Stack gap="sm">
+      <fieldset disabled={saving||!!retryBody} style={{border:0,padding:0,margin:0,minWidth:0}}><Stack gap="md"><Paper withBorder p="md" className="surface-card"><Stack gap="sm">
         <Group justify="space-between"><Title order={2} size="h4">1. Für wen?</Title><Badge>{selectedPeople.length} ausgewählt</Badge></Group>
         <Text size="sm" c="dimmed">Wähle dich selbst und/oder die Kollegen aus, die dieselbe Arbeitszeit erhalten sollen.</Text>
         <TextInput label="Mitarbeiter suchen" value={search} onChange={e => setSearch(e.currentTarget.value)} placeholder="Name eingeben" size="lg" />
@@ -128,9 +128,9 @@ export function RapportPage() {
         <Button h={48} variant="subtle" color="gray" onClick={() => {setMinutes(0);setUseFullDay(false);}}>Zeit zurücksetzen</Button>
         <Textarea label="Tätigkeit (optional)" placeholder="z. B. Grünpflege am Friedhof" value={activity} onChange={e => setActivity(e.currentTarget.value)} autosize minRows={2} maxRows={5} maxLength={1000} />
         <Text size="sm" fw={650}>Gesamt für die Auswahl: {formatDuration((minutes ?? 0) * selectedPeople.length)} h</Text>
-        {captureError&&<Alert color="red">{captureError} – erneuter Versuch verwendet die ursprüngliche Auswahl und Zeit. Bereits übertragene Leistungen werden nicht erneut angelegt.<Button mt="xs" h={48} variant="default" onClick={()=>{setRetryBody(null);setCaptureId('');setCaptureError('');}}>Wiederholung verwerfen (bereits übertragene bleiben)</Button></Alert>}
+        </Stack></Paper></Stack></fieldset>
+      {captureError&&<Alert color="red">{captureError} – erneuter Versuch verwendet die ursprüngliche Auswahl und Zeit. Bereits übertragene Leistungen werden nicht erneut angelegt.<Button mt="xs" h={48} variant="default" onClick={()=>{setRetryBody(null);setCaptureId('');setCaptureError('');}}>Wiederholung verwerfen (bereits übertragene bleiben)</Button></Alert>}
         <Button h={56} loading={saving} disabled={!canAdd} onClick={()=>void addBatch()}>In Tagesrapporte übernehmen ({selectedPeople.length})</Button>
-      </Stack></Paper>
     </>}
     {batches.length > 0 && <Stack gap="sm">
       <Title order={2} size="h4">Übertragene Leistungen dieser Sitzung</Title>
