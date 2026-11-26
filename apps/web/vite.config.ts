@@ -34,6 +34,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Keep the entire application shell available offline as the UI grows.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],

@@ -1,4 +1,4 @@
-import {Alert,Button,Checkbox,Group,Modal,NumberInput,Paper,Select,SimpleGrid,Stack,Text,Textarea,TextInput} from '@mantine/core';
+import {Alert,Button,Checkbox,Group,Modal,NumberInput,Paper,Select,SimpleGrid,Stack,Text,Textarea} from '@mantine/core';
 import {useEffect,useState} from 'react';
 import {api} from '../api';
 import type {Crew,CrewRecovery} from '../crews';
@@ -6,8 +6,8 @@ import {type MaterialUsage,roundedDuration} from '../green';
 import {displayStamp,floorQuarterInstant,fromInputTime,inputTime} from '../rapportBook';
 import {formatDuration} from '../rapport';
 import {GermanDateTimeField} from './RapportDateFields';
-import {MachineDurationField} from './MachineDurationField';
-import {suggestMachineDuration,isMachineDuration} from '../machineDuration';
+import {CrewResourcePages} from './CrewResourcePages';
+import {isMachineDuration} from '../machineDuration';
 
 export function CrewRecoveryPanel({crew,onClose,onSaved}:{crew:Crew|null;onClose:()=>void;onSaved:()=>void}){
  const [data,setData]=useState<CrewRecovery|null>(null),[start,setStart]=useState(''),[duration,setDuration]=useState(0),[choices,setChoices]=useState<Record<number,{included:boolean;offset:number;minutes:number}>>({}),[note,setNote]=useState(''),[reason,setReason]=useState(''),[materials,setMaterials]=useState<MaterialUsage[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[actor,setActor]=useState(0);
@@ -15,7 +15,6 @@ export function CrewRecoveryPanel({crew,onClose,onSaved}:{crew:Crew|null;onClose
  useEffect(()=>{if(!id)return;let active=true;setData(null);setError('');setReason('');setNote('');setMaterials([]);void Promise.all([api.greenRecovery(id),api.me()]).then(([d,me])=>{if(!active)return;setData(d);setActor(me.id);setStart(inputTime(d.saved?.start??floorQuarterInstant(d.startedAt)));const n=d.saved?Math.round((Date.parse(d.saved.end)-Date.parse(d.saved.start))/60000):roundedDuration(Date.parse(d.startedAt),Date.parse(d.endedAt));setDuration(n);setChoices(Object.fromEntries(d.employees.map(employee=>[employee,{included:!d.excluded.includes(employee),offset:0,minutes:n}])));setMaterials(d.saved?.materials??[]);}).catch(e=>{if(active)setError(String(e));});return()=>{active=false;};},[id]);
  const name=(id:number)=>crew?.crew.find(p=>p.id===id)?.name??'#'+id;
  const patch=(id:number,v:Partial<{included:boolean;offset:number;minutes:number}>)=>setChoices(old=>({...old,[id]:{...old[id]!,...v}}));
- const updateMaterial=(i:number,v:Partial<MaterialUsage>)=>setMaterials(old=>old.map((m,j)=>j===i?{...m,...v}:m));
  const submit=async()=>{if(!data||busy)return;setBusy(true);setError('');try{
    const base=fromInputTime(start),included=data.employees.filter(id=>choices[id]?.included);
    if(!data.saved&&(!base||!duration||duration%15||!included.length||included.some(id=>{const c=choices[id]!;return c.offset<0||c.minutes<=0||c.offset%15!==0||c.minutes%15!==0||c.offset+c.minutes>duration;})))throw Error('Bitte gültige Zeiten und mindestens eine Teilnahme im Viertelstundenraster eingeben.');
@@ -32,8 +31,7 @@ export function CrewRecoveryPanel({crew,onClose,onSaved}:{crew:Crew|null;onClose
  <Select label="Rapportdauer" searchable data={Array.from({length:96},(_,i)=>({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'}))} value={String(duration)} disabled={busy} onChange={v=>{const n=Number(v);setDuration(n);setChoices(old=>Object.fromEntries(Object.entries(old).map(([id,c])=>[id,{...c,offset:Math.min(c.offset,Math.max(0,n-15)),minutes:c.offset===0&&c.minutes===duration?n:Math.min(c.minutes,Math.max(15,n-Math.min(c.offset,Math.max(0,n-15))))}])));}}/>
  <Textarea label="Ergänzende Tätigkeit (optional)" maxLength={150} value={note} onChange={e=>setNote(e.currentTarget.value)} disabled={busy}/>
  <Text fw={700}>Teilnahme pro Person</Text>{data.employees.map(id=>{const c=choices[id];if(!c)return null;return <Paper key={id} p="sm" withBorder><Stack gap="xs"><Checkbox size="lg" label={name(id)} checked={c.included} disabled={busy} onChange={e=>patch(id,{included:e.currentTarget.checked})}/>{c.included&&<SimpleGrid cols={2}><NumberInput label="Später begonnen (min)" min={0} max={Math.max(0,duration-15)} step={15} value={c.offset} disabled={busy} onChange={v=>patch(id,{offset:Number(v)})}/><NumberInput label="Teilnahme (min)" min={15} max={Math.max(15,duration-c.offset)} step={15} value={c.minutes} disabled={busy} onChange={v=>patch(id,{minutes:Number(v)})}/></SimpleGrid>}</Stack></Paper>;})}
- <Text fw={700}>Maschinen / Verbrauchsmaterial (gemeinsam)</Text>{materials.map((m,i)=><Paper key={i} withBorder p="sm"><Stack gap="xs"><TextInput label={m.kind==='machine'?'Maschine':'Verbrauchsmaterial'} value={m.name} disabled={busy} onChange={e=>updateMaterial(i,{name:e.currentTarget.value})}/>{m.kind==='machine'?<MachineDurationField value={m.quantity} disabled={busy} onChange={quantity=>updateMaterial(i,{quantity})}/>:<SimpleGrid cols={2}><NumberInput label="Menge" min={0.001} value={m.quantity} disabled={busy} onChange={v=>updateMaterial(i,{quantity:Number(v)})}/><TextInput label="Einheit" value={m.unit} disabled={busy} onChange={e=>updateMaterial(i,{unit:e.currentTarget.value})}/></SimpleGrid>}<TextInput label="Bemerkung" value={m.note} disabled={busy} onChange={e=>updateMaterial(i,{note:e.currentTarget.value})}/><Button color="red" variant="subtle" disabled={busy} onClick={()=>setMaterials(old=>old.filter((_,j)=>i!==j))}>Entfernen</Button></Stack></Paper>)}
- <Group grow><Button variant="light" disabled={busy||materials.length>=50} onClick={()=>setMaterials(old=>[...old,{kind:'machine',name:'',unit:'min',quantity:suggestMachineDuration(duration),note:''}])}>+ Maschine</Button><Button variant="light" disabled={busy||materials.length>=50} onClick={()=>setMaterials(old=>[...old,{name:'',unit:'',quantity:1,note:''}])}>+ Material</Button></Group>
+ <CrewResourcePages items={materials} onChange={setMaterials} duration={duration} disabled={busy}/>
  {actor!==data.actor.id&&<Textarea label="Begründung des Nachtrags" required maxLength={500} value={reason} disabled={busy} onChange={e=>setReason(e.currentTarget.value)}/>}
  </>}
  <Group grow><Button variant="default" disabled={busy} onClick={onClose}>Schließen</Button><Button h={54} loading={busy} disabled={data.confirmed||(!data.saved&&actor!==data.actor.id&&!reason.trim())} onClick={()=>void submit()}>{data.confirmed?'Bereits bestätigt':data.saved?'Rapporte erneut übertragen':'Abschluss speichern'}</Button></Group>

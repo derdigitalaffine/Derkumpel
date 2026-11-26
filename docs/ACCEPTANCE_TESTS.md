@@ -138,3 +138,6 @@
 - Beendete, nicht abgeschlossene Einsätze sind für den ursprünglichen Erfasser auch ohne lokalen Entwurf und für Disponenten sichtbar und nachtragbar. Andere Mitarbeiter erhalten keinen Zugriff.
 - Unveränderte tatsächliche Einsatzzeit und Auftragsreferenzen; Teilnahme und gemeinsame Ressourcen kontrollieren, Disponent muss den Nachtrag begründen. Tatsächlicher Erfasser wird im Abschluss und Rapport gespeichert.
 - Vorhandene Rapporte und Überschneidungen werden geprüft; Wiederholung verwendet identische Vorgangs-IDs. Ein Nachtrag bleibt bei unvollständiger Einzelrapportübertragung offen; eine technische Redmine-Bestätigung schließt ihn erst nach erfolgreicher Übertragung ab. Keine automatische Rapportabnahme.
+
+## Ressourcen-Unterseiten
+- Normaler und nachträglicher Grünpflegeabschluss zeigen nur zwei optionale Symbolbuttons mit Anzahl. Maschinen und Verbrauchsmaterial öffnen getrennte Vollbildansichten; ohne Positionen ist keine Eingabe erforderlich. Zurück erhält alle erfassten Werte. Maschinen bleiben im Halbstundenraster, Verbrauchsmaterial mit Menge und Einheit.
