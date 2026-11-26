@@ -12,6 +12,8 @@ const response=(body:unknown,status=200)=>status===204?new Response(null,{status
 function mockRedmine(){
   for(const [k,v] of Object.entries({RAPPORT_ENABLED:'true',RAPPORT_DIRECTORY_KEY:'directory',RAPPORT_SERVICE_KEY:'service',RAPPORT_PROJECT_ID:'10',RAPPORT_CATALOG_PROJECT_ID:'20',RAPPORT_TRACKER_ID:'11',RAPPORT_MACHINE_TRACKER_ID:'21',RAPPORT_MATERIAL_TRACKER_ID:'22',RAPPORT_DATA_FIELD_ID:'5',RAPPORT_STATUS_DRAFT:'1',RAPPORT_STATUS_SUBMITTED:'2',RAPPORT_STATUS_REVIEW:'3',RAPPORT_STATUS_RETURNED:'4',RAPPORT_STATUS_CLOSED:'5'}))vi.stubEnv(k,v);
   const issues=new Map<number,FixtureIssue>();
+  const tasks=[{id:701,subject:'Friedhof',project:{id:30},tracker:{id:31},status:{id:1},custom_fields:[{id:32,value:'Otterberg'}]},{id:702,subject:'Hecke',project:{id:30},tracker:{id:31},status:{id:5},custom_fields:[]}];
+  vi.stubEnv('GREEN_ENABLED','true');vi.stubEnv('GREEN_TRACKER_ID','31');vi.stubEnv('GREEN_MUNICIPALITY_FIELD_ID','32');
   vi.stubGlobal('fetch',vi.fn(async(input:URL|string,init:RequestInit={})=>{
     const url=new URL(String(input)),h=new Headers(init.headers),key=h.get('X-Redmine-API-Key'),auth=h.get('Authorization');
     const login=auth?Buffer.from(auth.replace('Basic ',''),'base64').toString().split(':')[0]!:'';
@@ -20,6 +22,9 @@ function mockRedmine(){
     if(url.pathname==='/groups.json'&&key==='directory')return response({groups:[{id:1,name:'Disponenten Bauhof'},{id:2,name:'Bauhofmitarbeiter'}]});
     if(url.pathname==='/groups/1.json'&&key==='directory')return response({group:{users:[people.dispatcher]}});
     if(url.pathname==='/groups/2.json'&&key==='directory')return response({group:{users:[people.alice,people.bob]}});
+    if(url.pathname==='/issues.json'&&person&&method==='GET'&&url.searchParams.get('tracker_id')==='31')return response({issues:tasks,total_count:tasks.length});
+    const task=tasks.find(t=>url.pathname==='/issues/'+t.id+'.json');if(task&&person&&method==='GET')return response({issue:task});
+    if(task)throw Error('Source ticket mutation attempted');
     if(url.pathname==='/issues.json'&&key==='service'){
       if(method==='GET')return response({issues:[...issues.values()],total_count:issues.size});
       if(method==='POST'){
@@ -44,6 +49,10 @@ function mockRedmine(){
 const line={id:'capture-123',start:'2026-11-26T06:00:00.000Z',end:'2026-11-26T07:00:00.000Z',kind:'work',activity:'Grünpflege',order:'',machines:[],materials:[]};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Rapport REST boundary',()=>{
+  it('reads all recurring tasks and records multiple references without changing source tickets',async()=>{
+    const issues=mockRedmine(),app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));const headers={'x-test-user':'alice'};
+    try{const t=await app.inject({method:'GET',url:'/api/rapport/green/tasks',headers});expect(t.statusCode).toBe(200);expect(t.json().tasks).toEqual([{id:701,subject:'Friedhof',municipalities:['Otterberg']},{id:702,subject:'Hecke',municipalities:[]}]);const b={actorId:1,date:'2026-11-26',employees:[1,2],line:{...line,sourceIds:[701,702]}};const r=await app.inject({method:'POST',url:'/api/rapport/capture',headers,payload:b});expect(r.json().results.every((x:{ok:boolean})=>x.ok)).toBe(true);expect(issues.size).toBe(2);for(const issue of issues.values()){const data=JSON.parse(issue.custom_fields[0]!.value);expect(data.lines).toHaveLength(1);expect(data.lines[0].sources.map((x:{id:number})=>x.id)).toEqual([701,702]);}await app.inject({method:'POST',url:'/api/rapport/capture',headers,payload:b});expect(issues.size).toBe(2);expect((await app.inject({method:'GET',url:'/api/rapport/green/tasks',headers:{'x-test-user':'outsider'}})).statusCode).toBe(403);}finally{await app.close();}
+  });
   it('deduplicates batches, enforces ownership, audits edits, and locks closed reports',async()=>{
     const issues=mockRedmine(),app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));
     registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
