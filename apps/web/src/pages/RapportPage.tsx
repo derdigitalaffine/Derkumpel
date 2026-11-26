@@ -6,7 +6,7 @@ import { getSetting, setSetting } from '../db';
 import { formatDuration, fullDayMinutes, makeRapportEntries, localDateInput, parseLocalStart, rankRapportPeople, type RapportPerson, type RapportDraftEntry } from '../rapport';
 
 const increments = [[15, '+15 min'], [30, '+30 min'], [45, '+45 min'], [60, '+1 h']] as const;
-const durationOptions = [{value:'0',label:'Bitte wählen'}, ...Array.from({length:96}, (_,i) => ({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'})), {value:'468',label:'7:48 h · Solltag'}].sort((a,b)=>Number(a.value)-Number(b.value));
+const durationOptions = [{value:'0',label:'Bitte wählen'}, ...Array.from({length:96}, (_,i) => ({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'}))];
 const defaultStart = () => { const now = new Date(); return formatDuration(now.getHours()*60 + Math.floor(now.getMinutes()/15)*15).padStart(5,'0'); };
 type Preferences = { favorites: number[]; counts: Record<number, number> };
 type Batch = { id: number; entries: RapportDraftEntry[] };
@@ -18,6 +18,8 @@ export function RapportPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [minutes, setMinutes] = useState(0);
   const [date, setDate] = useState(() => localDateInput(new Date()));
+  const [useFullDay, setUseFullDay] = useState(false);
+  const targetMinutes = fullDayMinutes(date);
   const [time, setTime] = useState(defaultStart);
   const [filter, setFilter] = useState('all');
   const [preferences, setPreferences] = useState<Preferences>({ favorites: [], counts: {} });
@@ -47,7 +49,7 @@ export function RapportPage() {
   }, [attempt]);
   const startAt = parseLocalStart(date, time);
   const endAt = startAt && minutes > 0 ? new Date(new Date(startAt).getTime() + minutes * 60000) : null;
-  const add = (amount: number) => setMinutes(old => Math.min(1440, Math.floor(old / 15) * 15 + amount));
+  const add = (amount: number) => { setUseFullDay(false); setMinutes(old => Math.min(1440, old + amount)); };
   const savePreferences = (next: Preferences) => {
     setPreferences(next);
     if (actor) void setSetting('rapport-picker:' + actor.id, next).catch(() => setPreferenceWarning(true));
@@ -69,7 +71,7 @@ export function RapportPage() {
     const counts = { ...preferences.counts };
     for (const entry of draft) counts[entry.employee.id] = (counts[entry.employee.id] ?? 0) + 1;
     savePreferences({ ...preferences, counts });
-    setNextId(id => id + 1); setMinutes(0); setActivity('');
+    setNextId(id => id + 1); setMinutes(0); setUseFullDay(false); setActivity('');
   };
   return <Stack maw={900} mx="auto" gap="md">
     <Button component={Link} to="/" variant="subtle" h={48} style={{ alignSelf: 'flex-start' }}>← Meine Arbeit</Button>
@@ -103,14 +105,14 @@ export function RapportPage() {
       <Paper withBorder p="md" className="surface-card"><Stack gap="sm">
         <Title order={2} size="h4">2. Arbeitszeit je Person</Title>
         <SimpleGrid cols={{base:1,xs:2}} spacing="xs">
-          <TextInput type="date" label="Arbeitstag" size="lg" value={date} onChange={e=>setDate(e.currentTarget.value)} />
+          <TextInput type="date" label="Arbeitstag" size="lg" value={date} onChange={e=>{ const next = e.currentTarget.value; setDate(next); if (useFullDay) setMinutes(fullDayMinutes(next)); }} />
           <TextInput type="time" label="Beginn" size="lg" value={time} onChange={e=>setTime(e.currentTarget.value)} error={!startAt?'Bitte gültigen Beginn wählen.':undefined} />
         </SimpleGrid>
-        <Select label="Dauer (15-Minuten-Blöcke)" size="lg" searchable data={durationOptions} value={String(minutes)} onChange={v=>setMinutes(Number(v ?? 0))} allowDeselect={false} />
+        <Select label="Dauer (15-Minuten-Blöcke)" size="lg" searchable data={durationOptions} value={String(minutes)} onChange={v=>{setUseFullDay(false);setMinutes(Number(v ?? 0));}} allowDeselect={false} />
         <Text fw={700} aria-live="polite">Ende: {endAt ? endAt.toLocaleString('de-DE', {dateStyle:'short',timeStyle:'short'}) : '–'}</Text>
         <SimpleGrid cols={2} spacing="xs">{increments.map(([amount, label]) => <Button key={amount} h={52} variant="light" disabled={minutes % 15 !== 0 || minutes + amount > 1440} onClick={() => add(amount)}>{label}</Button>)}</SimpleGrid>
-        <Button h={56} onClick={() => setMinutes(fullDayMinutes)}>Kompletter Arbeitstag · 7:48 h</Button>
-        <Button h={48} variant="subtle" color="gray" onClick={() => setMinutes(0)}>Zeit zurücksetzen</Button>
+        <Button h={56} disabled={!targetMinutes} onClick={() => {setUseFullDay(true);setMinutes(targetMinutes);}}> {targetMinutes ? `Kompletter Arbeitstag · ${formatDuration(targetMinutes)} h` : "Kein regulärer Solltag"} </Button>
+        <Button h={48} variant="subtle" color="gray" onClick={() => {setMinutes(0);setUseFullDay(false);}}>Zeit zurücksetzen</Button>
         <Textarea label="Tätigkeit (optional)" placeholder="z. B. Grünpflege am Friedhof" value={activity} onChange={e => setActivity(e.currentTarget.value)} autosize minRows={2} maxRows={5} maxLength={1000} />
         <Text size="sm" fw={650}>Gesamt für die Auswahl: {formatDuration((minutes ?? 0) * selectedPeople.length)} h</Text>
         <Button h={56} disabled={!canAdd} onClick={addBatch}>In Entwurf übernehmen ({selectedPeople.length})</Button>

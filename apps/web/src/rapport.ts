@@ -1,4 +1,10 @@
-export const fullDayMinutes = 468;
+export function fullDayMinutes(date: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 0;
+  const day = new Date(date + 'T00:00:00Z');
+  if (!Number.isFinite(day.getTime()) || day.toISOString().slice(0,10) !== date) return 0;
+  const weekday = day.getUTCDay();
+  return weekday >= 1 && weekday <= 4 ? 510 : weekday === 5 ? 300 : 0;
+}
 export function formatDuration(minutes: number): string {
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
 }
