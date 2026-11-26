@@ -3,7 +3,7 @@ import { notifications } from '@mantine/notifications';
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { db } from '../db';
-import { currentRapportQueue } from '../rapportQueue';
+import { currentRapportQueue,currentGreenEvents } from '../rapportQueue';
 import { useDexieLive } from '../live';
 import { resolveConflict, syncNow } from '../sync';
 import { UIIcon } from '../components/UIIcon';
@@ -14,6 +14,7 @@ const kindLabels = { update: 'Feld-/Statusänderung', comment: 'Kommentar', atta
 
 export function SyncPage() {
   const rapportQueue=useDexieLive(useCallback(currentRapportQueue,[]),[]);
+  const greenEvents=useDexieLive(useCallback(currentGreenEvents,[]),[]);
   const outbox = useDexieLive(useCallback(() => db.outbox.orderBy('createdAt').toArray(), []), []);
   const status = useDexieLive(useCallback(async () => (await db.syncState.get('status'))?.value as { state?: string; lastSuccess?: number; message?: string } | undefined, []), undefined);
   const attachmentWarnings = useDexieLive(useCallback(async () => ((await db.syncState.get('attachmentWarnings'))?.value as AttachmentCacheWarning[] | undefined) ?? [], []), []);
@@ -54,6 +55,7 @@ export function SyncPage() {
       <Button onClick={() => void sync()} loading={syncBusy || status?.state === 'syncing'} disabled={!navigator.onLine || syncBusy} leftSection={<UIIcon name="refresh" size={19} />}>Jetzt abgleichen</Button>
     </Group>
 
+    {greenEvents.length>0&&<Alert color="orange" title={greenEvents.length+' lokale Grünpflegeereignisse'}><Button component={Link} to="/green" h={48} variant="light">Einsatzübertragungen prüfen</Button></Alert>}
     {rapportQueue.length>0&&<Alert color="orange" title={rapportQueue.length+' lokale Rapportvorgänge'}><Button component={Link} to="/rapport" h={48} variant="light">Rapportübertragungen prüfen</Button></Alert>}
     <SimpleGrid cols={{ base: 3 }} spacing="xs">
       <Paper withBorder p="sm" className="surface-card">

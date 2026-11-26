@@ -20,8 +20,10 @@ export type OutboxRecord = {
   conflict?: { server: unknown; local: unknown; reason: string };
   lastError?: string;
 };
-export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{sourceKind?:'green';sourceIds?:number[];id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
+export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{greenOperationId?:string;sourceKind?:'green';sourceIds?:number[];id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
 export type RapportQueueRecord={id:string;ownerId:number;createdAt:number;body:RapportCaptureBody;state:'pending'|'retrying'|'conflict';message?:string;conflicts?:{employee:number;kind:'overlap';reportId?:number}[]};
+export type GreenEventBody={actorId:number;operationId:string;phase:'start'|'stop';employees:number[];sourceIds:number[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string};
+export type GreenEventRecord={id:string;ownerId:number;createdAt:number;body:GreenEventBody;state:'pending'|'retrying'|'conflict';message?:string};
 export type RapportLocalDraft={key:string;ownerId:number;report:RapportReport;reason:string;updatedAt:number};
 export type SettingRecord = { key: string; value: unknown };
 export type SyncStateRecord = { key: string; value: unknown };
@@ -32,6 +34,7 @@ class DerkumpelDB extends Dexie {
   outbox!: EntityTable<OutboxRecord, 'id'>;
   settings!: EntityTable<SettingRecord, 'key'>;
   rapportQueue!: EntityTable<RapportQueueRecord,'id'>;
+  greenEvents!: EntityTable<GreenEventRecord,'id'>;
   rapportDrafts!: EntityTable<RapportLocalDraft,'key'>;
   syncState!: EntityTable<SyncStateRecord, 'key'>;
 
@@ -46,6 +49,7 @@ class DerkumpelDB extends Dexie {
     });
     this.version(2).stores({rapportQueue:'id, ownerId, createdAt, state'});
     this.version(3).stores({rapportDrafts:'key,ownerId,updatedAt'});
+    this.version(4).stores({greenEvents:'id,ownerId,createdAt,state'});
   }
 }
 
