@@ -216,9 +216,8 @@ app.get('/api/issues/browse', async (request) => {
 });
 
 async function assertOrdinaryIssue(request:FastifyRequest,id:number) {
-  if(process.env.RAPPORT_ENABLED!=='true')return;
-  const {issue}=await redmineJson<{issue:{project:{id:number}}}>(config,credentials(request),'/issues/'+id+'.json');
-  if(internalRapportProject(issue.project.id))throw new RedmineError(404,'Auftrag nicht gefunden');
+  const {issue}=await redmineJson<{issue:{project:{id:number;name?:string}}}>(config,credentials(request),'/issues/'+id+'.json');
+  if(internalRapportProject(issue.project.id,issue.project.name))throw new RedmineError(404,'Auftrag nicht gefunden');
 }
 app.get('/api/issues/:id', async (request) => {
   const { id } = request.params as { id: string };
@@ -293,12 +292,14 @@ app.get('/api/meta/:kind', async (request, reply) => {
   const { kind } = request.params as { kind: string };
   const target = metaRoutes[kind];
   if (!target) return reply.code(404).send({ error: 'unknown_meta' });
+  if(kind==='projects'){const result=await redmineJson<{projects:{id:number;name:string;identifier?:string}[];total_count?:number}>(config,credentials(request),target);const projects=result.projects.filter(p=>!internalRapportProject(p.id,p.name)&&!internalRapportProject(p.id,p.identifier));return {...result,projects,total_count:Math.max(projects.length,(result.total_count??result.projects.length)-(result.projects.length-projects.length))};}
   return redmineJson(config, credentials(request), target);
 });
 
 app.get('/api/projects/:id/memberships', async (request) => {
   const { id } = request.params as { id: string };
-  return redmineJson(config, credentials(request), `/projects/${numeric(id)}/memberships.json?limit=100`);
+  const creds=credentials(request);const {project}=await redmineJson<{project:{id:number;name:string;identifier?:string}}>(config,creds,`/projects/${numeric(id)}.json`);if(internalRapportProject(project.id,project.name)||internalRapportProject(project.id,project.identifier))throw new RedmineError(404,'Projekt nicht gefunden');
+  return redmineJson(config, creds, `/projects/${numeric(id)}/memberships.json?limit=100`);
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
