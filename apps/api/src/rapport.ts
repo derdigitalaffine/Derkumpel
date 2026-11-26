@@ -1,3 +1,4 @@
+import {crewOverview,type CrewRecord} from './crewOverview.js';
 import {resourceText,usageText,noteMarker,orderTicket,type ResourceUsage} from './resourceNotes.js';
 import {holidaySubject,holidayTemplate,parseHolidays,validHolidayYear,overtimeRows,type HolidayCalendar,type Holiday} from './holidays.js';
 import { equipmentSubject,equipmentTemplate,equipmentNames,equipmentAdditions,equipmentKey } from './equipmentCatalog.js';
@@ -288,7 +289,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
   type Participation={employee:number;start:string;end:string};
   type Usage=ResourceUsage;
-  type GreenEvent={version:1;participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  type GreenEvent={version:1;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
@@ -311,10 +312,12 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const begun=await find(eventSubject(c.actor.id,operationId,'start'));if(!begun)fail(409,'Arbeitsbeginn noch nicht synchronisiert');
       if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees)||JSON.stringify(begun.data.sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
       sources=begun.data.sources;
+      if(JSON.stringify(begun.data.excluded)!==JSON.stringify(b.excluded===undefined?undefined:[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b)))fail(409,'Kolonnenausnahmen stimmen nicht mit Arbeitsbeginn überein');
     }else if(prior){sources=prior.data.sources;}
     else{sources=ids.map(id=>{const task=store.tasks.find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' wurde aus dem Katalog entfernt. Einsatz lokal erhalten.');return task;});}
     if(JSON.stringify(sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Aufgabenauswahl stimmt nicht überein');
     const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase};
+    if(b.excluded!==undefined){const excluded=[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b);if(excluded.some(id=>!employees.includes(id)))fail(400,'Ungültige Ausnahme in der Kolonne');data.excluded=excluded;}
     if(phase!=='start'){
       data.endedAt=instant(b.endedAt);
       if(Date.parse(data.endedAt)<=Date.parse(startedAt))fail(400,'Ungültige tatsächliche Einsatzdauer');
@@ -344,6 +347,18 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.status.id!==closed||JSON.stringify(readEvent(issue))!==JSON.stringify(data))fail(409,'Redmine hat das Einsatzereignis nicht vollständig übernommen.');
     await commentGreen(data,issue.id);return {id:issue.id};
   }
+  app.get('/api/rapport/green/crews',async(r,reply)=>{
+    reply.header('Cache-Control','no-store');
+    const who=await identity(r);if(!who.dispatcher)fail(403,'Nur Disponenten Bauhof dürfen die Kolonnenübersicht aufrufen.');
+    const choice=selected(),known=setupCache?.value;
+    const store=await greenStore({s:{directoryKey:adminKey(),project:known?.project??choice.storageProjectId??(Number(process.env.RAPPORT_PROJECT_ID)||0),catalogProject:known?.catalogProject??(Number(process.env.RAPPORT_CATALOG_PROJECT_ID)||0)}});
+    const records:CrewRecord[]=[],warnings:string[]=[];
+    for(const i of store.issues.filter(i=>i.subject.startsWith('DK Grünpflege-Einsatz '))){
+      try{records.push({id:i.id,updatedAt:i.updated_on,event:readEvent(i)});}catch{warnings.push('Einsatzereignis #'+i.id+' konnte nicht gelesen werden.');}
+    }
+    const overview=crewOverview(records,who.members);
+    return {...overview,warnings:[...warnings,...overview.warnings]};
+  });
   app.post('/api/rapport/green/event',async r=>{const c=await context(r);return serialized(()=>greenEvent(c,r.body));});
   async function greenCaptureSources(c:C,value:unknown,line:Line,employees:number[]){
     const operationId=uid(value),store=await greenStore(c),subject=eventSubject(c.actor.id,operationId,'finish');
