@@ -16,7 +16,9 @@ import { rapportPdf, rapportPdfMany } from './rapportPdf.js';
 type Person = { id: number; name: string };
 type Member = Person & { groups: string[] };
 type State = 'draft'|'submitted'|'review'|'returned'|'closed';
-type SourceRef={id:number;subject:string;municipalities?:string[]};
+type SourceRef={id:number;subject:string;municipalities?:string[];orderNumber?:string};
+type FreeTask={requestId:string;leader:number;team:number[];permanent:boolean;orderNumber:string;createdBy:Person;createdAt:string};
+type GreenTask=SourceRef & {municipalities:string[];assignment?:FreeTask};
 type Line = { sharedResources?:ResourceUsage[]; greenEventId?:number; sources?:SourceRef[]; id: string; start: string; end: string; kind: 'work'|'pause'; activity: string; order: string; machines: {name:string; minutes:number}[]; materials: {name:string; quantity:number; unit:string}[]; recordedBy: Person; recordedAt:string };
 type Correction={reportId:number;reason:string;createdBy:Person;createdAt:string};
 type Data = { storageState?:State; storageReviewed?:{by:Person;at:string}; storageReturnNote?:string; correction?:Correction; version:1; owner:Person; date:string; lines:Line[]; material:string; submitted?:{by:Person;at:string} };
@@ -279,23 +281,27 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(project.is_public!==false)fail(503,'Grünpflegeprojekt muss privat sein.');
     rememberInternalRapportProject(project.id);
     const issues=(await pages<Issue>(admin,'/issues.json?project_id='+project.id+'&tracker_id='+tracker+'&status_id=*')).filter(i=>i.project.id===project.id&&i.tracker.id===tracker);
-    const tasks=issues.filter(i=>!i.subject.startsWith('DK Grünpflege-Einsatz ')).map(i=>{
+    const tasks:GreenTask[]=issues.filter(i=>!i.subject.startsWith('DK Grünpflege-Einsatz ')).map(i=>{
       const raw=i.custom_fields?.find(f=>f.id===field)?.value;
       const municipalities=[...new Set((Array.isArray(raw)?raw:[raw]).filter((v):v is string=>typeof v==='string').map(v=>v.trim().normalize('NFC')).filter(Boolean))];
-      return {id:i.id,subject:i.subject,municipalities};
+      const marker=/^DERKUMPEL-GREEN-TASK\/1(?:\r\n|\n|\r)([^\r\n]+)/m.exec(i.description??'');let assignment:FreeTask|undefined;
+      if(marker){try{const a=JSON.parse(marker[1]!) as FreeTask;if(typeof a.requestId!=='string'||!Number.isSafeInteger(a.leader)||!Array.isArray(a.team)||!a.team.includes(a.leader)||!a.team.every(id=>Number.isSafeInteger(id)&&id>0)||typeof a.permanent!=='boolean'||typeof a.orderNumber!=='string')throw Error('invalid');assignment=a;}catch{fail(409,'Ungültiger freier Auftrag #'+i.id);}}
+      return {id:i.id,subject:i.subject,municipalities,...(assignment?{orderNumber:assignment.orderNumber,assignment}:{})};
     });
     return {admin,project,tracker,field,issues,tasks,defaultStatusId:trackers.find(t=>t.id===tracker)?.default_status?.id};
   }
-  async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
+  function taskStarted(store:Awaited<ReturnType<typeof greenStore>>,task:GreenTask){return store.issues.some(i=>i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start')&&readEvent(i).actor.id===task.assignment?.leader&&readEvent(i).sources.some(s=>s.id===task.id));}
+  function selectableTasks(store:Awaited<ReturnType<typeof greenStore>>,actor:number){return store.tasks.filter(t=>!t.assignment||t.assignment.permanent||t.assignment.leader===actor&&!taskStarted(store,t)).map(t=>{const {assignment,...source}=t;return {...source,...(assignment?.leader===actor&&!taskStarted(store,t)?{assignment}: {})};});}
+  async function greenCatalogue(c:GreenScope&{actor?:Person}){const store=await greenStore(c);return c.actor?selectableTasks(store,c.actor.id):store.tasks.filter(t=>!t.assignment||t.assignment.permanent);}
   type Participation={employee:number;start:string;end:string};
   type Usage=ResourceUsage;
-  type GreenEvent={version:1;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  type GreenEvent={version:1;stoppedBy?:Person;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
     try{const d=JSON.parse(issue.description!.slice(m[0].length)) as GreenEvent;if(d.version!==1||!d.actor||!Array.isArray(d.sources)||!Array.isArray(d.employees)||issue.subject!==eventSubject(d.actor.id,d.operationId,d.phase))throw Error('invalid');return d;}catch{return fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);}
   }
-  async function greenEvent(c:C,body:unknown){
+  async function greenEvent(c:C,body:unknown,stoppedBy?:Person){
     const b=obj(body),operationId=uid(b.operationId),phase=b.phase;
     if(phase!=='start'&&phase!=='stop'&&phase!=='finish')fail(400,'Ungültiges Einsatzereignis');
     if(b.actorId!==c.actor.id)fail(403,'Erfasser stimmt nicht überein');
@@ -314,12 +320,12 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       sources=begun.data.sources;
       if(JSON.stringify(begun.data.excluded)!==JSON.stringify(b.excluded===undefined?undefined:[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b)))fail(409,'Kolonnenausnahmen stimmen nicht mit Arbeitsbeginn überein');
     }else if(prior){sources=prior.data.sources;}
-    else{sources=ids.map(id=>{const task=store.tasks.find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' wurde aus dem Katalog entfernt. Einsatz lokal erhalten.');return task;});}
+    else{sources=ids.map(id=>{const task=selectableTasks(store,c.actor.id).find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' ist nicht mehr verfügbar oder nicht zugewiesen. Einsatz lokal erhalten.');const {assignment,...source}=task;return source;});}
     if(JSON.stringify(sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Aufgabenauswahl stimmt nicht überein');
     const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase};
     if(b.excluded!==undefined){const excluded=[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b);if(excluded.some(id=>!employees.includes(id)))fail(400,'Ungültige Ausnahme in der Kolonne');data.excluded=excluded;}
     if(phase!=='start'){
-      data.endedAt=instant(b.endedAt);
+      data.endedAt=instant(b.endedAt);if(phase==='stop'&&stoppedBy)data.stoppedBy=stoppedBy;
       if(Date.parse(data.endedAt)<=Date.parse(startedAt))fail(400,'Ungültige tatsächliche Einsatzdauer');
       if(phase==='finish'){
         const stopped=await find(eventSubject(c.actor.id,operationId,'stop'));
@@ -337,7 +343,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       for(const source of event.sources){if(!store.tasks.some(t=>t.id===source.id))continue;
         await resourceJournal(store.admin,source.id,'green-'+eventId,body,i=>i.project.id===store.project.id&&i.tracker.id===store.tracker&&store.tasks.some(t=>t.id===i.id));}
     };
-    if(prior){const comparable=(d:GreenEvent)=>JSON.stringify({...d,actor:{id:d.actor.id,name:''}});if(comparable(prior.data)!==comparable(data))fail(409,'Einsatzereignis bereits mit abweichenden Daten gespeichert');await commentGreen(prior.data,prior.issue.id);return {id:prior.issue.id};}
+    if(prior){const comparable=(d:GreenEvent)=>{const {stoppedBy:_,...rest}=d;return JSON.stringify({...rest,actor:{id:d.actor.id,name:''}});};if(comparable(prior.data)!==comparable(data))fail(409,prior.data.stoppedBy?'Disponent hat den Einsatz bereits am '+time(prior.data.endedAt!)+' beendet. Abweichenden Offline-Abschluss prüfen; lokale Daten bleiben erhalten.':'Einsatzereignis bereits mit abweichenden Daten gespeichert');await commentGreen(prior.data,prior.issue.id);return {id:prior.issue.id};}
     const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses;
     const closed=store.defaultStatusId;
     if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt einen geschlossenen Standardstatus (Erledigt), damit technische Ereignisse ohne Workflow angelegt werden können.');
@@ -359,6 +365,42 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const overview=crewOverview(records,who.members);
     return {...overview,warnings:[...warnings,...overview.warnings]};
   });
+  app.post('/api/rapport/green/assign',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten dürfen Aufträge zuweisen.');
+    const b=obj(r.body),requestId=uid(b.requestId),subject=str(b.subject,200),town=str(b.town,100),orderNumber=str(b.orderNumber,100),leader=Number(b.leader),team=[...new Set(arr(b.team,100).map(Number))].sort((a,b)=>a-b);
+    if(!subject||!town||!orderNumber||/[\r\n]/.test(subject+town+orderNumber)||subject.startsWith('DK Grünpflege-Einsatz ')||typeof b.permanent!=='boolean'||!team.includes(leader)||team.some(id=>!c.members.has(id)))fail(400,'Bezeichnung, Ort, Auftragsnummer und gültige Kolonne mit Erfasser erforderlich.');
+    return serialized(async()=>{
+      const store=await greenStore(c),existing=store.tasks.filter(t=>t.assignment?.requestId===requestId);
+      if(existing.length>1)fail(409,'Doppelte Auftragskennung');
+      if(existing[0]){const e=existing[0],a=e.assignment!;if(e.subject!==subject||!e.municipalities.includes(town)||a.leader!==leader||a.orderNumber!==orderNumber||a.permanent!==b.permanent||a.createdBy.id!==c.actor.id||JSON.stringify(a.team)!==JSON.stringify(team))fail(409,'Auftrag bereits mit anderen Daten angelegt');return {id:e.id};}
+      const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses,closed=store.defaultStatusId;
+      if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt geschlossenen Standardstatus.');
+      const assignment:FreeTask={requestId,leader,team,permanent:b.permanent as boolean,orderNumber,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString()};
+      const description='Auftragsnummer: '+orderNumber+'\nOrt: '+town+'\nAufgabenart: '+(assignment.permanent?'Daueraufgabe':'Einmalauftrag')+'\nDERKUMPEL-GREEN-TASK/1\n'+JSON.stringify(assignment);
+      const created=await store.admin<{issue:Issue}>('/issues.json','POST',{issue:{project_id:store.project.id,tracker_id:store.tracker,status_id:closed,is_private:true,subject,description,custom_fields:[{id:store.field,value:town}]}});
+      const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
+      const raw=issue.custom_fields?.find(f=>f.id===store.field)?.value;
+      if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject||issue.status.id!==closed||!(Array.isArray(raw)?raw.includes(town):raw===town)||!issue.description?.includes(JSON.stringify(assignment)))fail(409,'Redmine hat den Auftrag nicht vollständig übernommen. Bitte technisches Ticket #'+issue.id+' prüfen.');
+      return {id:issue.id};
+    });
+  });
+  app.post('/api/rapport/green/crews/:id/stop',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten dürfen Kolonnen beenden.');
+    const id=Number((r.params as {id:string}).id);
+    return serialized(async()=>{const store=await greenStore(c),i=store.issues.find(i=>i.id===id&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));
+      if(!i)fail(404,'Arbeitsbeginn nicht gefunden');const begun=readEvent(i),actor=c.members.get(begun.actor.id);if(!actor)fail(409,'Ursprünglicher Erfasser nicht mehr im Bauhof.');
+      const existing=store.issues.filter(i=>i.subject===eventSubject(begun.actor.id,begun.operationId,'stop'));
+      if(existing.length>1)fail(409,'Doppeltes Arbeitsende');if(existing[0])return {id:existing[0].id,endedAt:readEvent(existing[0]).endedAt};
+      const endedAt=new Date().toISOString();const result=await greenEvent({...c,actor}, {actorId:actor.id,operationId:begun.operationId,phase:'stop',employees:begun.employees,excluded:begun.excluded,sourceIds:begun.sources.map(s=>s.id),startedAt:begun.startedAt,endedAt},{id:c.actor.id,name:c.actor.name});
+      return {...result,endedAt};
+    });
+  });
+  app.get('/api/rapport/green/stop/:operation',async(r,reply)=>{
+    reply.header('Cache-Control','no-store');const who=await identity(r),operation=uid((r.params as {operation:string}).operation),choice=selected(),known=setupCache?.value;
+    const store=await greenStore({s:{directoryKey:adminKey(),project:known?.project??choice.storageProjectId??(Number(process.env.RAPPORT_PROJECT_ID)||0),catalogProject:known?.catalogProject??(Number(process.env.RAPPORT_CATALOG_PROJECT_ID)||0)}});
+    const matches=store.issues.filter(i=>i.subject===eventSubject(who.actor.id,operation,'stop'));if(matches.length>1)fail(409,'Doppeltes Arbeitsende');
+    const event=matches[0]?readEvent(matches[0]):undefined;return {endedAt:event?.endedAt,stoppedBy:event?.stoppedBy};
+  });
   app.post('/api/rapport/green/event',async r=>{const c=await context(r);return serialized(()=>greenEvent(c,r.body));});
   async function greenCaptureSources(c:C,value:unknown,line:Line,employees:number[]){
     const operationId=uid(value),store=await greenStore(c),subject=eventSubject(c.actor.id,operationId,'finish');
@@ -366,7 +408,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+matches[0]!.id+'.json');
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject)fail(409,'Einsatzkennung stimmt nicht');
     const event=readEvent(issue);if(event.actor.id!==c.actor.id||event.activity!==line.activity||employees.some(id=>event.participation?!event.participation.some(x=>x.employee===id&&x.start===line.start&&x.end===line.end):!event.employees.includes(id)||event.start!==line.start||event.end!==line.end))fail(409,'Rapport stimmt nicht mit gespeichertem Einsatz überein');
-    line.greenEventId=issue.id;if(event.materials?.length)line.sharedResources=event.materials;return event.sources;
+    line.greenEventId=issue.id;const orderNumbers=[...new Set(event.sources.map(s=>s.orderNumber).filter(Boolean))];if(orderNumbers.length)line.order=orderNumbers.join('; ').slice(0,200);if(event.materials?.length)line.sharedResources=event.materials;return event.sources;
   }
   async function sourceRefs(c:C,value:unknown,kind?:unknown):Promise<SourceRef[]> {
     const ids=[...new Set(arr(value??[],50).map(x=>{if(typeof x!=='number'||!Number.isSafeInteger(x)||x<=0)fail(400,'Ungültige Auftragsreferenz');return x;}))];
@@ -431,9 +473,9 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   });
   app.get('/api/rapport/green/tasks',async (r,reply)=>{
     reply.header('Cache-Control','no-store');
-    await identity(r);const choice=selected(),known=setupCache?.value;
+    const who=await identity(r);const choice=selected(),known=setupCache?.value;
     const s={directoryKey:adminKey(),project:known?.project??choice.storageProjectId??(Number(process.env.RAPPORT_PROJECT_ID)||0),catalogProject:known?.catalogProject??(Number(process.env.RAPPORT_CATALOG_PROJECT_ID)||0)};
-    return {tasks:await greenCatalogue({s})};
+    return {tasks:await greenCatalogue({s,actor:who.actor})};
   });
   app.get('/api/rapport/users',async r=>{const c=await identity(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
   // Holiday tickets remain editable in Redmine. A missing year is initialized once,
@@ -513,7 +555,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const gather=(report:Report)=>{const map=new Map<number,string[]>();for(const l of report.lines){if(l.kind!=='work')continue;
       // Shared green resources are journaled once on the shared finish, never per person.
       const content=resourceText(l.machines,l.materials);if(!content.length)continue;
-      const ids=[...new Set([orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
+      const ids=[...new Set([l.greenEventId?0:orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
       for(const id of ids){const lines=map.get(id)??[];lines.push(...content,...(ids.length>1?['Gemeinsame Zuordnung zu '+ids.length+' Aufträgen; Ressourcen nicht mehrfach summieren.']:[]));map.set(id,lines);}
     }return map;};
     const current=gather(d);for(const [id,lines] of current)byTicket.set(id,lines);
@@ -559,7 +601,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   app.get('/api/rapport/materials',async r=>{const c=await context(r);return serialized(async()=>{const issue=await materialTicket(c);return {ticketId:issue.id,...parseMaterials(issue.description??'')};});});
   app.post('/api/rapport/materials',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');const b=obj(r.body);
-    if(b.kind!==undefined&&b.kind!=='machine'&&b.kind!=='material')fail(400,'Ungültiger Ressourcentyp');const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)}),...(b.kind==='machine'?{kind:'machine'}:{})};
+    if(b.kind!==undefined&&b.kind!=='machine'&&b.kind!=='material')fail(400,'Ungültiger Ressourcentyp');const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:b.kind==='machine'?'min':str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)}),...(b.kind==='machine'?{kind:'machine'}:{})};
     if(Object.values(item).some(v=>typeof v==='string'&&/[\r\n|]/.test(v))||parseMaterials(materialRow(item)).items.length!==1)fail(400,'Ungültige Materialzeile');
     return serialized(async()=>{const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen. Bitte in Redmine korrigieren.');
       const old=parsed.items.find(x=>x.code.toLowerCase()===item.code.toLowerCase());if(old){if(JSON.stringify(old)===JSON.stringify(item))return {ticketId:issue.id,...parsed};fail(409,'Materialkennung bereits vergeben');}
