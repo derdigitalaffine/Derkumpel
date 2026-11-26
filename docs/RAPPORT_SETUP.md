@@ -64,3 +64,6 @@ Der Grünpflegetracker muss als Standardstatus einen geschlossenen Status (Erled
 Der Ticketbrowser verwendet einen echten Redmine-Seitencursor und lädt nicht mehr das gesamte Archiv pro Seite. Technische Tickets werden weiterhin serverseitig ausgefiltert. Metadaten und Ticketabruf laufen unabhängig. `assigned_to_id=me` umfasst in Redmine 5.0.5 auch Gruppen. Die Auftragsliste speichert Ticketübersichten vor dem Detailabruf; einzelne Detailfehler oder Rapportübertragungen blockieren sie nicht. Fehler werden in „Meine Arbeit“ angezeigt.
 
 Der lesende Grünpflegekatalog ist ebenfalls unabhängig von der Initialisierung des Rapportspeichers; die Speicherung von Einsatzereignissen und Rapporten prüft die jeweilige technische Konfiguration weiterhin.
+
+## Mobile Tagesrapporte
+Die tabellarische Ansicht wird nur bei mindestens 880 CSS-Pixeln tatsächlich verfügbarer Inhaltsbreite gezeigt, nicht anhand der Gerätebreite. Hochformat mit Touch-Eingabe und ältere Browser erhalten die mobile, chronologisch geordnete Liste. Jede Position ist vollständig antippbar; Beginn, Ende, Dauer, Tätigkeit, Auftrag, Maschinen und Material sind direkt sichtbar. Neue Positionen öffnen sofort den Vollbildeditor. Lokale Entwürfe und unveränderte Status-/PDF-Funktionen bleiben erhalten. Datumseingaben und -ausgaben verwenden TT.MM.JJJJ (ISO bleibt intern).
