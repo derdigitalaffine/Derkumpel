@@ -3,9 +3,9 @@ export function municipalities(tasks:GreenTask[]):string[]{return [...new Set(ta
 export function filterTasks(tasks:GreenTask[],municipality:string,includeUnassigned:boolean,query:string){const q=query.trim().toLocaleLowerCase('de');return tasks.filter(t=>((municipality==='*'&&t.municipalities.length>0)||t.municipalities.includes(municipality)||(includeUnassigned&&!t.municipalities.length))&&(!q||('#'+t.id+' '+t.subject).toLocaleLowerCase('de').includes(q)));}
 export function roundedDuration(start:number,end:number){if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return 0;return Math.min(1440,Math.max(15,Math.round((end-start)/900000)*15));}
 
-export type MaterialItem={code:string;name:string;unit:string;category:string;price?:number};
+export type MaterialItem={code:string;name:string;unit:string;category:string;price?:number;kind?:'machine'|'material'};
 export type MaterialRows={ticketId:number;items:MaterialItem[];warnings:string[]};
-export type MaterialUsage={code?:string;name:string;unit:string;quantity:number;note:string};
+export type MaterialUsage={code?:string;name:string;unit:string;quantity:number;note:string;kind?:'machine'|'material'};
 export type ParticipationChoice={mode:'full'|'partial'|'none';offset:number;minutes:number};
 export function participationWindows(ids:number[],choices:Record<number,ParticipationChoice>,start:string,duration:number){
  const base=Date.parse(start);if(!Number.isFinite(base)||!Number.isInteger(duration)||duration<=0||duration%15!==0)throw Error('Ungültige Einsatzzeit');
