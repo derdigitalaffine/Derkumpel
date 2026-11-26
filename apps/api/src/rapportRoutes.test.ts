@@ -69,6 +69,34 @@ function mockRedmine(deletedTasks=new Set<number>()){
 const line={id:'capture-123',start:'2026-11-26T06:00:00.000Z',end:'2026-11-26T07:00:00.000Z',kind:'work',activity:'Grünpflege',order:'',machines:[],materials:[]};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();for(const dir of tempDirs.splice(0))rmSync(dir,{recursive:true,force:true});});
 describe('Rapport REST boundary',()=>{
+ it('assigns a one-time free order with the configured Ort field and stops a synchronized crew only as dispatcher',async()=>{
+   mockRedmine();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');const app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
+   const send=(method:'GET'|'POST',url:string,user:string,payload?:object)=>app.inject({method,url,headers:{'x-test-user':user},...(payload?{payload}:{})});
+   try{
+     const order={requestId:'free-order-123',subject:'Spielplatz reinigen',town:'Otterberg',orderNumber:'KIS-00421',team:[1,2],leader:1,permanent:false};
+     const endpoint='/api/rapport/green/assign',tasks='/api/rapport/green/tasks';
+     expect((await send('POST',endpoint,'alice',order)).statusCode).toBe(403);
+     const assigned=await send('POST',endpoint,'dispatcher',order);expect(assigned.statusCode).toBe(200);const id=assigned.json().id;
+     expect((await send('POST',endpoint,'dispatcher',order)).json().id).toBe(id);
+     expect((await send('GET',tasks,'alice')).json().tasks.find((t:{id:number})=>t.id===id)).toMatchObject({subject:order.subject,municipalities:[order.town],orderNumber:order.orderNumber,assignment:{team:[1,2],leader:1,permanent:false}});
+     expect((await send('GET',tasks,'bob')).json().tasks.some((t:{id:number})=>t.id===id)).toBe(false);
+     const operationId='remote-stop-123',startedAt=new Date(Date.now()-3600000).toISOString();
+     const start={actorId:1,operationId,phase:'start',employees:[1,2],excluded:[],sourceIds:[id],startedAt};
+     const started=await send('POST','/api/rapport/green/event','alice',start);expect(started.statusCode).toBe(200);
+     expect((await send('GET',tasks,'alice')).json().tasks.some((t:{id:number})=>t.id===id)).toBe(false);
+     expect((await send('POST','/api/rapport/green/event','alice',start)).json().id).toBe(started.json().id);
+     const stop='/api/rapport/green/crews/'+started.json().id+'/stop';
+     expect((await send('POST',stop,'alice')).statusCode).toBe(403);
+     const stopped=await send('POST',stop,'dispatcher');expect(stopped.statusCode).toBe(200);expect((await send('POST',stop,'dispatcher')).json()).toEqual(stopped.json());
+     expect((await send('GET','/api/rapport/green/stop/'+operationId,'alice')).json()).toMatchObject({endedAt:stopped.json().endedAt,stoppedBy:{id:3}});
+     expect((await send('GET','/api/rapport/green/stop/'+operationId,'bob')).json()).toEqual({});
+     const conflicting=await send('POST','/api/rapport/green/event','alice',{...start,phase:'stop',endedAt:new Date(Date.parse(stopped.json().endedAt)+60000).toISOString()});expect(conflicting.statusCode).toBe(409);
+     expect((await send('POST','/api/rapport/green/event','alice',{...start,phase:'stop',endedAt:stopped.json().endedAt})).statusCode).toBe(200);
+     const forever=await send('POST',endpoint,'dispatcher',{...order,requestId:'free-order-456',permanent:true});expect(forever.statusCode).toBe(200);
+     expect((await send('GET',tasks,'bob')).json().tasks.find((t:{id:number})=>t.id===forever.json().id)).toMatchObject({orderNumber:order.orderNumber});
+   }finally{await app.close();}
+ });
+
  it('exposes synchronized crew events only to dispatchers',async()=>{mockRedmine();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');const app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));try{const url='/api/rapport/green/crews',get=(user:string)=>app.inject({method:'GET',url,headers:{'x-test-user':user}});expect((await get('alice')).statusCode).toBe(403);const start={actorId:1,operationId:'crew-overview-123',phase:'start',employees:[1,2],excluded:[2],sourceIds:[701],startedAt:'2026-11-26T06:00:00.000Z'};const send=(payload:object)=>app.inject({method:'POST',url:'/api/rapport/green/event',headers:{'x-test-user':'alice'},payload});expect((await send(start)).statusCode).toBe(200);const running=(await get('dispatcher')).json();expect(running.crews[0]).toMatchObject({state:'running',municipalities:['Otterberg'],crew:[{id:1,name:'Alice',participation:'included'},{id:2,name:'Bob',participation:'excluded'}]});expect((await send({...start,phase:'stop',endedAt:'2026-11-26T07:00:00.000Z'})).statusCode).toBe(200);expect((await get('dispatcher')).json().crews[0].state).toBe('stopped');}finally{await app.close();}});
 
  it('changes an existing material classification without changing its code or other data',async()=>{mockRedmine();const app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));const send=(method:'POST'|'PUT',url:string,user:string,payload:object)=>app.inject({method,url,headers:{'x-test-user':user},payload});try{const item={code:'G1',name:'Traktor',unit:'Stk',category:'Geräte'};expect((await send('POST','/api/rapport/materials','dispatcher',item)).statusCode).toBe(200);const url='/api/rapport/materials/G1/classification',payload={previous:'material',kind:'machine'};expect((await send('PUT',url,'alice',payload)).statusCode).toBe(403);const first=await send('PUT',url,'dispatcher',payload);expect(first.statusCode).toBe(200);expect(first.json().items).toEqual([{...item,kind:'machine'}]);expect((await send('PUT',url,'dispatcher',payload)).json().items).toEqual(first.json().items);expect((await send('PUT',url,'dispatcher',{previous:'machine',kind:'material'})).json().items).toEqual([item]);}finally{await app.close();}});
