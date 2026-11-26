@@ -13,6 +13,7 @@ export function AdvancedSettings(){
   const change=(key:keyof TechnicalSelection,v:string|null)=>{setSelection(old=>old?{...old,[key]:v===null?null:Number(v),...(key==='greenProjectId'?{greenTrackerId:null}:key==='storageProjectId'?{storageTrackerId:null}:{})}:old);setNotice('');setChecks([]);};
   const save=async()=>{if(!selection)return;setBusy(true);setError('');setNotice('');try{await api.technicalSave(selection);setNotice('Globale Zuordnungen gespeichert. Sie gelten für alle Geräte.');}catch(e){setError(message(e));}finally{setBusy(false);}};
   const check=async()=>{setBusy(true);setError('');setChecks([]);try{const result=await api.technicalCheck();setChecks(result.checks);setElapsed(result.elapsedMs);}catch(e){setError(message(e));}finally{setBusy(false);}};
+  const greenCount=selection?[selection.greenProjectId,selection.greenTrackerId,selection.greenFieldId].filter(v=>v!==null).length:0;
   const projects=data?.projects.map(p=>({value:String(p.id),label:p.name+' · #'+p.id+(p.isPublic?' · öffentlich':' · privat')}))??[];
   return <Stack gap="md">
     <Title order={2} size="h3">Redmine-Zuordnungen</Title>
@@ -28,9 +29,10 @@ export function AdvancedSettings(){
       <Select label="Grünpflegeprojekt" searchable clearable value={asString(selection.greenProjectId)} data={projects} disabled={busy} onChange={v=>change('greenProjectId',v)}/>
       <Select label="Grünpflegetracker" searchable clearable value={asString(selection.greenTrackerId)} data={greenTrackers.map(t=>({value:String(t.id),label:t.name+' · #'+t.id}))} disabled={busy||!greenId} onChange={v=>change('greenTrackerId',v)}/>
       <Select label="Ticketfeld für Ortsangabe" searchable clearable value={asString(selection.greenFieldId)} data={data.fields.map(f=>({value:String(f.id),label:f.name+' · #'+f.id+(f.format?' · '+f.format:'')}))} disabled={busy} onChange={v=>change('greenFieldId',v)}/>
+      <Button variant="subtle" disabled={busy} onClick={()=>{setSelection(old=>old?{...old,greenProjectId:null,greenTrackerId:null,greenFieldId:null}:old);setNotice('');setChecks([]);}}>Grünpflege vorerst automatisch erkennen</Button>
       </Stack></Card>
-      <Button h={54} loading={busy} disabled={Object.values(selection).some(v=>v===null)} onClick={()=>void save()}>Globale Einstellungen speichern</Button>
-      <Card withBorder><Stack><Title order={3} size="h4">Verbindung und Einrichtung prüfen</Title><Text size="sm" c="dimmed">Prüft die aktuell gespeicherte Zuordnung, Gruppen, vorhandene Rapporte und Aufgaben. Fehlermeldungen nennen den betroffenen Redmine-Endpunkt.</Text><Button h={50} variant="outline" loading={busy} onClick={()=>void check()}>Diagnose starten</Button>{checks.map((c,i)=><Stack key={i} gap={4}><Group justify="space-between"><Text fw={700}>{c.label}</Text><Badge color={c.ok?'green':'red'}>{c.ok?'OK':'Fehler'}</Badge></Group><Text size="sm" style={{overflowWrap:'anywhere'}}>{c.detail}</Text></Stack>)}{!!checks.length&&<Text size="xs" c="dimmed">Dauer: {(elapsed/1000).toFixed(1)} Sekunden</Text>}</Stack></Card>
+      <Button h={54} loading={busy} disabled={!selection.storageProjectId||!selection.storageTrackerId||(greenCount!==0&&greenCount!==3)} onClick={()=>void save()}>Globale Einstellungen speichern</Button>
+      <Card withBorder><Stack><Title order={3} size="h4">Verbindung und Einrichtung prüfen</Title><Text size="sm" c="dimmed">Initialisiert bei Bedarf den technischen Rapportspeicher und prüft die gespeicherte Zuordnung, Gruppen, vorhandene Rapporte und Aufgaben. Fehlermeldungen nennen den betroffenen Redmine-Endpunkt.</Text><Button h={50} variant="outline" loading={busy} onClick={()=>void check()}>Diagnose starten</Button>{checks.map((c,i)=><Stack key={i} gap={4}><Group justify="space-between"><Text fw={700}>{c.label}</Text><Badge color={c.ok?'green':'red'}>{c.ok?'OK':'Fehler'}</Badge></Group><Text size="sm" style={{overflowWrap:'anywhere'}}>{c.detail}</Text></Stack>)}{!!checks.length&&<Text size="xs" c="dimmed">Dauer: {(elapsed/1000).toFixed(1)} Sekunden</Text>}</Stack></Card>
     </>}</>}
   </Stack>;
 }

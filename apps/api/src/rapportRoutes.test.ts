@@ -72,6 +72,7 @@ describe('Rapport REST boundary',()=>{
     try{expect((await app.inject({method:'GET',url:'/api/rapport/settings',headers:{'x-test-user':'alice'}})).statusCode).toBe(403);
       expect((await app.inject({method:'PUT',url:'/api/rapport/settings',headers:{'x-test-user':'dispatcher'},payload:value})).statusCode).toBe(403);
       const meta=await app.inject({method:'GET',url:'/api/rapport/settings',headers});expect(meta.statusCode).toBe(200);expect(meta.json().fields.map((f:{id:number})=>f.id)).toContain(32);
+      const storageOnly={...value,greenProjectId:null,greenTrackerId:null,greenFieldId:null};expect((await app.inject({method:'PUT',url:'/api/rapport/settings',headers,payload:storageOnly})).statusCode).toBe(200);
       const saved=await app.inject({method:'PUT',url:'/api/rapport/settings',headers,payload:value});expect(saved.statusCode).toBe(200);expect(saved.json().selection).toEqual(value);
       expect((await app.inject({method:'GET',url:'/api/rapport/settings',headers})).json().selection).toEqual(value);
       const check=await app.inject({method:'GET',url:'/api/rapport/settings/check',headers});expect(check.statusCode).toBe(200);expect(check.json().checks.every((x:{ok:boolean})=>x.ok)).toBe(true);
