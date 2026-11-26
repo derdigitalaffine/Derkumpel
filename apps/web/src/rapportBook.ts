@@ -68,3 +68,13 @@ export function equipmentOptions(catalog:Catalog,recent:string[]=[]):string[]{
  const names=[...recent,...(catalog.equipmentRows??[]),...(catalog.materialRows??[]).filter(m=>m.kind==='machine').map(m=>m.name),...catalog.machines.map(m=>m.name)],seen=new Set<string>();
  return names.filter(n=>{const k=n.trim().normalize('NFKC').toLocaleLowerCase('de').replace(/\s+/g,' ');if(!k||seen.has(k))return false;seen.add(k);return true;});
 }
+
+/** Date selection is civil Berlin time, not an instant or the browser's UTC day. */
+export function rapportRouteDate(value:string|null, fallback=today()):string {
+  if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fallback;
+  const stamp=Date.parse(value+'T12:00:00Z');
+  return Number.isFinite(stamp)&&new Date(stamp).toISOString().slice(0,10)===value?value:fallback;
+}
+export function rapportDatePath(path:'/rapport'|'/rapport/book',date:string):string {
+  return path+'?'+new URLSearchParams({date:rapportRouteDate(date)}).toString();
+}
