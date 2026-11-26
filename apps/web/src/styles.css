@@ -376,3 +376,36 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .compact-ticket-row { transition: none; }
 }
+
+/* Rapport: choose by usable content width, not viewport width (sidebar on tablets).
+   Mobile-first fallback is intentionally table-free, including older browsers. */
+.rapport-book-page { min-width: 0; width: 100%; }
+.rapport-layout { container-type: inline-size; min-width: 0; width: 100%; }
+.rapport-wide-table { display: none; }
+.rapport-touch-list { display: grid; gap: 8px; min-width: 0; }
+.rapport-touch-heading, .rapport-touch-total { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px; }
+.rapport-touch-total { border-top: 1px solid var(--mantine-color-default-border); margin-top: 4px; padding-top: 12px; }
+.rapport-touch-row { display: grid; grid-template-columns: 54px minmax(0,1fr) 22px; align-items: center; gap: 10px; min-height: 92px; width: 100%; padding: 12px 10px; border: 1px solid var(--mantine-color-default-border); border-radius: 12px; background: var(--mantine-color-body); text-align: left; touch-action: manipulation; }
+.rapport-touch-row[data-pause="true"] { background: var(--mantine-color-default-hover); }
+.rapport-touch-row:active { background: var(--mantine-color-default-hover); }
+.rapport-touch-row:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 2px; }
+.rapport-touch-row:disabled { opacity: .6; }
+.rapport-touch-time { display: flex; flex-direction: column; align-items: center; align-self: stretch; justify-content: center; gap: 5px; font-size: .9rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.rapport-touch-time-line { width: 2px; min-height: 12px; height: 18px; border-radius: 1px; background: var(--mantine-color-default-border); }
+.rapport-touch-body { min-width: 0; display: grid; gap: 5px; }
+.rapport-touch-text { overflow-wrap: anywhere; }
+.rapport-touch-chevron { color: var(--mantine-color-dimmed); display: flex; align-items: center; justify-content: center; }
+.rapport-editor-body { max-width: 760px; margin-inline: auto; padding-bottom: max(16px,env(safe-area-inset-bottom)); }
+.rapport-editor-footer { position: sticky; bottom: 0; padding: 12px 0 max(12px,env(safe-area-inset-bottom)); background: var(--mantine-color-body); display: grid; gap: 5px; z-index: 2; }
+@container (min-width: 880px) {
+  .rapport-wide-table { display: block; }
+  .rapport-touch-list { display: none; }
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .rapport-layout .rapport-wide-table { display: none; }
+  .rapport-layout .rapport-touch-list { display: grid; }
+}
+@media (max-width: 360px) {
+  .rapport-touch-row { grid-template-columns: 44px minmax(0,1fr) 16px; gap: 6px; padding: 10px 7px; }
+  .rapport-touch-time { font-size: .8rem; }
+}
