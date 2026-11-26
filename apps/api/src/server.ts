@@ -53,7 +53,7 @@ app.addHook('onSend', async (request, reply, payload) => {
   const type = String(reply.getHeader('content-type') ?? '');
   const pathname = request.url.split('?')[0] ?? '';
   if (type.includes('text/html') ||
-      pathname === '/sw.js' || pathname === '/registerSW.js' ||
+      pathname === '/sw.js' || pathname === '/registerSW.js' || pathname === '/push-sw.js' ||
       /^\/workbox-[A-Za-z0-9_.-]+\.js$/.test(pathname)) {
     reply.header('Cache-Control', 'no-cache, max-age=0, must-revalidate');
   }

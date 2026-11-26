@@ -1,6 +1,6 @@
 import { Box, Center, Image, Loader, Paper, Stack, Text } from '@mantine/core';
 import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api, AuthRequiredError } from './api';
 import { clearBusinessData, getSetting, setSetting } from './db';
 import { startSyncLoop } from './sync';
@@ -26,6 +26,19 @@ type AuthState = 'loading' | 'ready' | 'offline' | 'login';
 
 export function App() {
   const [state, setState] = useState<AuthState>('loading');
+  const navigate=useNavigate();
+  useEffect(()=>{
+    if(!('serviceWorker' in navigator))return;
+    const onPushNavigation=(event:MessageEvent)=>{
+      const source=event.source as ServiceWorker|null;
+      if(!source?.scriptURL||new URL(source.scriptURL).origin!==window.location.origin||event.data?.type!=='DERKUMPEL_PUSH_NAVIGATE')return;
+      const path=event.data.path;
+      if(typeof path!=='string'||!(path==='/'||path==='/green/mine'||/^\/green\/mine\?order=[1-9][0-9]{0,15}$/.test(path)||/^\/issues\/[1-9][0-9]{0,15}$/.test(path)))return;
+      void Promise.resolve(navigate(path)).then(()=>event.ports[0]?.postMessage({ok:true})).catch(()=>event.ports[0]?.postMessage({ok:false}));
+    };
+    navigator.serviceWorker.addEventListener('message',onPushNavigation);
+    return()=>navigator.serviceWorker.removeEventListener('message',onPushNavigation);
+  },[navigate]);
   const check = async () => {
     if (await getSetting('locallyLoggedOut', false)) { setState('login'); return; }
 

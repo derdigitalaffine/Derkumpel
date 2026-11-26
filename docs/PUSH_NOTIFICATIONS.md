@@ -115,7 +115,7 @@ Benachrichtigte Benutzer bestimmt ausschließlich **Redmine**:
 3. Ereignisarten individuell aktivieren/deaktivieren. Änderungen aktualisieren das Geräte-Abo.
 4. „Push deaktivieren“ entfernt das Abonnement. Beim Abmelden wird es lokal deaktiviert und – falls online – serverseitig gelöscht.
 
-Ein Push-Tipp öffnet `/issues/<id>` direkt in DerKumpel. Der Dienst benötigt Browser-Unterstützung, eine vom Gerät erreichbare Push-Infrastruktur und eine gültige Berechtigung. Push ist keine garantierte Echtzeit-Zustellung: Betriebssystem-Batterieoptimierung, fehlendes Netz und Benachrichtigungseinstellungen beeinflussen die Zustellung. Die 120-Sekunden-Client-Synchronisation bleibt unverändert und bildet den verlässlichen Datenpfad.
+Ein Push-Tipp öffnet normale Tickets unter `/issues/<id>`, Kolonnenaufträge dagegen gezielt unter `/green/mine?order=<id>`. Ein expliziter Ereignistyp und getrennte Tags verhindern eine Verwechslung mit gewöhnlichen Tickets. Bereits geöffnete Apps wechseln per Router-Nachricht mit Bestätigung; andernfalls wird das Fenster direkt navigiert oder neu geöffnet. Ältere Kolonnenmeldungen werden anhand ihres generischen Textes und Tags erkannt. Das importierte Push-Skript wird versioniert und muss nach einem Deploy revalidiert werden. Der Dienst benötigt Browser-Unterstützung, eine vom Gerät erreichbare Push-Infrastruktur und eine gültige Berechtigung. Push ist keine garantierte Echtzeit-Zustellung: Betriebssystem-Batterieoptimierung, fehlendes Netz und Benachrichtigungseinstellungen beeinflussen die Zustellung. Die 120-Sekunden-Client-Synchronisation bleibt unverändert und bildet den verlässlichen Datenpfad.
 
 ## 4. Abnahme / Fehleranalyse
 
@@ -134,3 +134,5 @@ Ein Push-Tipp öffnet `/issues/<id>` direkt in DerKumpel. Der Dienst benötigt B
 - `POST /api/push/events` nimmt nur vertrauenswürdige Redmine-Plugin-Events über `X-DerKumpel-Event-Token` an; Browser bekommen dieses Geheimnis nie.
 - Geräteendpunkte sind auf bekannte Push-Service-Hosts beschränkt, um serverseitige URL-Fetches zu fremden Hosts zu unterbinden.
 - Die Geräte-Abos werden in einer serverseitigen JSON-Datei mit `0600` gespeichert; Transport nach außen erfolgt verschlüsselt via Web Push. Für Backup und Zugriffsschutz wie ein Secret behandeln.
+
+Bei einem Update die installierte PWA einmal online öffnen, damit der neue Service Worker übernommen wird. Keine App-Daten löschen und kein neues Push-Abonnement erzwingen; lokale Aufträge müssen erhalten bleiben. Danach einen neuen Kolonnenauftrag zuweisen und mit geschlossener sowie geöffneter PWA antippen. Die Tests simulieren die Service-Worker-Ereignisse, ersetzen aber keinen Android-/iOS-Gerätetest.

@@ -36,7 +36,8 @@ export default defineConfig({
       workbox: {
         // Keep the entire application shell available offline as the UI grows.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-        importScripts: ['push-sw.js'],
+        // Version the import so an older cached worker script cannot swallow new deep links.
+        importScripts: ['push-sw.js?v=2'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         cleanupOutdatedCaches: true,
