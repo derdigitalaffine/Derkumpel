@@ -1,4 +1,7 @@
 import Fastify from 'fastify';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import type {AppConfig} from './config.js';
 import {registerRapport} from './rapport.js';
@@ -6,11 +9,13 @@ import {RedmineError} from './redmine.js';
 
 type Person={id:number;name:string};
 type FixtureIssue={id:number;subject:string;project:{id:number};tracker:{id:number};status:{id:number};updated_on:string;custom_fields:{id:number;value:string}[];journals:{user:Person;created_on:string;notes:string;private_notes?:boolean;details:{property:string;name:string;new_value:string}[]}[];description:string};
-const people:Record<string,Person>={alice:{id:1,name:'Alice'},bob:{id:2,name:'Bob'},dispatcher:{id:3,name:'Disponent'},outsider:{id:4,name:'Extern'}};
+const people:Record<string,Person>={alice:{id:1,name:'Alice'},bob:{id:2,name:'Bob'},dispatcher:{id:3,name:'Disponent'},outsider:{id:4,name:'Extern'},admin:{id:99,name:'Administrator'}};
 const cfg={redmineBaseUrl:new URL('https://redmine.example.invalid'),redmineTimeoutMs:3000} as AppConfig;
 const normalizeDescription=(value:string)=>value.replace(/\r\n|\r|\n/g,'\r\n');
 const response=(body:unknown,status=200)=>status===204?new Response(null,{status}):Response.json(body,{status});
+const tempDirs:string[]=[];
 function mockRedmine(deletedTasks=new Set<number>()){
+  const dir=mkdtempSync(join(tmpdir(),'derkumpel-settings-'));tempDirs.push(dir);vi.stubEnv('RAPPORT_SETTINGS_FILE',join(dir,'settings.json'));
   for(const [k,v] of Object.entries({RAPPORT_STORAGE_MODE:'native',RAPPORT_ENABLED:'true',RAPPORT_DIRECTORY_KEY:'directory',RAPPORT_SERVICE_KEY:'service',RAPPORT_PROJECT_ID:'10',RAPPORT_CATALOG_PROJECT_ID:'20',RAPPORT_TRACKER_ID:'11',RAPPORT_MACHINE_TRACKER_ID:'21',RAPPORT_MATERIAL_TRACKER_ID:'22',RAPPORT_DATA_FIELD_ID:'5',RAPPORT_STATUS_DRAFT:'1',RAPPORT_STATUS_SUBMITTED:'2',RAPPORT_STATUS_REVIEW:'3',RAPPORT_STATUS_RETURNED:'4',RAPPORT_STATUS_CLOSED:'5'}))vi.stubEnv(k,v);
   const issues=new Map<number,FixtureIssue>();
   let project={id:10,identifier:'derkumpel',name:'DerKumpel',is_public:true,trackers:[] as {id:number;name:string}[],enabled_modules:[{name:'issue_tracking'}]};
@@ -27,12 +32,12 @@ function mockRedmine(deletedTasks=new Set<number>()){
     if(url.pathname==='/trackers.json'&&key==='directory')return response({trackers:[{id:11,name:'Existing tracker',default_status:{id:1}},{id:31,name:'Grünpflegearbeiten',default_status:{id:1}},{id:33,name:'Grünpflege',default_status:{id:1}}]});
     if(url.pathname==='/custom_fields.json'&&key==='directory')return response({custom_fields:[{id:40,name:'Ortsgemeinde',customized_type:'issue'},{id:32,name:'Ort',customized_type:'issue'}]});
     if(url.pathname==='/issue_statuses.json'&&key==='directory')return response({issue_statuses:[{id:1,is_closed:false}]});
-    if(url.pathname==='/users/current.json')return person?response({user:{id:person.id,firstname:person.name,lastname:'',login}}):response({},401);
+    if(url.pathname==='/users/current.json')return person?response({user:{id:person.id,firstname:person.name,lastname:'',login,admin:login==='admin'}}):response({},401);
     if(url.pathname==='/groups.json'&&key==='directory')return response({groups:[{id:1,name:'Disponenten Bauhof'},{id:2,name:'Bauhofmitarbeiter'}]});
     if(url.pathname==='/groups/1.json'&&key==='directory')return response({group:{users:[people.dispatcher]}});
     if(url.pathname==='/groups/2.json'&&key==='directory')return response({group:{users:[people.alice,people.bob]}});
     const greenProject={id:30,identifier:'gruenpflegearbeiten',name:'Grünpflegearbeiten',is_public:false,trackers:[{id:31,name:'Grünpflegearbeiten'}]};
-    if(url.pathname==='/projects.json'&&key==='directory')return response({projects:[greenProject],total_count:1});
+    if(url.pathname==='/projects.json'&&key==='directory')return response({projects:[project,greenProject],total_count:2});
     if(['/projects/30.json','/projects/gruenpflegearbeiten.json'].includes(url.pathname)&&key==='directory'&&method==='GET')return response({project:greenProject});
     if(url.pathname==='/issues.json'&&key==='directory'&&method==='GET'&&url.searchParams.get('project_id')==='30'&&url.searchParams.get('tracker_id')==='31'&&url.searchParams.get('status_id')==='*'){const visible=[...tasks.filter(t=>!deletedTasks.has(t.id)),{...tasks[0],id:799,project:{id:99}},{...tasks[0],id:798,tracker:{id:33}}];return response({issues:visible,total_count:visible.length});}
     const task=tasks.find(t=>url.pathname==='/issues/'+t.id+'.json');if(task&&method==='GET')return response({},403);
@@ -59,8 +64,20 @@ function mockRedmine(deletedTasks=new Set<number>()){
   return issues;
 }
 const line={id:'capture-123',start:'2026-11-26T06:00:00.000Z',end:'2026-11-26T07:00:00.000Z',kind:'work',activity:'Grünpflege',order:'',machines:[],materials:[]};
-afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
+afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();for(const dir of tempDirs.splice(0))rmSync(dir,{recursive:true,force:true});});
 describe('Rapport REST boundary',()=>{
+  it('offers global metadata only to administrators and persists explicit project/tracker/field choices',async()=>{
+    mockRedmine();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');const app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
+    const headers={'x-test-user':'admin'},value={storageProjectId:10,storageTrackerId:11,greenProjectId:30,greenTrackerId:31,greenFieldId:32};
+    try{expect((await app.inject({method:'GET',url:'/api/rapport/settings',headers:{'x-test-user':'alice'}})).statusCode).toBe(403);
+      expect((await app.inject({method:'PUT',url:'/api/rapport/settings',headers:{'x-test-user':'dispatcher'},payload:value})).statusCode).toBe(403);
+      const meta=await app.inject({method:'GET',url:'/api/rapport/settings',headers});expect(meta.statusCode).toBe(200);expect(meta.json().fields.map((f:{id:number})=>f.id)).toContain(32);
+      const saved=await app.inject({method:'PUT',url:'/api/rapport/settings',headers,payload:value});expect(saved.statusCode).toBe(200);expect(saved.json().selection).toEqual(value);
+      expect((await app.inject({method:'GET',url:'/api/rapport/settings',headers})).json().selection).toEqual(value);
+      const check=await app.inject({method:'GET',url:'/api/rapport/settings/check',headers});expect(check.statusCode).toBe(200);expect(check.json().checks.every((x:{ok:boolean})=>x.ok)).toBe(true);
+      const tasks=await app.inject({method:'GET',url:'/api/rapport/green/tasks',headers:{'x-test-user':'alice'}});expect(tasks.statusCode).toBe(200);expect(tasks.json().tasks).toHaveLength(2);
+    }finally{await app.close();}
+  });
   it('accepts Redmine CRLF descriptions and retries an already stored 30-minute capture exactly once',async()=>{
     const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');
     app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));

@@ -29,7 +29,14 @@ export type DevicePushSubscription = { endpoint: string; keys: { p256dh: string;
 export type TicketBrowserStatus = 'open' | 'closed' | '*';
 export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
 
+export type TechnicalSelection={storageProjectId:number|null;storageTrackerId:number|null;greenProjectId:number|null;greenTrackerId:number|null;greenFieldId:number|null};
+export type TechnicalSettings={selection:TechnicalSelection;defaults:TechnicalSelection;projects:{id:number;name:string;identifier:string;isPublic:boolean}[];trackers:{id:number;name:string;defaultStatusId:number|null}[];fields:{id:number;name:string;format:string}[];mode:string};
 export const api = {
+  technicalAccess:()=>request<{allowed:boolean}>('/api/rapport/settings/access'),
+  technicalSettings:()=>request<TechnicalSettings>('/api/rapport/settings'),
+  technicalProject:(id:number)=>request<{id:number;name:string;trackers:{id:number;name:string}[];isPublic:boolean}>('/api/rapport/settings/project/'+id),
+  technicalSave:(value:TechnicalSelection)=>request<{selection:TechnicalSelection;storageProjectId:number;storageTrackerId:number}>('/api/rapport/settings',{method:'PUT',body:JSON.stringify(value)}),
+  technicalCheck:()=>request<{checks:{label:string;ok:boolean;detail:string}[];elapsedMs:number}>('/api/rapport/settings/check'),
   greenTasks: () => request<{tasks:{id:number;subject:string;municipalities:string[]}[]}>('/api/rapport/green/tasks'),
   rapportOrders: (q:string) => request<{orders:{id:number;subject:string}[]}>(`/api/rapport/orders?q=${encodeURIComponent(q)}`),
   rapportList: (from:string,to:string,all=false) => request<{reports:RapportReport[];dispatcher:boolean}>(`/api/rapport/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&all=${all?'1':'0'}`),

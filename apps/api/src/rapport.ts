@@ -1,4 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from './config.js';
 import type { CredentialEnvelope } from './session.js';
@@ -99,8 +102,8 @@ type Get = <T>(path:string,method?:string,body?:unknown)=>Promise<T>;
 function keyApi(config:AppConfig,key:string):Get {
   return async <T>(path:string,method='GET',body?:unknown):Promise<T>=>{
     const url=new URL(path,config.redmineBaseUrl);if(url.origin!==config.redmineBaseUrl.origin)throw Error('origin');
-    const r=await fetch(url,{method,redirect:'error',headers:{'X-Redmine-API-Key':key,Accept:'application/json','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(config.redmineTimeoutMs)});
-    if(!r.ok)return fail(r.status===401?503:r.status,'Redmine-Rapportzugriff fehlgeschlagen ('+r.status+')');
+    let r:Response;try{r=await fetch(url,{method,redirect:'error',headers:{'X-Redmine-API-Key':key,Accept:'application/json','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(config.redmineTimeoutMs)});}catch(e){if(e instanceof Error&&['TimeoutError','AbortError'].includes(e.name))fail(504,'Redmine-Zeitüberschreitung: '+method+' '+url.pathname);throw new RedmineError(502,'Redmine-Verbindung fehlgeschlagen: '+method+' '+url.pathname);}
+    if(!r.ok)return fail(r.status===401?503:r.status,'Redmine-Rapportzugriff fehlgeschlagen ('+r.status+'): '+method+' '+url.pathname);
     return (r.status===204?undefined:await r.json()) as T;
   };
 }
@@ -109,68 +112,102 @@ async function pages<T>(get:Get,path:string):Promise<T[]> {
 }
 type StoreProject={id:number;identifier:string;name:string;is_public:boolean;trackers?:{id:number;name:string}[];enabled_modules?:{name:string}[]};
 type Tracker={id:number;name:string;default_status?:{id:number}};
-let setupPending:Promise<Settings>|undefined;
-async function automaticSettings(config:AppConfig):Promise<Settings>{
+type Selection={storageProjectId:number|null;storageTrackerId:number|null;greenProjectId:number|null;greenTrackerId:number|null;greenFieldId:number|null};
+const emptySelection:Selection={storageProjectId:null,storageTrackerId:null,greenProjectId:null,greenTrackerId:null,greenFieldId:null};
+function parseSelection(raw:unknown):Selection{
+  const v=obj(raw);const result={...emptySelection};for(const k of Object.keys(result) as (keyof Selection)[]){const n=v[k];if(n!==null&&(typeof n!=='number'||!Number.isSafeInteger(n)||n<=0))fail(400,'Ungültige Einstellung: '+k);result[k]=n as number|null;}
+  if(result.storageProjectId!==null&&result.storageProjectId===result.greenProjectId)fail(400,'Rapportspeicher und Grünpflegekatalog müssen getrennt sein');
+  return result;
+}
+function settingsFile(){return process.env.RAPPORT_SETTINGS_FILE||'/app/push-data/rapport-settings.json';}
+function readSelection():Selection{
+  try{return parseSelection(JSON.parse(readFileSync(settingsFile(),'utf8')));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return {...emptySelection};throw new RedmineError(503,'Gespeicherte erweiterte Einstellungen sind nicht lesbar.');}
+}
+async function persistSelection(value:Selection){
+  const path=settingsFile(),temp=path+'.'+randomUUID()+'.tmp';
+  try{await mkdir(dirname(path),{recursive:true});await writeFile(temp,JSON.stringify(value,null,2),{mode:0o600});await rename(temp,path);}catch{await unlink(temp).catch(()=>undefined);fail(503,'Erweiterte Einstellungen konnten nicht im persistenten Servervolume gespeichert werden.');}
+}
+async function allProjects(get:Get):Promise<StoreProject[]>{
+  const out:StoreProject[]=[];for(let offset=0;offset<100000;){const p=await get<{projects:StoreProject[];total_count:number}>('/projects.json?limit=100&offset='+offset);out.push(...p.projects);offset+=p.projects.length;if(!p.projects.length||offset>=p.total_count)return out;}return fail(503,'Zu viele Redmine-Projekte.');
+}
+async function automaticSettings(config:AppConfig,selection:Selection):Promise<Settings>{
   if(config.redmineBaseUrl.protocol!=='https:')fail(503,'Rapportwesen benötigt HTTPS.');
   const directoryKey=process.env.RAPPORT_DIRECTORY_KEY||process.env.DERKUMPEL_ADMIN_API_KEY||process.env.PUSH_POLL_API_KEY||'';
   if(!directoryKey)fail(503,'Server: Redmine-Administratorschlüssel fehlt (DERKUMPEL_ADMIN_API_KEY oder PUSH_POLL_API_KEY).');
   const serviceKey=process.env.RAPPORT_SERVICE_KEY||directoryKey;
   const admin=keyApi(config,directoryKey),service=keyApi(config,serviceKey);
   const configuredIdentifier=process.env.DERKUMPEL_PROJECT_IDENTIFIER?.trim();
-  const identifier=configuredIdentifier||'derkumpel';
+  const identifier=selection.storageProjectId?String(selection.storageProjectId):configuredIdentifier||'derkumpel';
   let project:StoreProject;
   try{project=(await admin<{project:StoreProject}>('/projects/'+encodeURIComponent(identifier)+'.json?include=trackers,enabled_modules')).project;}catch(e){
     if(!(e instanceof RedmineError&&e.status===404))throw e;
-    if(configuredIdentifier)fail(503,'Das Redmine-Speicherprojekt '+identifier+' wurde nicht gefunden.');
+    if(configuredIdentifier||selection.storageProjectId)fail(503,'Das Redmine-Speicherprojekt '+identifier+' wurde nicht gefunden.');
     const matches:StoreProject[]=[];
     for(let offset=0;offset<100000;){const page=await admin<{projects:StoreProject[];total_count:number}>('/projects.json?limit=100&offset='+offset);matches.push(...page.projects.filter(p=>p.name.toLocaleLowerCase('de')==='derkumpel'));offset+=page.projects.length;if(!page.projects.length||offset>=page.total_count)break;}
     if(matches.length!==1)fail(503,'Projekt DerKumpel fehlt oder ist nicht eindeutig. DERKUMPEL_PROJECT_IDENTIFIER setzen.');
     project=(await admin<{project:StoreProject}>('/projects/'+matches[0]!.id+'.json?include=trackers,enabled_modules')).project;
   }
-  if(!project||!Number.isSafeInteger(project.id)||(configuredIdentifier&&project.identifier!==configuredIdentifier))fail(503,'Speicherprojekt nicht eindeutig.');
+  if(!project||!Number.isSafeInteger(project.id)||(selection.storageProjectId?project.id!==selection.storageProjectId:configuredIdentifier&&project.identifier!==configuredIdentifier))fail(503,'Speicherprojekt nicht eindeutig.');
   rememberInternalRapportProject(project.id);
-  const technical=(await service<{user:{id:number}}>('/users/current.json')).user;
-  const directoryActor=(await admin<{user:{id:number}}>('/users/current.json')).user;
+  const [technicalResult,directoryResult,trackerResult,statusResult]=await Promise.all([service<{user:{id:number}}>('/users/current.json'),admin<{user:{id:number}}>('/users/current.json'),admin<{trackers:Tracker[]}>('/trackers.json'),admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')]);
+  const technical=technicalResult.user,directoryActor=directoryResult.user;
   // Never remove existing project memberships. Refuse an unsafe shared storage project.
   for(let offset=0;offset<100000;){const m=await admin<{memberships:{user?:{id:number};group?:{id:number}}[];total_count:number}>('/projects/'+project.id+'/memberships.json?limit=100&offset='+offset);if(!Array.isArray(m.memberships))fail(503,'Projektmitgliedschaften nicht prüfbar');if(m.memberships.some(x=>x.group||![technical.id,directoryActor.id].includes(x.user?.id??0)))fail(503,'DerKumpel-Speicherprojekt darf außer den technischen Konten keine Mitglieder enthalten.');offset+=m.memberships.length;if(!m.memberships.length||offset>=m.total_count)break;}
   if(project.is_public){await admin('/projects/'+project.id+'.json','PUT',{project:{is_public:false}});project=(await admin<{project:StoreProject}>('/projects/'+project.id+'.json?include=trackers,enabled_modules')).project;}
   if(project.is_public!==false)fail(503,'DerKumpel-Speicherprojekt muss privat sein.');
-  const trackers=(await admin<{trackers:Tracker[]}>('/trackers.json')).trackers;
-  const statuses=(await admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses;
-  const usable=(t:Tracker)=>!!t.default_status&&statuses.some(s=>s.id===t.default_status!.id&&!s.is_closed);
-  let tracker=trackers.find(t=>project.trackers?.some(x=>x.id===t.id)&&usable(t));
-  if(!tracker){tracker=trackers.find(usable);if(!tracker)fail(503,'Kein vorhandener Redmine-Tracker mit offenem Standardstatus verfügbar.');await admin('/projects/'+project.id+'.json','PUT',{project:{tracker_ids:[...(project.trackers??[]).map(t=>t.id),tracker.id]}});}
+  const trackers=trackerResult.trackers,statuses=statusResult.issue_statuses;
+  const usable=(t:Tracker)=>!!t.default_status&&statuses.some(s=>s.id===t.default_status!.id)&&t.id!==selection.greenTrackerId&&!['grünpflegearbeiten','grünfplegearbeiten'].includes(t.name.toLocaleLowerCase('de'));
+  let tracker=selection.storageTrackerId?trackers.find(t=>t.id===selection.storageTrackerId&&usable(t)):trackers.find(t=>project.trackers?.some(x=>x.id===t.id)&&usable(t))??trackers.find(t=>usable(t)&&statuses.some(s=>s.id===t.default_status!.id&&!s.is_closed))??trackers.find(usable);
+  if(!tracker)fail(503,'Kein geeigneter Speichertracker mit Standardstatus verfügbar.');
+  if(!project.trackers?.some(t=>t.id===tracker!.id))await admin('/projects/'+project.id+'.json','PUT',{project:{tracker_ids:[...(project.trackers??[]).map(t=>t.id),tracker.id]}});
   if(project.enabled_modules&&!project.enabled_modules.some(m=>m.name==='issue_tracking'))await admin('/projects/'+project.id+'.json','PUT',{project:{enabled_module_names:[...project.enabled_modules.map(m=>m.name),'issue_tracking']}});
   const verified=(await service<{project:StoreProject}>('/projects/'+project.id+'.json?include=trackers,enabled_modules')).project;
   if(verified.is_public!==false||!verified.trackers?.some(t=>t.id===tracker!.id))fail(503,'Speicherprojekt-Konfiguration nicht übernommen.');
   const status=tracker.default_status!.id;
   return {automatic:true,project:project.id,catalogProject:project.id,tracker:tracker.id,machineTracker:tracker.id,materialTracker:tracker.id,archiveTracker:tracker.id,correctionTracker:tracker.id,field:0,statuses:{draft:status,submitted:status,review:status,returned:status,closed:status},summaries:{},directoryKey,serviceKey};
 }
-function settings(config:AppConfig):Promise<Settings>{
-  const mode=process.env.RAPPORT_STORAGE_MODE;
-  if(mode==='native'||(mode!=='automatic'&&process.env.RAPPORT_ENABLED==='true'&&process.env.RAPPORT_DATA_FIELD_ID))return Promise.resolve(nativeSettings(config));
-  if(mode==='disabled')return Promise.reject(new RedmineError(503,'Rapportwesen wurde deaktiviert.'));
-  // Share only in-flight initialization; verify privacy and membership on subsequent requests.
-  if(!setupPending)setupPending=automaticSettings(config).finally(()=>{setupPending=undefined;});
-  return setupPending;
-}
 
 let pending:Promise<unknown>=Promise.resolve();
 function serialized<T>(fn:()=>Promise<T>):Promise<T>{const run=pending.then(fn,fn);pending=run.catch(()=>undefined);return run;}
 export function registerRapport(app:FastifyInstance,config:AppConfig,credentials:(r:FastifyRequest)=>CredentialEnvelope) {
-  async function context(r:FastifyRequest){
-    const creds=credentials(r),me=(await fetchCurrentUser(config,creds)).user;
+  let selection:Selection|undefined;
+  const selected=()=>selection??=readSelection();
+  let setupCache:{value:Settings;until:number}|undefined,setupPending:Promise<Settings>|undefined;
+  function settings():Promise<Settings>{
     const mode=process.env.RAPPORT_STORAGE_MODE;
-    if(mode==='disabled')fail(503,'Rapportwesen wurde deaktiviert.');
-    const key=process.env.RAPPORT_DIRECTORY_KEY||process.env.DERKUMPEL_ADMIN_API_KEY||process.env.PUSH_POLL_API_KEY||'';
-    if(!key)fail(503,'Server: Redmine-Administratorschlüssel für Gruppenabfrage fehlt.');
-    if(config.redmineBaseUrl.protocol!=='https:')fail(503,'Rapportwesen benötigt HTTPS.');
-    const directory=keyApi(config,key);
-    const all=await directory<{groups:Person[]}>('/groups.json');const members=new Map<number,Member>();
-    for(const name of groups){const g=all.groups.find(x=>x.name===name);if(!g)return fail(503,'Redmine-Gruppe fehlt: '+name);const result=await directory<{group:{users:Person[]}}>('/groups/'+g.id+'.json?include=users');for(const u of result.group.users){members.set(u.id,{id:u.id,name:u.name,groups:[...(members.get(u.id)?.groups??[]),name]});}}
-    const actor=members.get(me.id);if(!actor)return fail(403,'Kein Zugriff auf das Rapportwesen');
-    const s=await settings(config),service=keyApi(config,s.serviceKey);
-    return {s,service,actor,members,dispatcher:actor.groups.includes(groups[0]!),creds};
+    if(mode==='native'||(mode!=='automatic'&&process.env.RAPPORT_ENABLED==='true'&&process.env.RAPPORT_DATA_FIELD_ID&&!selected().storageProjectId))return Promise.resolve(nativeSettings(config));
+    if(mode==='disabled')return Promise.reject(new RedmineError(503,'Rapportwesen wurde deaktiviert.'));
+    if(setupCache&&setupCache.until>Date.now())return Promise.resolve(setupCache.value);
+    if(!setupPending)setupPending=automaticSettings(config,selected()).then(value=>{setupCache={value,until:Date.now()+30000};return value;}).finally(()=>{setupPending=undefined;});
+    return setupPending;
+  }
+  // Load configured project IDs before ordinary ticket routes can return them.
+  try{const s=selected();for(const id of [s.storageProjectId,s.greenProjectId])if(id)rememberInternalRapportProject(id);}catch(e){app.log.error({message:e instanceof Error?e.message:'Settings invalid'});}
+  const adminKey=()=>{const key=process.env.RAPPORT_DIRECTORY_KEY||process.env.DERKUMPEL_ADMIN_API_KEY||process.env.PUSH_POLL_API_KEY||'';if(!key)fail(503,'Server: Redmine-Administratorschlüssel für Gruppenabfrage fehlt.');if(config.redmineBaseUrl.protocol!=='https:')fail(503,'Rapportwesen benötigt HTTPS.');return key;};
+  let rosterCache:{members:Map<number,Member>;until:number}|undefined,rosterPending:Promise<Map<number,Member>>|undefined;
+  async function roster(){
+    if(rosterCache&&rosterCache.until>Date.now())return rosterCache.members;
+    if(!rosterPending)rosterPending=(async()=>{const directory=keyApi(config,adminKey()),all=await directory<{groups:Person[]}>('/groups.json');const members=new Map<number,Member>();
+      const results=await Promise.all(groups.map(async name=>{const g=all.groups.find(x=>x.name===name);if(!g)fail(503,'Redmine-Gruppe fehlt: '+name);return {name,users:(await directory<{group:{users:Person[]}}>('/groups/'+g.id+'.json?include=users')).group.users};}));
+      for(const {name,users} of results)for(const u of users)members.set(u.id,{id:u.id,name:u.name,groups:[...(members.get(u.id)?.groups??[]),name]});
+      rosterCache={members,until:Date.now()+15000};return members;
+    })().finally(()=>{rosterPending=undefined;});
+    return rosterPending;
+  }
+  async function identity(r:FastifyRequest){
+    const creds=credentials(r),me=(await fetchCurrentUser(config,creds)).user;
+    if(process.env.RAPPORT_STORAGE_MODE==='disabled')fail(503,'Rapportwesen wurde deaktiviert.');
+    const members=await roster(),actor=members.get(me.id);if(!actor)fail(403,'Kein Zugriff auf das Rapportwesen');
+    return {creds,actor,members,dispatcher:actor.groups.includes(groups[0]!)};
+  }
+  async function administrator(r:FastifyRequest){
+    const me=await fetchCurrentUser(config,credentials(r));
+    if(me.user.admin!==true)fail(403,'Nur Redmine-Administratoren dürfen erweiterte Einstellungen ändern.');
+    return keyApi(config,adminKey());
+  }
+  async function context(r:FastifyRequest){
+    const actorContext=await identity(r),s=await settings(),service=keyApi(config,s.serviceKey);
+    return {...actorContext,s,service};
   }
   type C=Awaited<ReturnType<typeof context>>;
   const detail=async(c:C,id:number)=>{const i=(await c.service<{issue:Issue}>('/issues/'+id+'.json?include=journals,allowed_statuses')).issue;return {i,r:decode(i,c.s)};};
@@ -203,11 +240,12 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       if(matches.length>1)fail(503,kind+' nicht eindeutig: '+name);
       return matches[0]?.id;
     }
-    const configured=process.env.GREEN_PROJECT_IDENTIFIER?.trim();
+    const chosen=selected();
+    const configured=chosen.greenProjectId?String(chosen.greenProjectId):process.env.GREEN_PROJECT_IDENTIFIER?.trim();
     let project:StoreProject|undefined;
     if(configured){
       project=(await admin<{project:StoreProject}>('/projects/'+encodeURIComponent(configured)+'.json?include=trackers')).project;
-      if(project.identifier!==configured)fail(503,'Grünpflegeprojekt nicht eindeutig.');
+      if(chosen.greenProjectId?project.id!==chosen.greenProjectId:project.identifier!==configured)fail(503,'Grünpflegeprojekt nicht eindeutig.');
     }else{
       const matches:StoreProject[]=[];
       for(let offset=0;offset<100000;){
@@ -222,11 +260,11 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(!project||!Number.isSafeInteger(project.id)||[c.s.project,c.s.catalogProject].includes(project.id))fail(503,'Grünpflegeprojekt muss vom Rapportspeicher getrennt sein.');
     rememberInternalRapportProject(project.id);
     const trackers=(await admin<{trackers:{id:number;name:string}[]}>('/trackers.json')).trackers;
-    const tracker=process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):unique(trackers,'grünpflegearbeiten','Tracker')??unique(trackers,'grünfplegearbeiten','Tracker');
+    const tracker=chosen.greenTrackerId??(process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):unique(trackers,'grünpflegearbeiten','Tracker')??unique(trackers,'grünfplegearbeiten','Tracker'));
     if(!tracker||!project.trackers?.some(t=>t.id===tracker))fail(503,'Tracker „Grünpflegearbeiten“ fehlt im technischen Projekt.');
     const fields=(await admin<{custom_fields:{id:number;name:string;customized_type:string}[]}>('/custom_fields.json')).custom_fields.filter(f=>f.customized_type==='issue');
-    const field=process.env.GREEN_MUNICIPALITY_FIELD_ID?idEnv('GREEN_MUNICIPALITY_FIELD_ID'):unique(fields,'ort','Ticketfeld');
-    if(!field)fail(503,'Das benutzerdefinierte Ticketfeld „Ort“ wurde nicht gefunden.');
+    const field=chosen.greenFieldId??(process.env.GREEN_MUNICIPALITY_FIELD_ID?idEnv('GREEN_MUNICIPALITY_FIELD_ID'):unique(fields,'ort','Ticketfeld'));
+    if(!field||!fields.some(f=>f.id===field))fail(503,'Das benutzerdefinierte Ticketfeld „Ort“ wurde nicht gefunden.');
     // Catalogue records are usually created directly as closed (Erledigt), without a workflow.
     // Explicit wildcard is mandatory: Redmine otherwise defaults to open issues.
     const issues=await pages<Issue>(admin,'/issues.json?project_id='+project.id+'&tracker_id='+tracker+'&status_id=*');
@@ -253,16 +291,58 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     }
     return result;
   }
+  app.get('/api/rapport/settings/access',async r=>{const me=await fetchCurrentUser(config,credentials(r));return {allowed:me.user.admin===true};});
+  app.get('/api/rapport/settings',async(r,reply)=>{
+    reply.header('Cache-Control','no-store');const admin=await administrator(r);
+    const [projects,trackers,fields]=await Promise.all([allProjects(admin),admin<{trackers:Tracker[]}>('/trackers.json'),admin<{custom_fields:{id:number;name:string;customized_type:string;field_format?:string}[]}>('/custom_fields.json')]);
+    const current=selected();const storage=projects.find(p=>p.identifier===(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel'))??projects.find(p=>p.name.toLocaleLowerCase('de')==='derkumpel');
+    const green=projects.find(p=>p.identifier===process.env.GREEN_PROJECT_IDENTIFIER)??projects.find(p=>['grünpflegearbeiten','grünfplegearbeiten'].includes(p.name.toLocaleLowerCase('de')));
+    return {selection:current,defaults:{storageProjectId:storage?.id??null,storageTrackerId:trackers.trackers.find(t=>storage?.trackers?.some(x=>x.id===t.id))?.id??null,greenProjectId:green?.id??null,greenTrackerId:Number(process.env.GREEN_TRACKER_ID)||trackers.trackers.find(t=>t.name.toLocaleLowerCase('de')==='grünpflegearbeiten')?.id||null,greenFieldId:Number(process.env.GREEN_MUNICIPALITY_FIELD_ID)||fields.custom_fields.find(f=>f.customized_type==='issue'&&f.name.toLocaleLowerCase('de')==='ort')?.id||null},projects:projects.map(p=>({id:p.id,name:p.name,identifier:p.identifier,isPublic:p.is_public})),trackers:trackers.trackers.map(t=>({id:t.id,name:t.name,defaultStatusId:t.default_status?.id??null})),fields:fields.custom_fields.filter(f=>f.customized_type==='issue').map(f=>({id:f.id,name:f.name,format:f.field_format??''})),mode:process.env.RAPPORT_STORAGE_MODE??'automatic'};
+  });
+  app.get('/api/rapport/settings/project/:id',async r=>{
+    const admin=await administrator(r),id=Number((r.params as {id:string}).id);if(!Number.isSafeInteger(id)||id<=0)fail(400,'Ungültiges Projekt');
+    const {project}=await admin<{project:StoreProject}>('/projects/'+id+'.json?include=trackers,enabled_modules');return {id:project.id,name:project.name,trackers:project.trackers??[],isPublic:project.is_public};
+  });
+  app.put('/api/rapport/settings',async r=>{
+    const admin=await administrator(r),next=parseSelection(r.body);
+    if(!next.storageProjectId||!next.storageTrackerId||!next.greenProjectId||!next.greenTrackerId||!next.greenFieldId)fail(400,'Bitte alle fünf Zuordnungen auswählen.');
+    if(next.storageTrackerId===next.greenTrackerId)fail(400,'Speichertracker und Grünpflegetracker müssen getrennt sein.');
+    if(process.env.RAPPORT_STORAGE_MODE==='native'||process.env.RAPPORT_STORAGE_MODE==='disabled')fail(409,'Servermodus erlaubt keine automatische Speicherzuordnung. RAPPORT_STORAGE_MODE=automatic setzen.');
+    return serialized(async()=>{
+      const [green,fields]=await Promise.all([admin<{project:StoreProject}>('/projects/'+next.greenProjectId+'.json?include=trackers'),admin<{custom_fields:{id:number;customized_type:string}[]}>('/custom_fields.json')]);
+      if(green.project.id!==next.greenProjectId||!green.project.trackers?.some(t=>t.id===next.greenTrackerId))fail(400,'Grünpflegetracker ist im gewählten Projekt nicht aktiviert.');
+      if(green.project.is_public!==false)fail(400,'Grünpflegeprojekt muss privat sein.');
+      if(!fields.custom_fields.some(f=>f.id===next.greenFieldId&&f.customized_type==='issue'))fail(400,'Ortsfeld ist kein Ticketfeld.');
+      // Do not move or abandon existing records when changing the storage project.
+      const prev=selected();let oldProjectId=prev.storageProjectId;
+      if(!oldProjectId){const all=await allProjects(admin);oldProjectId=all.find(p=>p.identifier===(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel'))?.id??all.find(p=>p.name.toLocaleLowerCase('de')==='derkumpel')?.id??null;}
+      if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: )/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
+      if(setupPending)await setupPending.catch(()=>undefined);
+      const ready=await automaticSettings(config,next);
+      await persistSelection(next);selection=next;setupCache={value:ready,until:Date.now()+30000};rememberInternalRapportProject(next.greenProjectId!);
+      return {selection:next,storageProjectId:ready.project,storageTrackerId:ready.tracker};
+    });
+  });
+  app.get('/api/rapport/settings/check',async r=>{
+    await administrator(r);setupCache=undefined;const started=Date.now();
+    const checks:{label:string;ok:boolean;detail:string}[]=[];
+    let s:Settings|undefined;try{s=await settings();checks.push({label:'Rapportspeicher',ok:true,detail:'Projekt #'+s.project+', Tracker #'+s.tracker});}catch(e){checks.push({label:'Rapportspeicher',ok:false,detail:e instanceof Error?e.message:'Unbekannter Fehler'});}
+    try{const m=await roster();checks.push({label:'Bauhofgruppen',ok:true,detail:m.size+' Mitarbeiter'});}catch(e){checks.push({label:'Bauhofgruppen',ok:false,detail:e instanceof Error?e.message:'Unbekannter Fehler'});}
+    if(s){try{const issues=await pages<Issue>(keyApi(config,s.serviceKey),'/issues.json?project_id='+s.project+'&status_id=*');checks.push({label:'Gespeicherte Rapporte',ok:true,detail:issues.filter(i=>/^Rapport [0-9]+ /.test(i.subject)).length+' Tagesrapporte im Projekt #'+s.project});}catch(e){checks.push({label:'Speicher lesen',ok:false,detail:e instanceof Error?e.message:'Unbekannter Fehler'});}
+      try{const tasks=await greenCatalogue({s} as C);checks.push({label:'Grünpflegekatalog',ok:true,detail:tasks.length+' Aufgaben, '+new Set(tasks.flatMap(t=>t.municipalities)).size+' Orte'});}catch(e){checks.push({label:'Grünpflegekatalog',ok:false,detail:e instanceof Error?e.message:'Unbekannter Fehler'});}
+    }
+    return {checks,elapsedMs:Date.now()-started};
+  });
   app.get('/api/rapport/green/tasks',async (r,reply)=>{
     reply.header('Cache-Control','no-store');
     const c=await context(r);
     return {tasks:await greenCatalogue(c)};
   });
-  app.get('/api/rapport/users',async r=>{const c=await context(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
+  app.get('/api/rapport/users',async r=>{const c=await identity(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
   app.get('/api/rapport/reports',async r=>{const c=await context(r),q=r.query as {from?:string;to?:string;all?:string};if(!validDate(q.from)||!validDate(q.to)||q.from>q.to)return fail(400,'Ungültiger Zeitraum');if(q.all==='1'&&!c.dispatcher)return fail(403,'Nur Disponenten');const reports=[...await list(c),...await listCorrections(c)].map(i=>decode(i,c.s)).filter(d=>d.date>=q.from!&&d.date<=q.to!&&(q.all==='1'||d.owner.id===c.actor.id));return {reports,dispatcher:c.dispatcher};});
   app.post('/api/rapport/reports/:id/correction',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten');if(!c.s.correctionTracker)fail(503,'Korrekturtracker nicht eingerichtet');const reason=str(obj(r.body).reason,1000);if(!reason)fail(400,'Korrekturbegründung erforderlich');return serialized(async()=>{const {r:original}=await detail(c,Number((r.params as {id:string}).id));if(original.state!=='closed')fail(409,'Nur abgeschlossene Rapporte korrigieren');const existing=(await listCorrections(c)).map(i=>decode(i,c.s)).filter(d=>d.correction?.reportId===original.id);if(existing.length)fail(409,'Zu diesem Beleg besteht bereits eine Korrektur. Bitte diese öffnen oder den aktuell abgeschlossenen Korrekturbeleg korrigieren.');const data:Data={version:1,owner:original.owner,date:original.date,lines:original.lines,material:original.material,correction:{reportId:original.id,reason,createdBy:{id:c.actor.id,name:c.actor.name},createdAt:new Date().toISOString()}};const created=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.correctionTracker,status_id:c.s.statuses.draft,subject:'Rapportkorrektur '+original.id,...payload(c,data)}});const actual=(await detail(c,created.issue.id)).r;if(actual.correction?.reportId!==original.id||actual.state!=='draft')fail(409,'Korrektur nicht vollständig angelegt');return actual;});});
   app.get('/api/rapport/reports/:id',async r=>{const c=await context(r),{r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);return d;});
-  app.post('/api/rapport/capture',async r=>{const c=await context(r),b=obj(r.body);if(b.actorId!==c.actor.id)return fail(403,'Erfasser stimmt nicht mit Anmeldung überein');if(!validDate(b.date))return fail(400,'Arbeitstag ungültig');const date=b.date;const line=parseLine(b.line,c.actor);line.sources=await sourceRefs(c,obj(b.line).sourceIds,obj(b.line).sourceKind);validateLines([line],date,false);if(line.machines.length||line.materials.length)fail(400,'Gemeinsame Ressourcen separat im verantwortlichen Rapport erfassen');const people=[...new Set(arr(b.employees,100).map(Number))];if(!people.length||people.some(id=>!c.members.has(id)))return fail(400,'Ungültige Mitarbeiterauswahl');return serialized(async()=>{const results=[];const issues=await list(c);for(const id of people){try{const existing=await getDay(c,id,date,issues);if(existing){const {i,r:d}=existing;const old=d.lines.find(l=>l.id===line.id);if(old){if(old.recordedBy.id!==c.actor.id||old.start!==line.start||old.end!==line.end||old.activity!==line.activity||JSON.stringify((old.sources??[]).map(s=>s.id))!==JSON.stringify((line.sources??[]).map(s=>s.id)))fail(409,'Vorgangs-ID bereits vergeben');results.push({employee:id,ok:true,reportId:i.id});continue;}if(!['draft','returned'].includes(d.state))fail(409,'Rapport bereits eingereicht oder abgeschlossen');const next:Data={version:1,owner:d.owner,date,lines:[...d.lines,line],material:d.material,...(d.submitted?{submitted:d.submitted}:{})};validateLines(next.lines,date,false);await write(c,i,next,note(c,'Leistung vorerfasst '+line.id));results.push({employee:id,ok:true,reportId:i.id});}else{const owner=c.members.get(id)!;const d:Data={version:1,owner:{id,name:owner.name},date,lines:[line],material:''};const result=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.tracker,status_id:c.s.statuses.draft,subject:'Rapport '+id+' '+date,...payload(c,d)}});const actual=await detail(c,result.issue.id);if(actual.r.owner.id!==id||actual.r.date!==date||actual.r.state!=='draft'||!actual.r.lines.some(l=>l.id===line.id&&l.start===line.start&&l.end===line.end))fail(409,'Redmine hat die Anlage nicht vollständig übernommen.');results.push({employee:id,ok:true,reportId:result.issue.id});}}catch(e){results.push({employee:id,ok:false,message:e instanceof RedmineError?e.message:'Übertragung fehlgeschlagen'});}}return {results};});});
+  app.post('/api/rapport/capture',async r=>{const c=await context(r),b=obj(r.body);if(b.actorId!==c.actor.id)return fail(403,'Erfasser stimmt nicht mit Anmeldung überein');if(!validDate(b.date))return fail(400,'Arbeitstag ungültig');const date=b.date;const line=parseLine(b.line,c.actor);line.sources=await sourceRefs(c,obj(b.line).sourceIds,obj(b.line).sourceKind);validateLines([line],date,false);if(line.machines.length||line.materials.length)fail(400,'Gemeinsame Ressourcen separat im verantwortlichen Rapport erfassen');const people=[...new Set(arr(b.employees,100).map(Number))];if(!people.length||people.some(id=>!c.members.has(id)))return fail(400,'Ungültige Mitarbeiterauswahl');return serialized(async()=>{const results=[];const issues=await list(c);for(const id of people){try{const existing=await getDay(c,id,date,issues);if(existing){const {i,r:d}=existing;const old=d.lines.find(l=>l.id===line.id);if(old){if(old.recordedBy.id!==c.actor.id||old.start!==line.start||old.end!==line.end||old.activity!==line.activity||JSON.stringify((old.sources??[]).map(s=>s.id))!==JSON.stringify((line.sources??[]).map(s=>s.id)))fail(409,'Vorgangs-ID bereits vergeben');results.push({employee:id,ok:true,reportId:i.id});continue;}if(!['draft','returned'].includes(d.state))fail(409,'Rapport bereits eingereicht oder abgeschlossen');const next:Data={version:1,owner:d.owner,date,lines:[...d.lines,line],material:d.material,...(d.submitted?{submitted:d.submitted}:{})};try{validateLines(next.lines,date,false);}catch(e){if(e instanceof RedmineError&&e.status===409)fail(409,'Zeitüberschneidung in Redmine-Rapport #'+i.id+' ('+date+'). Bitte Tagesrapport prüfen.');throw e;}await write(c,i,next,note(c,'Leistung vorerfasst '+line.id));results.push({employee:id,ok:true,reportId:i.id});}else{const owner=c.members.get(id)!;const d:Data={version:1,owner:{id,name:owner.name},date,lines:[line],material:''};const result=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.tracker,status_id:c.s.statuses.draft,subject:'Rapport '+id+' '+date,...payload(c,d)}});const actual=await detail(c,result.issue.id);if(actual.r.owner.id!==id||actual.r.date!==date||actual.r.state!=='draft'||!actual.r.lines.some(l=>l.id===line.id&&l.start===line.start&&l.end===line.end))fail(409,'Redmine hat die Anlage nicht vollständig übernommen.');results.push({employee:id,ok:true,reportId:result.issue.id});}}catch(e){results.push({employee:id,ok:false,message:e instanceof RedmineError?e.message:'Übertragung fehlgeschlagen'});}}return {results};});});
   app.put('/api/rapport/reports/:id',async r=>{const c=await context(r),b=obj(r.body);return serialized(async()=>{const {i,r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);if(d.revision!==b.revision)fail(409,'Rapport wurde geändert. Bitte neu laden.');if(d.state==='closed'||(!c.dispatcher&&!['draft','returned'].includes(d.state)))fail(409,'Rapport ist gesperrt');const reason=str(b.reason??'');if(c.dispatcher&&d.owner.id!==c.actor.id&&!reason)fail(400,'Korrekturbegründung erforderlich');if(!['draft','returned'].includes(d.state)&&!reason)fail(400,'Korrekturbegründung erforderlich');const lines=await Promise.all(arr(b.lines,200).map(async x=>{const prior=d.lines.find(l=>l.id===obj(x).id);const line=parseLine(x,c.actor,prior);if(obj(x).sourceIds!==undefined)line.sources=await sourceRefs(c,obj(x).sourceIds,obj(x).sourceKind);return line;}));validateLines(lines,d.date,false);const next:Data={version:1,owner:d.owner,date:d.date,lines,material:str(b.material??'',5000),...(d.submitted?{submitted:d.submitted}:{}),...(d.correction?{correction:d.correction}:{})};const prior=summary(d),after=summary(next);const changed=lines.filter(l=>JSON.stringify(l)!==JSON.stringify(d.lines.find(x=>x.id===l.id))).length;const removed=d.lines.filter(l=>!lines.some(x=>x.id===l.id)).length;return write(c,i,next,note(c,'Rapport korrigiert; Arbeitszeit '+fmt(prior.work)+' → '+fmt(after.work)+' h; '+changed+' geänderte/neue und '+removed+' entfernte Positionen'+(reason?': '+reason:'')));});});
   app.post('/api/rapport/reports/:id/transition',async r=>{const c=await context(r),b=obj(r.body);return serialized(async()=>{const {i,r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);if(d.revision!==b.revision)fail(409,'Rapport wurde geändert. Bitte neu laden.');const action=b.action,reason=str(b.reason??'');if(action==='submit'&&d.owner.id===c.actor.id&&['draft','returned'].includes(d.state)){validateLines(d.lines,d.date,true);const next:Data={version:1,owner:d.owner,date:d.date,lines:d.lines,material:d.material,submitted:{by:{id:c.actor.id,name:c.actor.name},at:new Date().toISOString()},...(d.correction?{correction:d.correction}:{})};if(c.s.automatic)return write(c,i,{...next,storageState:'submitted'},note(c,'Eingereicht'));if(!i.allowed_statuses?.some(s=>s.id===c.s.statuses.submitted))fail(409,'Redmine-Workflow erlaubt Einreichung nicht');return write(c,i,next,note(c,'Eingereicht'),c.s.statuses.submitted);}
     if(!c.dispatcher)return fail(403,'Nur Disponenten');const next:State|undefined=action==='review'&&d.state==='submitted'?'review':action==='return'&&['submitted','review'].includes(d.state)?'returned':action==='close'&&['submitted','review'].includes(d.state)?'closed':undefined;if(!next)return fail(409,'Unzulässiger Statuswechsel');if(next==='returned'&&!reason)fail(400,'Rückgabebegründung erforderlich');if(next==='closed'){validateLines(d.lines,d.date,true);if(!d.submitted)fail(409,'Digitale Einreichung fehlt');}
@@ -271,7 +351,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     await redmineJson(config,c.creds,'/issues/'+i.id+'.json',{method:'PUT',body:JSON.stringify({issue:{status_id:c.s.statuses[next],notes:note(c,action+(reason?': '+reason:'')+(next==='closed'&&d.owner.id===c.actor.id?' (Selbstprüfung)':''))}})});const actual=await detail(c,i.id);if(actual.i.status.id!==c.s.statuses[next])fail(409,'Redmine hat den Statuswechsel nicht übernommen');return actual.r;});});
   app.get('/api/rapport/orders',async r=>{const c=await context(r);const q=(r.query as {q?:string}).q?.trim()??'';if(q.length<2||q.length>100)return {orders:[]};const personal:Get=<T>(path:string)=>redmineJson<T>(config,c.creds,path);const items=await pages<Issue>(personal,'/issues.json?status_id=*&subject='+encodeURIComponent('~'+q));return {orders:items.filter(i=>![c.s.project,c.s.catalogProject].includes(i.project.id)&&!internalRapportProject(i.project.id,i.project.name)&&i.subject.toLocaleLowerCase('de').includes(q.toLocaleLowerCase('de'))).slice(0,30).map(i=>({id:i.id,subject:i.subject}))};});
   app.get('/api/rapport/order/:id',async r=>{const c=await context(r),id=Number((r.params as {id:string}).id);if(!Number.isSafeInteger(id)||id<=0)return fail(400,'Auftragsnummer ungültig');const {issue}=await redmineJson<{issue:Issue}>(config,c.creds,'/issues/'+id+'.json');if([c.s.project,c.s.catalogProject].includes(issue.project.id)||internalRapportProject(issue.project.id,issue.project.name))return fail(404,'Auftrag nicht gefunden');return {id:issue.id,subject:issue.subject};});
-  app.get('/api/rapport/catalog',async r=>{const c=await context(r);const items=await pages<Issue>(c.service,'/issues.json?project_id='+c.s.catalogProject+'&status_id=open');return {machines:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Maschine: '):i.tracker.id===c.s.machineTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Maschine: '.length):i.subject})),materials:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Material: '):i.tracker.id===c.s.materialTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Material: '.length):i.subject}))};});
+  app.get('/api/rapport/catalog',async r=>{const c=await context(r);const items=await pages<Issue>(c.service,'/issues.json?project_id='+c.s.catalogProject+'&status_id='+(c.s.automatic?'*':'open'));return {machines:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Maschine: '):i.tracker.id===c.s.machineTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Maschine: '.length):i.subject})),materials:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Material: '):i.tracker.id===c.s.materialTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Material: '.length):i.subject}))};});
   app.post('/api/rapport/catalog',async r=>{const c=await context(r);if(!c.dispatcher)return fail(403,'Nur Disponenten');const b=obj(r.body),name=str(b.name,200);if(!name||!['machine','material'].includes(String(b.kind)))return fail(400,'Ungültige Stammdaten');const result=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.catalogProject,tracker_id:b.kind==='machine'?c.s.machineTracker:c.s.materialTracker,...(c.s.automatic?{status_id:c.s.statuses.draft}:{}),subject:c.s.automatic?(b.kind==='machine'?'DK Maschine: ':'DK Material: ')+name:name,...(c.s.automatic?{is_private:true}:{}),description:note(c,'Stammdatum angelegt')}});return {id:result.issue.id,name};});
   app.get('/api/rapport/pdf',async(r,reply)=>{const c=await context(r),q=r.query as {ids?:string};const ids=[...new Set((q.ids??'').split(',').map(Number))];if(!ids.length||ids.length>100||ids.some(id=>!Number.isSafeInteger(id)||id<=0))return fail(400,'Bitte maximal 100 gültige Rapporte auswählen');const reports=[];for(const id of ids){const {r:d}=await detail(c,id);allowed(c,d);reports.push(d);}return reply.type('application/pdf').header('Content-Disposition','attachment; filename="Rapporte.pdf"').send(rapportPdfMany(reports));});
   app.post('/api/rapport/reports/:id/archive',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten');return serialized(async()=>{const {r:d}=await detail(c,Number((r.params as {id:string}).id));return archive(c,d);});});
