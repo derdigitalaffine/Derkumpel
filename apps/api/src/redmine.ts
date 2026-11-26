@@ -26,6 +26,7 @@ async function request(config: AppConfig, creds: CredentialEnvelope, path: strin
     headers.set('Authorization', authHeader(creds));
     if (!headers.has('Accept')) headers.set('Accept', 'application/json');
     return await fetch(buildUrl(config, path), { ...init, headers, signal: controller.signal });
+  } catch(e) { if(controller.signal.aborted)throw new RedmineError(504,'Redmine-Zeitüberschreitung: '+(init.method??'GET')+' '+path.split('?')[0]);throw e;
   } finally {
     clearTimeout(timer);
   }
@@ -75,7 +76,7 @@ export async function uploadToRedmine(config: AppConfig, creds: CredentialEnvelo
 }
 
 export type RedmineUserResponse = {
-  user: { id: number; login: string; firstname: string; lastname: string; mail?: string; groups?: Array<{ id: number; name: string }> };
+  user: { id: number; admin?: boolean; login: string; firstname: string; lastname: string; mail?: string; groups?: Array<{ id: number; name: string }> };
 };
 
 export type RedmineIssueList = { issues: Array<Record<string, unknown>>; total_count?: number; limit?: number; offset?: number };

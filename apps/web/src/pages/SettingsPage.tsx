@@ -1,4 +1,5 @@
-import { Alert, Box, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
+import { Alert, Box, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title, Tabs } from '@mantine/core';
+import { AdvancedSettings } from './AdvancedSettings';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type PushPreferences, type PushConfig } from '../api';
@@ -100,6 +101,7 @@ export function SettingsPage() {
 
     {pendingCount > 0 && <Alert color="orange" variant="light" title={`${pendingCount} lokale Änderung(en) noch offen`}>Die Änderungen werden auf diesem Gerät geschützt. <Button component={Link} to="/sync" variant="subtle" color="orange" size="compact-sm" rightSection={<UIIcon name="chevron-right" size={14} />}>Zum Sync-Center</Button></Alert>}
 
+    <Tabs defaultValue="general" keepMounted={false}><Tabs.List grow><Tabs.Tab value="general">Allgemein</Tabs.Tab><Tabs.Tab value="advanced">Erweiterte Settings</Tabs.Tab></Tabs.List><Tabs.Panel value="advanced" pt="md"><AdvancedSettings/></Tabs.Panel><Tabs.Panel value="general" pt="md"><Stack gap="md">
     <Card withBorder className="surface-card settings-section">
       <Stack gap="lg">
         <SectionHeading icon="download" title="Offline-Daten" description="Wie lange abgeschlossene oder nicht mehr zugewiesene Aufträge auf dem Gerät bleiben." />
@@ -158,6 +160,7 @@ export function SettingsPage() {
       </Stack>
     </Card>
 
+    </Stack></Tabs.Panel></Tabs>
     <Modal opened={confirmClear} onClose={() => setConfirmClear(false)} title="Offline-Daten löschen?" centered>
       <Stack>
         <Text>Alle lokal gecachten Aufträge, Anhänge und noch nicht synchronisierten Änderungen werden von diesem Gerät gelöscht. Redmine-Daten bleiben unverändert.</Text>
