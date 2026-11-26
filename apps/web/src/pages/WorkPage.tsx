@@ -139,6 +139,8 @@ export function WorkPage() {
       </Text>}
     </Group>
 
+    <Button component={Link} to="/rapport" h={52} variant="light" leftSection={<UIIcon name="clock" size={20} />}>Arbeitszeit / Rapport</Button>
+
     <Box className="summary-strip">
       <Group justify="space-between" align="flex-end" wrap="nowrap">
         <Box>

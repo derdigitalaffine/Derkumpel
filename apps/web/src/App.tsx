@@ -9,6 +9,7 @@ import type { PushPreferences } from './api';
 import type { CurrentUser } from './types';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
+import { RapportPage } from './pages/RapportPage';
 import { WorkPage } from './pages/WorkPage';
 import { IssueRoute } from './pages/IssueRoute';
 import { TicketsPage } from './pages/TicketsPage';
@@ -71,6 +72,7 @@ export function App() {
 
   return <Layout><Routes>
     <Route path="/" element={<WorkPage />} />
+    <Route path="/rapport" element={<RapportPage />} />
     <Route path="/tickets" element={<TicketsPage />} />
     <Route path="/issues/:id" element={<IssueRoute />} />
     <Route path="/map" element={<MapPage />} />
