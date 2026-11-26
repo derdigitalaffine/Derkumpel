@@ -24,7 +24,7 @@ export function CrewRecoveryPanel({crew,onClose,onSaved}:{crew:Crew|null;onClose
  }catch(e){setError(e instanceof Error?e.message:String(e));try{setData(await api.greenRecovery(data.id));}catch{/* keep draft and original error */}}finally{setBusy(false);}};
  return <Modal opened={!!crew} onClose={()=>{if(!busy)onClose();}} title="Einsatzabschluss nachtragen" fullScreen><Stack maw={640} mx="auto" gap="md">
  {error&&<Alert color="red">{error}</Alert>}{!data?<Text>{error?'Einsatzdaten konnten nicht geladen werden.':'Einsatzdaten werden geladen …'}</Text>:<>
- <Alert color="blue" title={'Kolonne von '+data.actor.name}>Tatsächliche Einsatzzeit: {displayStamp(data.startedAt)} – {displayStamp(data.endedAt)}. Diese Zeitstempel bleiben unverändert.</Alert>
+ <Alert color="blue" title={'Kolonne von '+data.leader.name}>Tatsächliche Einsatzzeit: {displayStamp(data.startedAt)} – {displayStamp(data.endedAt)}. Diese Zeitstempel bleiben unverändert.</Alert>
  <Paper withBorder p="sm"><Text fw={700}>Aufgaben</Text>{data.sources.map(t=><Text key={t.id} size="sm">{t.subject}{t.orderNumber?' · KIS '+t.orderNumber:''}</Text>)}</Paper>
  {data.saved?<Alert color="orange" title="Abschluss bereits gespeichert">{data.saved.completedBy?'Nachgetragen durch '+data.saved.completedBy.name+'. ':''}Die gespeicherten Angaben bleiben unverändert. Fehlende Einzelrapporte können erneut übertragen werden.<Text size="sm">{displayStamp(data.saved.start)} – {displayStamp(data.saved.end)} · {data.saved.activity}</Text>{data.saved.participation.map(p=><Text size="sm" key={p.employee}>{name(p.employee)}: {displayStamp(p.start)} – {displayStamp(p.end)}</Text>)}</Alert>:<>
  <GermanDateTimeField label="Rapportbeginn" value={start} disabled={busy} onChange={setStart}/>
@@ -32,8 +32,8 @@ export function CrewRecoveryPanel({crew,onClose,onSaved}:{crew:Crew|null;onClose
  <Textarea label="Ergänzende Tätigkeit (optional)" maxLength={150} value={note} onChange={e=>setNote(e.currentTarget.value)} disabled={busy}/>
  <Text fw={700}>Teilnahme pro Person</Text>{data.employees.map(id=>{const c=choices[id];if(!c)return null;return <Paper key={id} p="sm" withBorder><Stack gap="xs"><Checkbox size="lg" label={name(id)} checked={c.included} disabled={busy} onChange={e=>patch(id,{included:e.currentTarget.checked})}/>{c.included&&<SimpleGrid cols={2}><NumberInput label="Später begonnen (min)" min={0} max={Math.max(0,duration-15)} step={15} value={c.offset} disabled={busy} onChange={v=>patch(id,{offset:Number(v)})}/><NumberInput label="Teilnahme (min)" min={15} max={Math.max(15,duration-c.offset)} step={15} value={c.minutes} disabled={busy} onChange={v=>patch(id,{minutes:Number(v)})}/></SimpleGrid>}</Stack></Paper>;})}
  <CrewResourcePages items={materials} onChange={setMaterials} duration={duration} disabled={busy}/>
- {actor!==data.actor.id&&<Textarea label="Begründung des Nachtrags" required maxLength={500} value={reason} disabled={busy} onChange={e=>setReason(e.currentTarget.value)}/>}
+ {actor!==data.actor.id&&actor!==data.leader.id&&<Textarea label="Begründung des Nachtrags" required maxLength={500} value={reason} disabled={busy} onChange={e=>setReason(e.currentTarget.value)}/>}
  </>}
- <Group grow><Button variant="default" disabled={busy} onClick={onClose}>Schließen</Button><Button h={54} loading={busy} disabled={data.confirmed||(!data.saved&&actor!==data.actor.id&&!reason.trim())} onClick={()=>void submit()}>{data.confirmed?'Bereits bestätigt':data.saved?'Rapporte erneut übertragen':'Abschluss speichern'}</Button></Group>
+ <Group grow><Button variant="default" disabled={busy} onClick={onClose}>Schließen</Button><Button h={54} loading={busy} disabled={data.confirmed||(!data.saved&&actor!==data.actor.id&&actor!==data.leader.id&&!reason.trim())} onClick={()=>void submit()}>{data.confirmed?'Bereits bestätigt':data.saved?'Rapporte erneut übertragen':'Abschluss speichern'}</Button></Group>
  </>}</Stack></Modal>;
 }
