@@ -73,7 +73,7 @@ function parseLine(value:unknown,actor:Person,prior?:Line):Line {
 }
 export function summary(data:Data) {return {work:data.lines.filter(l=>l.kind==='work').reduce((n,l)=>n+duration(l),0),pause:data.lines.filter(l=>l.kind==='pause').reduce((n,l)=>n+duration(l),0),target:target(data.date)};}
 const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
-const time=(s:string)=>new Date(s).toLocaleString('de-DE',{timeZone:'Europe/Berlin',dateStyle:'short',timeStyle:'short'});
+const time=(s:string)=>new Date(s).toLocaleString('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 const revision=(i:Issue)=>createHash('sha256').update(JSON.stringify([i.updated_on,i.status.id,i.custom_fields,i.description])).digest('hex');
 function description(d:Data) {
   const safe=(s:string)=>s.replace(/[\r\n|]/g,' ').replace(/</g,'‹').replace(/>/g,'›');

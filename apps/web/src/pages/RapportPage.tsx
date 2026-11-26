@@ -5,7 +5,8 @@ import { api } from '../api';
 import { getSetting, setSetting, type RapportQueueRecord } from '../db';
 import { useDexieLive } from '../live';
 import { currentRapportQueue,queueCapture,replayRapportQueue,retryRapportQueue,discardRapportQueue,rescheduleRapportQueue } from '../rapportQueue';
-import { fromInputTime,inputTime,today } from '../rapportBook';
+import { GermanDateField,GermanDateTimeField } from '../components/RapportDateFields';
+import { fromInputTime,inputTime,today,displayDate,displayStamp } from '../rapportBook';
 import type { CurrentUser } from '../types';
 import { formatDuration, fullDayMinutes, rankRapportPeople, type RapportPerson } from '../rapport';
 
@@ -110,11 +111,11 @@ export function RapportPage() {
       <Paper withBorder p="md" className="surface-card"><Stack gap="sm">
         <Title order={2} size="h4">2. Arbeitszeit je Person</Title>
         <SimpleGrid cols={{base:1,xs:2}} spacing="xs">
-          <TextInput type="date" label="Arbeitstag" size="lg" value={date} onChange={e=>{ const next = e.currentTarget.value; setDate(next); if (useFullDay) setMinutes(fullDayMinutes(next)); }} />
+          <GermanDateField label="Arbeitstag" value={date} onChange={next=>{setDate(next);if(useFullDay)setMinutes(fullDayMinutes(next));}}/>
           <TextInput type="time" label="Beginn" size="lg" value={time} onChange={e=>setTime(e.currentTarget.value)} error={!startAt?'Bitte gültigen Beginn wählen.':undefined} />
         </SimpleGrid>
         <Select label="Dauer (15-Minuten-Blöcke)" size="lg" searchable data={durationOptions} value={String(minutes)} onChange={v=>{setUseFullDay(false);setMinutes(Number(v ?? 0));}} allowDeselect={false} />
-        <Text fw={700} aria-live="polite">Ende: {endAt ? endAt.toLocaleString('de-DE', {dateStyle:'short',timeStyle:'short'}) : '–'}</Text>
+        <Text fw={700} aria-live="polite">Ende: {endAt ? displayStamp(endAt.toISOString()) : '–'}</Text>
         <SimpleGrid cols={2} spacing="xs">{increments.map(([amount, label]) => <Button key={amount} h={52} variant="light" disabled={minutes % 15 !== 0 || minutes + amount > 1440} onClick={() => add(amount)}>{label}</Button>)}</SimpleGrid>
         <Button h={56} disabled={!targetMinutes} onClick={() => {setUseFullDay(true);setMinutes(targetMinutes);}}> {targetMinutes ? `Kompletter Arbeitstag · ${formatDuration(targetMinutes)} h` : "Kein regulärer Solltag"} </Button>
         <Button h={48} variant="subtle" color="gray" onClick={() => {setMinutes(0);setUseFullDay(false);}}>Zeit zurücksetzen</Button>
@@ -125,7 +126,7 @@ export function RapportPage() {
         <Button h={56} loading={saving} disabled={!canAdd} onClick={()=>void addBatch()}>In Tagesrapporte übernehmen ({selectedPeople.length})</Button>
     </>}
     {queue.length>0&&<Stack gap="sm"><Title order={2} size="h4">Lokale Übertragungswarteschlange</Title>{queue.map(item=><Paper withBorder p="md" key={item.id}><Stack gap="xs">
-      <Group justify="space-between"><Text fw={800}>{item.body.date} · {formatDuration(Math.round((Date.parse(item.body.line.end)-Date.parse(item.body.line.start))/60000))} h</Text><Badge color={item.state==='conflict'?'red':'orange'}>{item.state==='conflict'?'Konflikt':'Ausstehend'}</Badge></Group>
+      <Group justify="space-between"><Text fw={800}>{displayDate(item.body.date)} · {formatDuration(Math.round((Date.parse(item.body.line.end)-Date.parse(item.body.line.start))/60000))} h</Text><Badge color={item.state==='conflict'?'red':'orange'}>{item.state==='conflict'?'Konflikt':'Ausstehend'}</Badge></Group>
       <Text>{item.body.line.activity||'Ohne Tätigkeit'} · {item.body.employees.map(id=>people.find(p=>p.id===id)?.name??'#'+id).join(', ')}</Text>
       {item.message&&<Text size="sm" c="red">{item.message}</Text>}
       {item.state==='conflict'&&<Button h={48} variant="filled" disabled={saving||!navigator.onLine} onClick={()=>void editConflict(item)}>Konflikt lösen / Zeit korrigieren</Button>}
@@ -134,8 +135,8 @@ export function RapportPage() {
     </Stack></Paper>)}</Stack>}
     <Modal opened={!!editing} onClose={()=>{if(!saving)setEditing(null);}} title="Rapportkonflikt lösen" fullScreen={false}><Stack>
       <Alert variant="light">Die vorhandenen Arbeitszeiten bleiben unverändert. Du kannst diese noch nicht gespeicherte Erfassung verschieben oder den bestehenden Tagesrapport öffnen.</Alert>
-      {preview.map(p=><Paper withBorder p="sm" key={p.employee}><Stack gap="xs"><Text fw={700}>{people.find(x=>x.id===p.employee)?.name??'#'+p.employee}</Text><Text size="sm">{p.stored?'Bereits gespeichert – bitte erneut übertragen.':!p.editable?'Rapport gesperrt':p.overlap?'Zeitüberschneidung':'Keine Überschneidung'}</Text>{p.overlaps?.map((l,i)=><Text size="sm" key={i}>{inputTime(l.start).replace('T',' ')} – {inputTime(l.end).replace('T',' ')} · {l.activity||'Ohne Tätigkeit'}</Text>)}{p.reportId&&<Button component={Link} to={'/rapport/book?date='+editing?.body.date+'&report='+p.reportId} variant="light" h={48}>Tagesrapport #{p.reportId} öffnen</Button>}</Stack></Paper>)}
-      <TextInput type="datetime-local" label="Neuer Beginn" value={editStart} onChange={e=>setEditStart(e.currentTarget.value)} disabled={saving}/><TextInput type="datetime-local" label="Neues Ende" value={editEnd} onChange={e=>setEditEnd(e.currentTarget.value)} disabled={saving}/><Textarea label="Tätigkeit" value={editActivity} onChange={e=>setEditActivity(e.currentTarget.value)} disabled={saving}/>{editError&&<Alert color="red">{editError}</Alert>}
+      {preview.map(p=><Paper withBorder p="sm" key={p.employee}><Stack gap="xs"><Text fw={700}>{people.find(x=>x.id===p.employee)?.name??'#'+p.employee}</Text><Text size="sm">{p.stored?'Bereits gespeichert – bitte erneut übertragen.':!p.editable?'Rapport gesperrt':p.overlap?'Zeitüberschneidung':'Keine Überschneidung'}</Text>{p.overlaps?.map((l,i)=><Text size="sm" key={i}>{displayStamp(l.start)} – {displayStamp(l.end)} · {l.activity||'Ohne Tätigkeit'}</Text>)}{p.reportId&&<Button component={Link} to={'/rapport/book?date='+editing?.body.date+'&report='+p.reportId} variant="light" h={48}>Tagesrapport #{p.reportId} öffnen</Button>}</Stack></Paper>)}
+      <GermanDateTimeField label="Neuer Beginn" value={editStart} onChange={setEditStart} disabled={saving}/><GermanDateTimeField label="Neues Ende" value={editEnd} onChange={setEditEnd} disabled={saving}/><Textarea label="Tätigkeit" value={editActivity} onChange={e=>setEditActivity(e.currentTarget.value)} disabled={saving}/>{editError&&<Alert color="red">{editError}</Alert>}
       <Button h={52} loading={saving} disabled={!preview.length||preview.some(p=>p.stored||!p.editable)} onClick={()=>void saveConflict()}>Korrigierten Vorgang übertragen</Button>
       <Button h={48} variant="default" disabled={saving} onClick={()=>setEditing(null)}>Abbrechen</Button>
     </Stack></Modal>
