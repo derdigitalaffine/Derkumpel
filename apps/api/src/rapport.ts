@@ -18,7 +18,7 @@ type Member = Person & { groups: string[] };
 type State = 'draft'|'submitted'|'review'|'returned'|'closed';
 type SourceRef={id:number;subject:string;municipalities?:string[];orderNumber?:string};
 type FreeTask={requestId:string;leader:number;team:number[];permanent:boolean;orderNumber:string;createdBy:Person;createdAt:string};
-type GreenTask=SourceRef & {assignment?:FreeTask};
+type GreenTask=SourceRef & {municipalities:string[];assignment?:FreeTask};
 type Line = { sharedResources?:ResourceUsage[]; greenEventId?:number; sources?:SourceRef[]; id: string; start: string; end: string; kind: 'work'|'pause'; activity: string; order: string; machines: {name:string; minutes:number}[]; materials: {name:string; quantity:number; unit:string}[]; recordedBy: Person; recordedAt:string };
 type Correction={reportId:number;reason:string;createdBy:Person;createdAt:string};
 type Data = { storageState?:State; storageReviewed?:{by:Person;at:string}; storageReturnNote?:string; correction?:Correction; version:1; owner:Person; date:string; lines:Line[]; material:string; submitted?:{by:Person;at:string} };
@@ -555,7 +555,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const gather=(report:Report)=>{const map=new Map<number,string[]>();for(const l of report.lines){if(l.kind!=='work')continue;
       // Shared green resources are journaled once on the shared finish, never per person.
       const content=resourceText(l.machines,l.materials);if(!content.length)continue;
-      const ids=[...new Set([orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
+      const ids=[...new Set([l.greenEventId?0:orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
       for(const id of ids){const lines=map.get(id)??[];lines.push(...content,...(ids.length>1?['Gemeinsame Zuordnung zu '+ids.length+' Aufträgen; Ressourcen nicht mehrfach summieren.']:[]));map.set(id,lines);}
     }return map;};
     const current=gather(d);for(const [id,lines] of current)byTicket.set(id,lines);
@@ -601,7 +601,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   app.get('/api/rapport/materials',async r=>{const c=await context(r);return serialized(async()=>{const issue=await materialTicket(c);return {ticketId:issue.id,...parseMaterials(issue.description??'')};});});
   app.post('/api/rapport/materials',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');const b=obj(r.body);
-    if(b.kind!==undefined&&b.kind!=='machine'&&b.kind!=='material')fail(400,'Ungültiger Ressourcentyp');const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)}),...(b.kind==='machine'?{kind:'machine'}:{})};
+    if(b.kind!==undefined&&b.kind!=='machine'&&b.kind!=='material')fail(400,'Ungültiger Ressourcentyp');const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:b.kind==='machine'?'min':str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)}),...(b.kind==='machine'?{kind:'machine'}:{})};
     if(Object.values(item).some(v=>typeof v==='string'&&/[\r\n|]/.test(v))||parseMaterials(materialRow(item)).items.length!==1)fail(400,'Ungültige Materialzeile');
     return serialized(async()=>{const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen. Bitte in Redmine korrigieren.');
       const old=parsed.items.find(x=>x.code.toLowerCase()===item.code.toLowerCase());if(old){if(JSON.stringify(old)===JSON.stringify(item))return {ticketId:issue.id,...parsed};fail(409,'Materialkennung bereits vergeben');}
