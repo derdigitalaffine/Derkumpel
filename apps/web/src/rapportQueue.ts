@@ -1,6 +1,7 @@
 import { api, ApiError, AuthRequiredError } from './api';
 import { db,getSetting,type RapportCaptureBody,type RapportQueueRecord } from './db';
 import type { CurrentUser } from './types';
+export async function currentGreenEvents(){const actor=await getSetting<CurrentUser|null>('lastUser',null);if(!actor)return [];const events=await db.greenEvents.where('ownerId').equals(actor.id).sortBy('createdAt');const order={start:0,stop:1,finish:2};return events.sort((a,b)=>a.body.operationId===b.body.operationId?order[a.body.phase]-order[b.body.phase]:a.createdAt-b.createdAt);}
 export async function currentRapportQueue():Promise<RapportQueueRecord[]>{
   const actor=await getSetting<CurrentUser|null>('lastUser',null);
   if(!actor)return [];
@@ -12,11 +13,13 @@ export async function queueCapture(body:RapportCaptureBody){
 let running:Promise<void>|undefined;
 async function replay(){
   if(!navigator.onLine)return;
-  const rows=await currentRapportQueue();
-  if(!rows.some(r=>r.state!=='conflict'))return;
+  const rows=await currentRapportQueue(),events=await currentGreenEvents();
+  if(!rows.some(r=>r.state!=='conflict')&&!events.some(e=>e.state!=='conflict'))return;
   const me=await api.me();
+  for(const event of events){if(event.ownerId!==me.id||event.state==='conflict')continue;if(event.body.phase!=='start'&&await db.greenEvents.get(event.body.operationId+':start'))continue;if(event.body.phase==='finish'&&await db.greenEvents.get(event.body.operationId+':stop'))continue;try{await api.greenEvent(event.body);await db.greenEvents.delete(event.id);}catch(e){if(e instanceof AuthRequiredError)throw e;await db.greenEvents.update(event.id,{state:e instanceof ApiError&&[400,403,404,409,422].includes(e.status)?'conflict':'retrying',message:e instanceof Error?e.message:'Einsatzübertragung fehlgeschlagen'});}}
   for(const record of rows){
     if(record.ownerId!==me.id||record.state==='conflict')continue;
+    if(record.body.line.greenOperationId&&await db.greenEvents.get(record.body.line.greenOperationId+':finish'))continue;
     try{
       const response=await api.rapportCapture(record.body);
       const failures=response.results.filter(r=>!r.ok);
@@ -46,6 +49,7 @@ export async function rescheduleRapportQueue(id:string,start:string,end:string,d
   const r=(await currentRapportQueue()).find(x=>x.id===id);
   if(!r||r.state!=='conflict')throw Error('Vorgang ist nicht mehr im Konflikt.');
   // Check original operation before changing its identity, including unknown outcomes from older versions.
+  if(r.body.line.greenOperationId)throw Error('Dieser Vorgang stammt aus einem protokollierten Grünpflegeeinsatz. Bitte den bestehenden Tagesrapport prüfen; die tatsächlichen Einsatzzeitstempel bleiben unverändert.');
   const check=await api.rapportCaptureCheck(r.body);
   if(check.results.length!==r.body.employees.length||r.body.employees.some(id=>!check.results.some(x=>x.employee===id))||check.results.some(x=>x.stored||!x.editable))throw Error('Mindestens ein Vorgang wurde bereits gespeichert oder der Rapport ist gesperrt. Bitte erneut übertragen bzw. Tagesrapport prüfen.');
   if(!navigator.onLine)throw Error('Für die Konfliktauflösung ist eine Verbindung erforderlich.');
@@ -53,3 +57,5 @@ export async function rescheduleRapportQueue(id:string,start:string,end:string,d
   await db.transaction('rw',db.rapportQueue,async()=>{const current=await db.rapportQueue.get(id);if(!current||current.state!=='conflict'||JSON.stringify(current.body)!==JSON.stringify(r.body))throw Error('Vorgang wurde zwischenzeitlich geändert.');await db.rapportQueue.add({...r,id:newId,body,state:'pending',message:undefined,conflicts:undefined});await db.rapportQueue.delete(id);});
   await replayRapportQueue();
 }
+
+export async function retryGreenEvent(id:string){const event=(await currentGreenEvents()).find(e=>e.id===id);if(!event)return;await db.greenEvents.update(id,{state:'pending',message:undefined});await replayRapportQueue();}
