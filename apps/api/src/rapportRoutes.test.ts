@@ -45,7 +45,7 @@ const line={id:'capture-123',start:'2026-11-26T06:00:00.000Z',end:'2026-11-26T07
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Rapport REST boundary',()=>{
   it('deduplicates batches, enforces ownership, audits edits, and locks closed reports',async()=>{
-    const issues=mockRedmine(),app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e.message}));
+    const issues=mockRedmine(),app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));
     registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
     const inject=(method:'GET'|'POST'|'PUT',url:string,user:string,payload?:object)=>app.inject({method,url,headers:{'x-test-user':user},...(payload?{payload}:{})});
     try{
