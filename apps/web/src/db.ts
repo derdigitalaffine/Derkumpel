@@ -22,7 +22,7 @@ export type OutboxRecord = {
 };
 export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{greenOperationId?:string;sourceKind?:'green';sourceIds?:number[];id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
 export type RapportQueueRecord={id:string;ownerId:number;createdAt:number;body:RapportCaptureBody;state:'pending'|'retrying'|'conflict';message?:string;conflicts?:{employee:number;kind:'overlap';reportId?:number}[]};
-export type GreenEventBody={actorId:number;operationId:string;phase:'start'|'stop'|'finish';employees:number[];excluded?:number[];sourceIds:number[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;participation?:{employee:number;start:string;end:string}[];materials?:import('./green').MaterialUsage[]};
+export type GreenEventBody={actorId:number;leaderId?:number;operationId:string;phase:'start'|'stop'|'finish';employees:number[];excluded?:number[];sourceIds:number[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;participation?:{employee:number;start:string;end:string}[];materials?:import('./green').MaterialUsage[]};
 export type GreenEventRecord={id:string;ownerId:number;createdAt:number;body:GreenEventBody;state:'pending'|'retrying'|'conflict';message?:string};
 export type RapportLocalDraft={key:string;ownerId:number;report:RapportReport;reason:string;updatedAt:number};
 export type SettingRecord = { key: string; value: unknown };

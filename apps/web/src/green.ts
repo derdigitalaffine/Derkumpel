@@ -20,3 +20,6 @@ export function groupParticipation(windows:{employee:number;start:string;end:str
  for(const w of windows){const key=w.start+'|'+w.end;const g=groups.get(key);if(g)g.employees.push(w.employee);else groups.set(key,{employees:[w.employee],start:w.start,end:w.end});}
  return [...groups.values()].map(g=>({...g,employees:[...g.employees].sort((a,b)=>a-b)})).sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end));
 }
+
+/** Prefer the creator when actively participating; otherwise choose an active member. */
+export function crewLeaderId(team:number[],excluded:number[],actor:number,selected?:number):number{const active=team.filter(id=>!excluded.includes(id));if(active.includes(actor))return actor;if(selected&&active.includes(selected))return selected;return active.length===1?active[0]!:0;}

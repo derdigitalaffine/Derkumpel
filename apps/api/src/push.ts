@@ -126,7 +126,7 @@ export class PushRegistry {
       const payload = JSON.stringify({
         title: 'DerKumpel',
         body: greenAssignment ? 'Neuer Auftrag für die Kolonne' : `${labels[event.kind]} · Ticket #${event.issue_id}`,
-        url: greenAssignment ? '/green' : `/issues/${event.issue_id}`,
+        url: greenAssignment ? '/green/mine?order='+event.issue_id : `/issues/${event.issue_id}`,
         tag: `issue-${event.issue_id}`,
       });
       for (let start = 0; start < targets.length; start += 8) {

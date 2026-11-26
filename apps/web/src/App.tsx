@@ -12,6 +12,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RapportReviewPage } from './pages/RapportReviewPage';
 import { RapportBookPage } from './pages/RapportBookPage';
 import { CrewOverviewPage } from './pages/CrewOverviewPage';
+import { MyCrewPage } from './pages/MyCrewPage';
 import { GreenPage } from './pages/GreenPage';
 import { RapportPage } from './pages/RapportPage';
 import { WorkPage } from './pages/WorkPage';
@@ -78,6 +79,7 @@ export function App() {
     <Route path="/" element={<WorkPage />} />
     <Route path="/rapport" element={<RapportPage />} />
     <Route path="/green" element={<GreenPage />} />
+    <Route path="/green/mine" element={<MyCrewPage />} />
     <Route path="/green/crews" element={<CrewOverviewPage />} />
     <Route path="/rapport/book" element={<RapportBookPage />} />
     <Route path="/rapport/review" element={<RapportReviewPage />} />
