@@ -1,4 +1,4 @@
-export type CrewEvent={operationId:string;actor:{id:number;name:string};leader?:{id:number;name:string};employees:number[];excluded?:number[];sources:{id:number;subject:string;municipalities?:string[];orderNumber?:string}[];stoppedBy?:{id:number;name:string};startedAt:string;endedAt?:string;phase:'start'|'stop'|'finish';participation?:{employee:number;start:string;end:string}[];activity?:string};
+export type CrewEvent={operationId:string;actor:{id:number;name:string};leader?:{id:number;name:string};employees:number[];excluded?:number[];sources:{id:number;subject:string;municipalities?:string[];orderNumber?:string;ticket?:true}[];stoppedBy?:{id:number;name:string};startedAt:string;endedAt?:string;phase:'start'|'stop'|'finish';participation?:{employee:number;start:string;end:string}[];activity?:string};
 export type CrewRecord={id:number;updatedAt:string;event:CrewEvent};
 const day=(s:string)=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(s));
 const valid=(s:unknown):s is string=>typeof s==='string'&&Number.isFinite(Date.parse(s));

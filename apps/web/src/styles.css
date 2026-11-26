@@ -464,3 +464,18 @@ body {
 @media(max-width:47.999em){.mobile-content{padding-bottom:calc(82px + max(10px,env(safe-area-inset-bottom)));}.mobile-nav-grid{padding-left:max(5px,env(safe-area-inset-left));padding-right:max(5px,env(safe-area-inset-right));}}
 @media(max-width:340px){.mobile-nav-inner{font-size:.66rem;}.mobile-menu-link{gap:7px;padding:8px;}}
 @media(prefers-reduced-motion:reduce){.mobile-nav-item{transition:none!important;}}
+
+/* Work home: prioritize the actual issue list over shortcuts and duplicate statistics. */
+.work-home .page-heading{padding:2px 0;gap:4px;align-items:center;}
+.work-home .page-heading h1{font-size:1.5rem;line-height:1.2;}
+.work-home .quick-stats{max-width:none;gap:5px;}
+.work-home .quick-stat{min-height:52px;flex-direction:row;align-items:center;justify-content:center;gap:6px;padding:6px;border-radius:10px;}
+.work-home .quick-stat-count{font-size:1.15rem;}
+.work-home .quick-stat-label{font-size:.72rem;overflow-wrap:anywhere;}
+.work-home .work-toolbar{top:72px;border-radius:12px!important;}
+.work-home .work-toolbar input{min-width:0;}
+.work-home .work-toolbar .mantine-TextInput-root{min-width:0;}
+.work-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
+.work-secondary-grid .mantine-Button-root{min-height:48px;height:auto;padding:8px;white-space:normal;}
+.work-secondary-grid .mantine-Button-label{white-space:normal;line-height:1.2;text-align:left;}
+@media(max-width:340px){.work-home .quick-stat{gap:4px;padding:4px;}.work-home .quick-stat-label{font-size:.66rem;}.work-secondary-grid{grid-template-columns:1fr;}}

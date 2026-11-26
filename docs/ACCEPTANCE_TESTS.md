@@ -153,3 +153,11 @@
 
 ## Kolonnen-Push-Deeplinks
 - Kolonnenaufträge verwenden einen expliziten Typ, getrennte Tags und `/green/mine?order=<id>`. Bestehende Fenster wechseln über bestätigte Router-Nachrichten oder `WindowClient.navigate()`; bei Fehler oder null wird ein anderes Fenster bzw. ein neues Fenster verwendet. Ältere generische Kolonnenbenachrichtigungen werden erkannt. Fremd-URLs werden abgewiesen. Service-Worker-Skript aktualisiert sich ohne Verlust lokaler Daten; physische Push-Klicks separat testen.
+
+## Kompakte Startseite
+- Keine Modulbuttons und keine doppelte Auftragsstatistik oberhalb der Arbeitsliste. Kompakte Fälligkeitsfilter, Suche, Sortierung und Filter bleiben direkt erreichbar.
+- Zusätzliche Arbeitsbereiche unterhalb der Liste, weiterhin über die globale Navigation erreichbar. Disponentenfunktionen bleiben rollenabhängig. 320–430 px ohne horizontales Überlaufen prüfen.
+
+## Bestehende Aufträge laufenden Kolonnen zuweisen
+- Disponenten können offene, berechtigte Redmine-Tickets oder bestehende Katalogaufgaben auswählen. Keine Kopie des Originaltickets; private technische Referenz auf Einsatz und Original-ID. Originalstatus und Redmine-Zuweisung bleiben unverändert.
+- Redmine-Lesezugriff für alle beteiligten Personen wird vor Zuweisung geprüft; bei Übernahme erneut für den Kolonnenführer. Doppelte Zuordnung im selben Einsatz verhindert; Push führt zum Originalauftrag unter Meine Kolonne. Rapport enthält Original-ID; gemeinsame Ressourcen werden über den angemeldeten Benutzer im Originalticket kommentiert (Redmine-Rechte gelten weiterhin).

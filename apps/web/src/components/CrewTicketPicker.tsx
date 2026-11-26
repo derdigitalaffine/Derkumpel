@@ -1,0 +1,22 @@
+import {Alert,Badge,Button,Group,Paper,Stack,Text,TextInput,UnstyledButton} from '@mantine/core';
+import {useEffect,useState} from 'react';
+import {api} from '../api';
+import {UIIcon} from './UIIcon';
+import type {Crew} from '../crews';
+type Option={id:number;subject:string;detail:string;kind:'ticket'|'catalogue'};
+export function CrewTicketPicker({crew,selected,onSelect,disabled}:{crew:Crew;selected:Option|null;onSelect:(v:Option|null)=>void;disabled:boolean}){
+ const [query,setQuery]=useState(''),[mode,setMode]=useState<'ticket'|'catalogue'>('ticket'),[rows,setRows]=useState<Option[]>([]),[cursor,setCursor]=useState(0),[more,setMore]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');
+ const excluded=new Set([...crew.sources,...(crew.pendingOrders??[])].map(t=>t.id));
+ const load=async(offset:number)=>{setLoading(true);setError('');try{if(mode==='catalogue'){const result=await api.greenTasks();setRows(result.tasks.filter(t=>!t.assignment).map(t=>({id:t.id,subject:t.subject,detail:t.municipalities.join(' · '),kind:'catalogue'})));setMore(false);}else{const result=await api.browseIssues({status:'open',offset,limit:50});const incoming:Option[]=result.issues.map(t=>({id:t.id,subject:t.subject,detail:t.project.name+' · '+t.status.name,kind:'ticket'}));setRows(old=>offset?[...new Map([...old,...incoming].map(t=>[t.id,t])).values()]:incoming);setCursor(result.nextOffset??offset+result.issues.length);setMore(result.hasMore??false);}}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setLoading(false);}};
+ useEffect(()=>{setRows([]);setCursor(0);setMore(false);void load(0);},[mode]);
+ const lookup=async()=>{const id=Number(query.trim().replace(/^#/,''));if(!Number.isSafeInteger(id)||id<=0)return;setLoading(true);setError('');try{const t=await api.issue(id);const option:Option={id:t.id,subject:t.subject,detail:t.project.name+' · '+t.status.name,kind:'ticket'};if(excluded.has(id))throw Error('Bereits dieser Kolonne zugeordnet.');onSelect(option);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setLoading(false);}};
+ const q=query.trim().toLocaleLowerCase('de').replace(/^#/,'');const filtered=rows.filter(t=>!excluded.has(t.id)&&(!q||[String(t.id),t.subject,t.detail].join(' ').toLocaleLowerCase('de').includes(q)));
+ return <Stack gap="xs"><Group grow><Button variant={mode==='ticket'?'filled':'default'} disabled={disabled||loading} h={48} onClick={()=>{setMode('ticket');onSelect(null);}}>Redmine-Tickets</Button><Button variant={mode==='catalogue'?'filled':'default'} disabled={disabled||loading} h={48} onClick={()=>{setMode('catalogue');onSelect(null);}}>Grünpflegekatalog</Button></Group>
+ <TextInput aria-label="Ticket suchen" placeholder="Ticket-Nr., Titel, Projekt …" value={query} onChange={e=>setQuery(e.currentTarget.value)} leftSection={<UIIcon name="search"/>} disabled={disabled}/>
+ {mode==='ticket'&&/^#?[1-9][0-9]*$/.test(query.trim())&&<Button variant="light" h={48} loading={loading} disabled={disabled} onClick={()=>void lookup()}>Ticket direkt abrufen</Button>}
+ {error&&<Alert color="red">{error}</Alert>}
+ {selected&&<Paper withBorder p="sm"><Group justify="space-between"><Badge color="green">Ausgewählt · #{selected.id}</Badge><Button variant="subtle" disabled={disabled} onClick={()=>onSelect(null)}>Ändern</Button></Group><Text fw={700}>{selected.subject}</Text><Text size="xs" c="dimmed">{selected.detail}</Text></Paper>}
+ {!selected&&<><Text size="xs" c="dimmed">{mode==='ticket'?'Offene Tickets · Suche in geladenen Ergebnissen, Ticketnummer direkt abrufbar.':'Vorhandene Katalogaufgaben'}</Text>{filtered.map(t=><UnstyledButton key={t.id} disabled={disabled||loading} onClick={()=>onSelect(t)} style={{display:'block',width:'100%',textAlign:'left',minHeight:60}}><Paper withBorder p="sm"><Group wrap="nowrap"><Stack gap={3} style={{flex:1,minWidth:0}}><Text fw={650} size="sm" style={{overflowWrap:'anywhere'}}>#{t.id} · {t.subject}</Text><Text size="xs" c="dimmed">{t.detail}</Text></Stack><UIIcon name="chevron-right"/></Group></Paper></UnstyledButton>)}{!filtered.length&&!loading&&<Text size="sm" c="dimmed">Keine passenden geladenen Aufträge.</Text>}{loading&&<Text size="sm">Aufträge werden geladen …</Text>}{more&&<Button h={48} variant="light" loading={loading} disabled={disabled} onClick={()=>void load(cursor)}>Weitere Tickets laden</Button>}</>}
+ </Stack>;
+}
+export type {Option as CrewTicketOption};

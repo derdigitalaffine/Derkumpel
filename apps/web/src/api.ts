@@ -40,6 +40,7 @@ export const api = {
   materialRows:()=>request<import('./green').MaterialRows>('/api/rapport/materials'),
   classifyMaterial:(code:string,previous:'machine'|'material',kind:'machine'|'material',unit?:string)=>request<import('./green').MaterialRows>('/api/rapport/materials/'+encodeURIComponent(code)+'/classification',{method:'PUT',body:JSON.stringify({previous,kind,unit})}),
   addMaterialRow:(body:import('./green').MaterialItem)=>request<import('./green').MaterialRows>('/api/rapport/materials',{method:'POST',body:JSON.stringify(body)}),
+  greenAssignTicket:(startId:number,body:{requestId:string;ticketId:number;kind:'ticket'|'catalogue'})=>request<{id:number}>('/api/rapport/green/crews/'+startId+'/assign-ticket',{method:'POST',body:JSON.stringify(body)}),
   greenAssign:(body:import('./green').FreeOrderInput)=>request<{id:number}>('/api/rapport/green/assign',{method:'POST',body:JSON.stringify(body)}),
   greenActive:(operation:string)=>request<{baseSourceIds?:number[];accepted:import('./green').GreenTask[];pending:import('./green').GreenTask[]}>('/api/rapport/green/active/'+encodeURIComponent(operation)),
   greenAccept:(operation:string,id:number)=>request<{task:import('./green').GreenTask;baseSourceIds:number[]}>('/api/rapport/green/active/'+encodeURIComponent(operation)+'/accept/'+id,{method:'POST'}),

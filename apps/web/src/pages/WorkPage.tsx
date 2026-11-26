@@ -130,12 +130,11 @@ export function WorkPage() {
     { key: 'late', label: 'Überfällig', count: overdue },
   ];
 
-  return <Stack gap="md" maw={900} mx="auto" aria-busy={firstSyncLoading}>
+  return <Stack gap="xs" maw={900} mx="auto" className="work-home" aria-busy={firstSyncLoading}>
     <Group justify="space-between" align="flex-end" className="page-heading">
       <Box>
-        <Text className="page-kicker">Einsatzübersicht</Text>
         <Title order={1} size="h2">Meine Arbeit</Title>
-        <Text className="page-subtitle" mt={4}>Deine eigenen Aufträge und Gruppenaufträge</Text>
+        <Text size="xs" c="dimmed">{available.length} eigene und Gruppenaufträge</Text>
       </Box>
       {syncStatus?.lastSuccess && <Text size="xs" c="dimmed" fw={650} ta="right">
         <UIIcon name="check-circle" size={12} /> Stand {new Date(syncStatus.lastSuccess).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
@@ -144,21 +143,6 @@ export function WorkPage() {
 
     {syncStatus?.state==='error'&&<Alert color="orange" title="Auftragsabgleich nicht vollständig"><Stack gap="xs"><Text size="sm">{syncStatus.message??'Synchronisation fehlgeschlagen.'}</Text><Button variant="light" onClick={()=>void syncNow().catch(()=>undefined)}>Erneut synchronisieren</Button></Stack></Alert>}
     {records.length>0&&!available.length&&<Alert color="orange">Alle geladenen Aufträge sind durch die Tracker-Auswahl ausgeblendet. <Button component={Link} to="/settings" variant="subtle">Tracker prüfen</Button></Alert>}
-    <Group grow gap="xs"><Button component={Link} to="/green" h={56} variant="light" leftSection={<UIIcon name="leaf" size={20}/>}>Grünpflege</Button><Button component={Link} to="/rapport/book" h={56} variant="light" leftSection={<UIIcon name="clock" size={20}/>}>Rapporte</Button></Group>{dispatcher&&<Button component={Link} to="/green/crews" h={56} variant="filled" leftSection={<UIIcon name="user" size={20}/>}>Kolonnenübersicht</Button>}{dispatcher&&<Button component={Link} to="/rapport/review" h={56} variant="filled" leftSection={<UIIcon name="check-circle" size={20}/>}>Rapportabnahme</Button>}<Button component={Link} to="/rapport" h={48} variant="default">Arbeitszeit erfassen</Button><Button component={Link} to="/map" variant="subtle">Auftragskarte</Button>
-
-    <Box className="summary-strip">
-      <Group justify="space-between" align="flex-end" wrap="nowrap">
-        <Box>
-          <Text size="xs" fw={800} tt="uppercase" style={{ letterSpacing: '.1em', color: '#c9e4e8' }}>Aufträge im Blick</Text>
-          <Group align="baseline" gap={10} mt={8} wrap="nowrap">
-            <Text className="summary-count">{available.length}</Text>
-            <Text className="summary-caption">offene Aufträge für dich und deine Teams</Text>
-          </Group>
-        </Box>
-        <Box c="white" style={{ opacity: .78 }}><UIIcon name="work" size={34} strokeWidth={1.35} /></Box>
-      </Group>
-    </Box>
-
     <Box className="quick-stats" role="group" aria-label="Aufträge nach Fälligkeit eingrenzen">
       {quickOptions.map((option) => <UnstyledButton key={option.key} className="quick-stat"
         data-active={quickView === option.key} aria-pressed={quickView === option.key}
@@ -168,7 +152,7 @@ export function WorkPage() {
       </UnstyledButton>)}
     </Box>
 
-    <Paper withBorder p="sm" pos="sticky" top={78} className="work-toolbar">
+    <Paper withBorder p="xs" pos="sticky" top={72} className="work-toolbar">
       <Stack gap="xs">
         <Group gap="xs" wrap="nowrap">
           <TextInput
@@ -234,6 +218,20 @@ export function WorkPage() {
           : <Button variant="light" component={Link} to="/tickets" leftSection={<UIIcon name="tickets" size={17} />}>Ticket-Browser öffnen</Button>}
       </Stack>
     </Paper> : <Stack gap="sm">{issues.map((issue) => <IssueCard key={issue.id} issue={issue} />)}</Stack>}
+
+    <Paper component="section" withBorder p="sm" radius="lg" mt="sm" aria-label="Weitere Arbeitsbereiche">
+      <Stack gap="xs"><Title order={2} size="h4">Weitere Arbeitsbereiche</Title>
+        <div className="work-secondary-grid">
+          <Button component={Link} to="/green" variant="light" leftSection={<UIIcon name="leaf"/>}>Grünpflege</Button>
+          <Button component={Link} to="/green/mine" variant="light" leftSection={<UIIcon name="users"/>}>Meine Kolonne</Button>
+          <Button component={Link} to="/rapport/book" variant="light" leftSection={<UIIcon name="clock"/>}>Rapporte</Button>
+          <Button component={Link} to="/rapport" variant="light" leftSection={<UIIcon name="edit"/>}>Arbeitszeit erfassen</Button>
+          <Button component={Link} to="/map" variant="light" leftSection={<UIIcon name="map"/>}>Auftragskarte</Button>
+          {dispatcher&&<Button component={Link} to="/green/crews" variant="light" leftSection={<UIIcon name="users"/>}>Kolonnenübersicht</Button>}
+          {dispatcher&&<Button component={Link} to="/rapport/review" variant="light" leftSection={<UIIcon name="check-circle"/>}>Rapportabnahme</Button>}
+        </div>
+      </Stack>
+    </Paper>
 
     <Drawer opened={filterOpen} onClose={() => setFilterOpen(false)} title="Aufträge filtern" position="bottom" size="auto" padding="lg">
       <Stack gap="md" maw={700} mx="auto">
