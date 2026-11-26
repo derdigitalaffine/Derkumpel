@@ -20,3 +20,30 @@ export function weekStart(d:string){const weekday=new Date(d+'T12:00:00Z').getUT
 
 // Closed amendments supersede their predecessor only after approval. Draft amendments never double-count time.
 export function effectiveReports(reports:RapportReport[]){const superseded=new Set(reports.filter(r=>r.state==='closed'&&r.correction).map(r=>r.correction!.reportId));return reports.filter(r=>!superseded.has(r.id)&&(!r.correction||r.state==='closed'));}
+
+export function displayDate(date:string):string {
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  return match?match[3]+'.'+match[2]+'.'+match[1]:'–';
+}
+export function parseDisplayDate(value:string):string {
+  const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value.trim());
+  if(!m)return '';
+  const iso=m[3]+'-'+m[2]+'-'+m[1],t=Date.parse(iso+'T12:00:00Z');
+  return Number.isFinite(t)&&new Date(t).toISOString().slice(0,10)===iso?iso:'';
+}
+export function displayStamp(value:string):string {
+  const local=inputTime(value);
+  return local?displayDate(local.slice(0,10))+' · '+local.slice(11):'–';
+}
+export function weekdayLabel(date:string,short=false):string {
+  return new Intl.DateTimeFormat('de-DE',{weekday:short?'short':'long',timeZone:'UTC'}).format(new Date(date+'T12:00:00Z'));
+}
+export function shiftMonth(date:string,months:number):string {
+  const d=new Date(date.slice(0,7)+'-01T12:00:00Z');
+  d.setUTCMonth(d.getUTCMonth()+months);
+  return d.toISOString().slice(0,10);
+}
+export function primaryReport(reports:RapportReport[],date:string,ownerId:number):RapportReport|undefined {
+  const effective=effectiveReports(reports.filter(r=>r.date===date&&r.owner.id===ownerId));
+  return effective.length===1?effective[0]:undefined;
+}

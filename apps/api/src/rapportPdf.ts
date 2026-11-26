@@ -2,6 +2,7 @@
 type Row={sources?:{id:number;subject:string;municipalities?:string[]}[];start:string;end:string;kind:string;activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[]};
 type Input={correction?:{reportId:number;reason:string};date:string;owner:{name:string};state:string;lines:Row[];material:string;submitted?:{by:{name:string};at:string};reviewed?:{by:{name:string};at:string}};
 const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
+const fullStamp=(s:string|undefined)=>s?new Date(s).toLocaleString('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
 const local=(s:string)=>new Date(s).toLocaleTimeString('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'});
 const escape=(s:string)=>Array.from(s).map(c=>{const n=c.charCodeAt(0);return n>=32&&n<=255?'\\'+n.toString(8).padStart(3,'0'):'?';}).join('');
 const wrap=(s:string,n:number)=>{const text=s.replace(/\s+/g,' ');const result:string[]=[];for(let i=0;i<text.length;i+=n)result.push(text.slice(i,i+n));return result.length?result:[''];};
@@ -19,7 +20,7 @@ function reportPages(d:Input):string[] {
     for(let i=0;i<7;i++){const y=head-i*46;line(35,y-46,807,y-46);const row=rows[p*7+i];if(row)row.forEach((cell,j)=>cell.forEach((v,k)=>text(xs[j]!+4,y-12-k*10,v,8)));}
     text(35,136,'Materialverbrauch:',10,true);materialLines.slice(p*3,p*3+3).forEach((s,i)=>text(135,136-i*11,s,9));
     const sum=d.lines.filter(l=>l.kind==='work').reduce((n,l)=>n+Math.round((Date.parse(l.end)-Date.parse(l.start))/60000),0);
-    text(35,92,'Gesamtarbeitszeit: '+fmt(sum)+' h',11,true);text(35,62,'Datum: '+d.date,10);text(300,62,'Geprüft: '+(d.reviewed?.by.name??'—'),10);text(555,62,'Eingereicht: '+(d.submitted?.by.name??'—'),10);text(300,47,d.reviewed?.at??'',8);text(555,47,d.submitted?.at??'',8);line(295,43,525,43);line(550,43,807,43);text(295,32,'(Prüfer / Disponent)',8);text(550,32,'(Ausführender / Arbeitnehmer)',8);text(35,25,'DerKumpel · Seite '+(p+1)+' / '+total,8);pages.push(stream);
+    text(35,92,'Gesamtarbeitszeit: '+fmt(sum)+' h',11,true);text(35,62,'Datum: '+d.date.split('-').reverse().join('.'),10);text(300,62,'Geprüft: '+(d.reviewed?.by.name??'—'),10);text(555,62,'Eingereicht: '+(d.submitted?.by.name??'—'),10);text(300,47,fullStamp(d.reviewed?.at),8);text(555,47,fullStamp(d.submitted?.at),8);line(295,43,525,43);line(550,43,807,43);text(295,32,'(Prüfer / Disponent)',8);text(550,32,'(Ausführender / Arbeitnehmer)',8);text(35,25,'DerKumpel · Seite '+(p+1)+' / '+total,8);pages.push(stream);
   }
   return pages;
 }
