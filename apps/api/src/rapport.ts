@@ -1,7 +1,7 @@
 import {resourceText,usageText,noteMarker,orderTicket,type ResourceUsage} from './resourceNotes.js';
 import {holidaySubject,holidayTemplate,parseHolidays,validHolidayYear,overtimeRows,type HolidayCalendar,type Holiday} from './holidays.js';
 import { equipmentSubject,equipmentTemplate,equipmentNames,equipmentAdditions,equipmentKey } from './equipmentCatalog.js';
-import { materialSubject,materialTemplate,parseMaterials,materialRow,type MaterialItem } from './materialCatalog.js';
+import { materialSubject,materialTemplate,parseMaterials,materialRow,classifyMaterial,type MaterialItem } from './materialCatalog.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
@@ -489,6 +489,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     if(!Array.isArray(issue.journals))fail(409,'Kommentare von Ticket #'+id+' können nicht geprüft werden.');
     await get('/issues/'+id+'.json','PUT',{issue:{notes:body+'\n\n'+marker}});
     const {issue:updated}=await get<{issue:Issue}>(path);
+    if(updated.status.id!==issue.status.id)fail(409,'Status von Originalticket #'+id+' hat sich während der Kommentierung geändert. Bitte prüfen.');
     if(!updated.journals?.some(j=>j.notes?.includes(marker)))fail(409,'Ressourcenkommentar in Ticket #'+id+' wurde nicht bestätigt.');
   }
   async function reportResourceNotes(c:C,d:Report){
@@ -498,12 +499,12 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       // Shared green resources are journaled once on the shared finish, never per person.
       const content=resourceText(l.machines,l.materials);if(!content.length)continue;
       const ids=[...new Set([orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
-      for(const id of ids){const lines=map.get(id)??[];lines.push(...content);map.set(id,lines);}
+      for(const id of ids){const lines=map.get(id)??[];lines.push(...content,...(ids.length>1?['Gemeinsame Zuordnung zu '+ids.length+' Aufträgen; Ressourcen nicht mehrfach summieren.']:[]));map.set(id,lines);}
     }return map;};
     const current=gather(d);for(const [id,lines] of current)byTicket.set(id,lines);
     if(d.correction){const original=(await detail(c,d.correction.reportId)).r;for(const id of gather(original).keys())if(!byTicket.has(id))byTicket.set(id,[]);}
     for(const [id,lines] of byTicket){
-      const body='DerKumpel – Ressourcenrapport vom '+d.date.split('-').reverse().join('.')+' (Beleg #'+d.id+').'+(d.correction?' Korrektur – ersetzt die Ressourcenangaben aus Beleg #'+d.correction.reportId+'.':'')+'\n'+(lines.length?lines.join('\n'):'Keine Ressourcen mehr für diesen Auftrag rapportiert.')+'\nZur Abnahme erfasst; der Ticketstatus bleibt unverändert.';
+      const body='DerKumpel – Ressourcenrapport vom '+d.date.split('-').reverse().join('.')+' (Beleg #'+d.id+').'+(d.correction?' Korrektur – ersetzt die Ressourcenangaben aus Beleg #'+d.correction.reportId+'.':'')+'\n'+(lines.length?lines.join('\n'):'Keine Ressourcen mehr für diesen Auftrag rapportiert.')+'\nZur Abnahme erfasst; neuere Ressourcenangaben desselben Belegs ersetzen frühere Angaben. Der Ticketstatus bleibt unverändert.';
       try{await resourceJournal(personal,id,'rapport-'+d.id,body,i=>![c.s.project,c.s.catalogProject].includes(i.project.id)&&!internalRapportProject(i.project.id,i.project.name));}
       catch(e){fail(e instanceof RedmineError?e.status:502,'Ressourcenkommentar in Originalticket #'+id+' fehlgeschlagen: '+(e instanceof Error?e.message:String(e))+' – Rapport bleibt zur Prüfung offen. Erneut abschließen, bereits bestätigte Kommentare werden erkannt.');}
     }
@@ -550,6 +551,26 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
       await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description:(issue.description??'').trimEnd()+'\n'+materialRow(item)+'\n',notes:note(c,'Materialzeile ergänzt: '+item.code)}});
       const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');const result=parseMaterials(updated.description??'');if(!result.items.some(x=>JSON.stringify(x)===JSON.stringify(item)))fail(409,'Materialzeile nicht vollständig gespeichert');
+      return {ticketId:issue.id,...result};
+    });
+  });
+  app.put('/api/rapport/materials/:code/classification',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');
+    const code=(r.params as {code:string}).code,b=obj(r.body),kind=b.kind;
+    if(kind!=='machine'&&kind!=='material')fail(400,'Ungültiger Ressourcentyp');
+    if(b.previous!=='machine'&&b.previous!=='material')fail(400,'Bisheriger Ressourcentyp fehlt');
+    return serialized(async()=>{
+      const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');
+      if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen.');
+      const current=parsed.items.find(x=>x.code.toLowerCase()===code.toLowerCase());if(!current)fail(404,'Katalogeintrag nicht gefunden');
+      const old=current.kind??'material';if(old===kind)return {ticketId:issue.id,...parsed};
+      if(old!==b.previous)fail(409,'Ressourcentyp wurde bereits geändert. Bitte neu laden.');
+      const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
+      if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
+      const description=classifyMaterial(issue.description??'',code,kind);
+      await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description,notes:note(c,'Ressourcentyp geändert: '+current.code+' → '+(kind==='machine'?'Maschine':'Material'))}});
+      const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
+      const result=parseMaterials(updated.description??'');if((result.items.find(x=>x.code===current.code)?.kind??'material')!==kind||!result.items.some(x=>x.code===current.code))fail(409,'Ressourcentyp nicht übernommen');
       return {ticketId:issue.id,...result};
     });
   });
