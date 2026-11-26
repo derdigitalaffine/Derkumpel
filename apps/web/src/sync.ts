@@ -158,18 +158,17 @@ async function refreshMyWork(): Promise<void> {
   const activeIds = new Set(list.issues.map((issue) => issue.id));
   const existing = await db.issues.toArray();
   const now = Date.now();
-  const attachmentWarnings: AttachmentCacheWarning[] = [];
+  const attachmentWarnings: AttachmentCacheWarning[] = [];const detailWarnings:string[]=[];
   await db.transaction('rw', db.issues, async () => {
+    for (const summary of list.issues){const old=existing.find(r=>r.id===summary.id);await db.issues.put({id:summary.id,data:{...old?.data,...summary},active:1,staleSince:undefined,syncedAt:now});}
     for (const record of existing) {
       if (!activeIds.has(record.id) && record.active === 1) await db.issues.update(record.id, { active: 0, staleSince: now });
     }
   });
   await withLimit(list.issues, 4, async (summary) => {
-    const detail = await api.issue(summary.id);
-    await db.issues.put({ id: detail.id, data: detail, active: 1, staleSince: undefined, syncedAt: now });
-    await cacheAttachments(detail, attachmentWarnings);
+    try{const detail=await api.issue(summary.id);await db.issues.put({id:detail.id,data:detail,active:1,staleSince:undefined,syncedAt:now});await cacheAttachments(detail,attachmentWarnings);}catch(e){if(e instanceof AuthRequiredError)throw e;if(e instanceof ApiError&&[403,404].includes(e.status)){await db.issues.update(summary.id,{active:0,staleSince:now});}detailWarnings.push('#'+summary.id+': '+(e instanceof Error?e.message:'Details nicht verfügbar'));}
   });
-  await setSync('attachmentWarnings', attachmentWarnings);
+  await setSync('attachmentWarnings', attachmentWarnings);await setSync('ticketDetailWarnings',detailWarnings);
   await db.settings.put({ key: 'lastUser', value: list.user });
 }
 
@@ -190,10 +189,12 @@ async function doSync(): Promise<void> {
   if (!navigator.onLine) { await setSync('status', { state: 'offline', at: Date.now() }); return; }
   await setSync('status', { state: 'syncing', at: Date.now() });
   try {
-    await replayOutbox();
-    await replayRapportQueue();
-    await refreshMyWork();
-    await purgeStale();
+    // Normal ticket reads must not wait for rapport writes or a broken technical project.
+    const tasks=await Promise.allSettled([(async()=>{const result=await Promise.allSettled([refreshMyWork()]);if(result[0]?.status==='rejected'&&result[0].reason instanceof AuthRequiredError)throw result[0].reason;await replayOutbox();if(result[0]?.status==='rejected')throw result[0].reason;})(),replayRapportQueue()]);
+    const failures=tasks.filter((r):r is PromiseRejectedResult=>r.status==='rejected');
+    const auth=failures.find(r=>r.reason instanceof AuthRequiredError);if(auth)throw auth.reason;
+    if(tasks[0]?.status==='fulfilled')await purgeStale();
+    if(failures.length)throw Error(failures.map(r=>r.reason instanceof Error?r.reason.message:String(r.reason)).join('; '));
     await setSync('status', { state: 'idle', at: Date.now(), lastSuccess: Date.now() });
     await setSync('authRequired', false);
   } catch (error) {

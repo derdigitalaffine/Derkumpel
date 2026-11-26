@@ -41,7 +41,7 @@ export async function redmineJson<T>(config: AppConfig, creds: CredentialEnvelop
   if (text) {
     try { payload = JSON.parse(text); } catch { payload = { message: text.slice(0, 500) }; }
   }
-  if (!response.ok) throw new RedmineError(response.status, `Redmine request failed (${response.status})`, payload);
+  if (!response.ok) throw new RedmineError(response.status, `Redmine-Anfrage fehlgeschlagen (${response.status}): ${init.method??'GET'} ${path.split('?')[0]}`, payload);
   return payload as T;
 }
 
@@ -86,7 +86,8 @@ export async function fetchCurrentUser(config: AppConfig, creds: CredentialEnvel
 }
 
 const internalProjects=new Set<number>();
-export function rememberInternalRapportProject(id:number){internalProjects.add(id);}
+export function rememberInternalRapportProject(id:number){if(Number.isSafeInteger(id)&&id>0)internalProjects.add(id);}
+export function resetInternalRapportProjects(ids:number[]){internalProjects.clear();for(const id of ids)rememberInternalRapportProject(id);}
 export function internalRapportProject(id:unknown,name?:unknown):boolean {return internalProjects.has(Number(id))||[Number(process.env.RAPPORT_PROJECT_ID),Number(process.env.RAPPORT_CATALOG_PROJECT_ID)].filter(n=>n>0).includes(Number(id))||(typeof name==='string'&&['derkumpel','grünpflegearbeiten','grünfplegearbeiten','gruenpflegearbeiten','grunpflegearbeiten',(process.env.GREEN_PROJECT_IDENTIFIER||'').toLocaleLowerCase('de'),(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel').toLocaleLowerCase('de')].includes(name.toLocaleLowerCase('de')));}
 function ordinaryIssue(issue:Record<string,unknown>):boolean{return !internalRapportProject((issue.project as {id?:number}|undefined)?.id,(issue.project as {name?:string}|undefined)?.name);}
 
@@ -110,8 +111,9 @@ async function listAssigned(config: AppConfig, creds: CredentialEnvelope, assign
 
 export async function fetchMyWork(config: AppConfig, creds: CredentialEnvelope, status = 'open'): Promise<{ issues: Array<Record<string, unknown>>; user: RedmineUserResponse['user'] }> {
   const current = await fetchCurrentUser(config, creds);
-  const scopes = ['me', ...(current.user.groups ?? []).map((group) => String(group.id))];
-  const pages = await Promise.all(scopes.map((scope) => listAssigned(config, creds, scope, status)));
+  // Redmine 5.0.5 Query#statement expands assigned_to_id=me to user AND group IDs.
+  // Extra individual group queries are redundant and may fail on hidden groups.
+  const pages = [await listAssigned(config, creds, 'me', status)];
   const byId = new Map<number, Record<string, unknown>>();
   for (const issue of pages.flat()) {
     const id = Number(issue.id);
@@ -129,32 +131,25 @@ export async function fetchIssueBrowser(
   config: AppConfig,
   creds: CredentialEnvelope,
   options: { status: string; trackerId?: number; projectId?: number; offset: number; limit: number },
-): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number; filterUnavailable?: boolean }> {
-  const unavailable=()=>({issues:[],total_count:0,offset:options.offset,limit:options.limit,filterUnavailable:true});
+): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number; filterUnavailable?: boolean; nextOffset: number; hasMore:boolean; totalExact:boolean }> {
+  const unavailable=()=>({issues:[],total_count:0,offset:options.offset,limit:options.limit,filterUnavailable:true,nextOffset:options.offset,hasMore:false,totalExact:true});
   if(options.projectId&&internalRapportProject(options.projectId))return unavailable();
   try {
-  if(process.env.RAPPORT_STORAGE_MODE!=='disabled'||process.env.RAPPORT_ENABLED==='true') {
-    const all=await listIssues(config,creds,{status_id:options.status,include:'attachments,relations', ...(options.projectId?{project_id:String(options.projectId)}:{}), ...(options.trackerId?{tracker_id:String(options.trackerId)}:{})});
-    return {issues:all.slice(options.offset,options.offset+options.limit),total_count:all.length,offset:options.offset,limit:options.limit};
-  }
-  const params: Record<string, string> = {
-    status_id: options.status,
-    offset: String(options.offset),
-    limit: String(options.limit),
-    sort: 'updated_on:desc',
-    include: 'attachments,relations',
-  };
-  if (options.trackerId) params.tracker_id = String(options.trackerId);
-  if (options.projectId) params.project_id = String(options.projectId);
-  const qs = new URLSearchParams(params);
-  const page = await redmineJson<RedmineIssueList>(config, creds, `/issues.json?${qs.toString()}`);
-  return {
-    issues: page.issues,
-    total_count: page.total_count ?? page.issues.length,
-    offset: page.offset ?? options.offset,
-    limit: page.limit ?? options.limit,
-  };
-  } catch(e){if(options.projectId&&e instanceof RedmineError&&[403,404].includes(e.status))return unavailable();throw e;}
+    // Offset is the raw Redmine cursor. Fetch only the requested page (at most
+    // five upstream pages to skip technical records), never the entire archive.
+    const issues:Array<Record<string,unknown>>=[];let cursor=options.offset,rawTotal=cursor,hidden=0,more=false;
+    for(let pageIndex=0;pageIndex<5&&issues.length<options.limit;pageIndex++){
+      const params:Record<string,string>={status_id:options.status,offset:String(cursor),limit:String(options.limit-issues.length),sort:'updated_on:desc,id:desc',include:'attachments,relations'};
+      if(options.trackerId)params.tracker_id=String(options.trackerId);
+      if(options.projectId)params.project_id=String(options.projectId);
+      const page=await redmineJson<RedmineIssueList>(config,creds,'/issues.json?'+new URLSearchParams(params));
+      if(!Array.isArray(page.issues))throw new RedmineError(502,'Redmine lieferte keine Ticketliste.');
+      const visible=page.issues.filter(ordinaryIssue);issues.push(...visible);hidden+=page.issues.length-visible.length;cursor+=page.issues.length;
+      rawTotal=page.total_count??cursor;more=page.issues.length>0&&cursor<rawTotal;
+      if(!more)break;
+    }
+    return {issues,total_count:Math.max(issues.length,rawTotal-hidden),offset:options.offset,limit:options.limit,nextOffset:cursor,hasMore:more,totalExact:options.offset===0&&!more};
+  }catch(e){if(options.projectId&&e instanceof RedmineError&&[403,404].includes(e.status))return unavailable();throw e;}
 }
 
 const rapportGroups = ['Disponenten Bauhof', 'Bauhofmitarbeiter'] as const;

@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from './config.js';
 import type { CredentialEnvelope } from './session.js';
-import { fetchCurrentUser, redmineJson, RedmineError, rememberInternalRapportProject, internalRapportProject } from './redmine.js';
+import { fetchCurrentUser, redmineJson, RedmineError, rememberInternalRapportProject, resetInternalRapportProjects, internalRapportProject } from './redmine.js';
 import { rapportPdf, rapportPdfMany } from './rapportPdf.js';
 
 type Person = { id: number; name: string };
@@ -148,7 +148,6 @@ async function automaticSettings(config:AppConfig,selection:Selection):Promise<S
     project=(await admin<{project:StoreProject}>('/projects/'+matches[0]!.id+'.json?include=trackers,enabled_modules')).project;
   }
   if(!project||!Number.isSafeInteger(project.id)||(selection.storageProjectId?project.id!==selection.storageProjectId:configuredIdentifier&&project.identifier!==configuredIdentifier))fail(503,'Speicherprojekt nicht eindeutig.');
-  rememberInternalRapportProject(project.id);
   const [technicalResult,directoryResult,trackerResult,statusResult]=await Promise.all([service<{user:{id:number}}>('/users/current.json'),admin<{user:{id:number}}>('/users/current.json'),admin<{trackers:Tracker[]}>('/trackers.json'),admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')]);
   const technical=technicalResult.user,directoryActor=directoryResult.user;
   // Never remove existing project memberships. Refuse an unsafe shared storage project.
@@ -163,6 +162,7 @@ async function automaticSettings(config:AppConfig,selection:Selection):Promise<S
   if(project.enabled_modules&&!project.enabled_modules.some(m=>m.name==='issue_tracking'))await admin('/projects/'+project.id+'.json','PUT',{project:{enabled_module_names:[...project.enabled_modules.map(m=>m.name),'issue_tracking']}});
   const verified=(await service<{project:StoreProject}>('/projects/'+project.id+'.json?include=trackers,enabled_modules')).project;
   if(verified.is_public!==false||!verified.trackers?.some(t=>t.id===tracker!.id))fail(503,'Speicherprojekt-Konfiguration nicht übernommen.');
+  rememberInternalRapportProject(project.id);
   const status=tracker.default_status!.id;
   return {automatic:true,project:project.id,catalogProject:project.id,tracker:tracker.id,machineTracker:tracker.id,materialTracker:tracker.id,archiveTracker:tracker.id,correctionTracker:tracker.id,field:0,statuses:{draft:status,submitted:status,review:status,returned:status,closed:status},summaries:{},directoryKey,serviceKey};
 }
@@ -233,7 +233,8 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   const note=(c:C,action:string)=>'DerKumpel: '+action+' — '+c.actor.name+' (Benutzer #'+c.actor.id+') · '+new Date().toISOString();
   // The directory credential is used exclusively for this explicitly scoped metadata catalogue.
   const normalized=(name:string)=>name.trim().normalize('NFC').toLocaleLowerCase('de');
-  async function greenStore(c:C){
+  type GreenScope={s:Pick<Settings,'directoryKey'|'project'|'catalogProject'>};
+  async function greenStore(c:GreenScope){
     const admin=keyApi(config,c.s.directoryKey);
     function unique(items:{id:number;name:string}[],name:string,kind:string){
       const matches=items.filter(x=>normalized(x.name)===name);
@@ -257,8 +258,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       if(matches.length!==1)fail(503,'Technisches Projekt „Grünpflegearbeiten“ fehlt oder ist nicht eindeutig.');
       project=(await admin<{project:StoreProject}>('/projects/'+matches[0]!.id+'.json?include=trackers')).project;
     }
-    if(!project||!Number.isSafeInteger(project.id)||[c.s.project,c.s.catalogProject].includes(project.id))fail(503,'Grünpflegeprojekt muss vom Rapportspeicher getrennt sein.');
-    rememberInternalRapportProject(project.id);
+    if(!project||!Number.isSafeInteger(project.id)||[c.s.project,c.s.catalogProject].includes(project.id)||normalized(project.name)==='derkumpel'||normalized(project.identifier)===normalized(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel'))fail(503,'Grünpflegeprojekt muss vom Rapportspeicher getrennt sein.');
     const trackers=(await admin<{trackers:Tracker[]}>('/trackers.json')).trackers;
     const tracker=chosen.greenTrackerId??(process.env.GREEN_TRACKER_ID?idEnv('GREEN_TRACKER_ID'):unique(trackers,'grünpflegearbeiten','Tracker')??unique(trackers,'grünfplegearbeiten','Tracker'));
     if(!tracker||!project.trackers?.some(t=>t.id===tracker))fail(503,'Tracker „Grünpflegearbeiten“ fehlt im technischen Projekt.');
@@ -268,6 +268,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     // Catalogue records are usually created directly as closed (Erledigt), without a workflow.
     // Explicit wildcard is mandatory: Redmine otherwise defaults to open issues.
     if(project.is_public!==false)fail(503,'Grünpflegeprojekt muss privat sein.');
+    rememberInternalRapportProject(project.id);
     const issues=(await pages<Issue>(admin,'/issues.json?project_id='+project.id+'&tracker_id='+tracker+'&status_id=*')).filter(i=>i.project.id===project.id&&i.tracker.id===tracker);
     const tasks=issues.filter(i=>!i.subject.startsWith('DK Grünpflege-Einsatz ')).map(i=>{
       const raw=i.custom_fields?.find(f=>f.id===field)?.value;
@@ -276,7 +277,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     });
     return {admin,project,tracker,field,issues,tasks,defaultStatusId:trackers.find(t=>t.id===tracker)?.default_status?.id};
   }
-  async function greenCatalogue(c:C){return (await greenStore(c)).tasks;}
+  async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
   type GreenEvent={version:1;operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
@@ -380,7 +381,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: )/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
       if(setupPending)await setupPending.catch(()=>undefined);
       const ready=await automaticSettings(config,next);
-      await persistSelection(next);selection=next;setupCache={value:ready,until:Date.now()+30000};if(next.greenProjectId)rememberInternalRapportProject(next.greenProjectId);
+      await persistSelection(next);selection=next;setupCache={value:ready,until:Date.now()+30000};resetInternalRapportProjects([ready.project,ready.catalogProject,...(next.greenProjectId?[next.greenProjectId]:[])]);
       return {selection:next,storageProjectId:ready.project,storageTrackerId:ready.tracker};
     });
   });
@@ -396,8 +397,9 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   });
   app.get('/api/rapport/green/tasks',async (r,reply)=>{
     reply.header('Cache-Control','no-store');
-    const c=await context(r);
-    return {tasks:await greenCatalogue(c)};
+    await identity(r);const choice=selected(),known=setupCache?.value;
+    const s={directoryKey:adminKey(),project:known?.project??choice.storageProjectId??(Number(process.env.RAPPORT_PROJECT_ID)||0),catalogProject:known?.catalogProject??(Number(process.env.RAPPORT_CATALOG_PROJECT_ID)||0)};
+    return {tasks:await greenCatalogue({s})};
   });
   app.get('/api/rapport/users',async r=>{const c=await identity(r);return {users:[...c.members.values()].sort((a,b)=>a.name.localeCompare(b.name,'de')),missingGroups:[],dispatcher:c.dispatcher};});
   app.get('/api/rapport/reports',async r=>{const c=await context(r),q=r.query as {from?:string;to?:string;all?:string};if(!validDate(q.from)||!validDate(q.to)||q.from>q.to)return fail(400,'Ungültiger Zeitraum');if(q.all==='1'&&!c.dispatcher)return fail(403,'Nur Disponenten');const reports=(c.s.automatic?(await pages<Issue>(c.service,'/issues.json?project_id='+c.s.project+'&status_id=*')).filter(i=>i.project.id===c.s.project&&(/^Rapport [0-9]+ [0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(i.subject)||/^Rapportkorrektur [0-9]+$/.test(i.subject))):[...await list(c),...await listCorrections(c)]).map(i=>decode(i,c.s)).filter(d=>d.date>=q.from!&&d.date<=q.to!&&(q.all==='1'||d.owner.id===c.actor.id));return {reports,dispatcher:c.dispatcher};});
