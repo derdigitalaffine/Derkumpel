@@ -289,7 +289,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
   type Participation={employee:number;start:string;end:string};
   type Usage=ResourceUsage;
-  type GreenEvent={version:1;participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  type GreenEvent={version:1;excluded?:number[];participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
@@ -312,10 +312,12 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       const begun=await find(eventSubject(c.actor.id,operationId,'start'));if(!begun)fail(409,'Arbeitsbeginn noch nicht synchronisiert');
       if(begun.data.startedAt!==startedAt||JSON.stringify(begun.data.employees)!==JSON.stringify(employees)||JSON.stringify(begun.data.sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Einsatzdaten stimmen nicht mit Arbeitsbeginn überein');
       sources=begun.data.sources;
+      if(JSON.stringify(begun.data.excluded)!==JSON.stringify(b.excluded===undefined?undefined:[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b)))fail(409,'Kolonnenausnahmen stimmen nicht mit Arbeitsbeginn überein');
     }else if(prior){sources=prior.data.sources;}
     else{sources=ids.map(id=>{const task=store.tasks.find(t=>t.id===id);if(!task)fail(409,'Aufgabe #'+id+' wurde aus dem Katalog entfernt. Einsatz lokal erhalten.');return task;});}
     if(JSON.stringify(sources.map(s=>s.id))!==JSON.stringify(ids))fail(409,'Aufgabenauswahl stimmt nicht überein');
     const data:GreenEvent={version:1,operationId,actor:{id:c.actor.id,name:c.actor.name},employees,sources,startedAt,phase};
+    if(b.excluded!==undefined){const excluded=[...new Set(arr(b.excluded,100).map(Number))].sort((a,b)=>a-b);if(excluded.some(id=>!employees.includes(id)))fail(400,'Ungültige Ausnahme in der Kolonne');data.excluded=excluded;}
     if(phase!=='start'){
       data.endedAt=instant(b.endedAt);
       if(Date.parse(data.endedAt)<=Date.parse(startedAt))fail(400,'Ungültige tatsächliche Einsatzdauer');

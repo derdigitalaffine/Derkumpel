@@ -11,7 +11,7 @@ import {fromInputTime,inputTime,today,displayStamp,floorQuarterInstant,isQuarter
 import {filterTasks,municipalities,roundedDuration,participationWindows,groupParticipation,type GreenTask,type MaterialRows,type MaterialUsage,type ParticipationChoice} from '../green';
 import type {CurrentUser} from '../types';
 type Person={id:number;name:string;groups:string[]};
-type Session={participation?:Record<number,ParticipationChoice>;materials?:MaterialUsage[];team:number[];town:string;includeUnassigned:boolean;selected:number[];excluded:number[];start:string;duration:number;runningAt:number|null;note:string;operationId?:string;startedAt?:string;endedAt?:string;lockedTasks?:GreenTask[];lockedEmployees?:number[];step?:number};
+type Session={participation?:Record<number,ParticipationChoice>;materials?:MaterialUsage[];team:number[];town:string;includeUnassigned:boolean;selected:number[];excluded:number[];start:string;duration:number;runningAt:number|null;note:string;operationId?:string;startedAt?:string;endedAt?:string;lockedTasks?:GreenTask[];lockedEmployees?:number[];lockedExcluded?:number[];step?:number};
 const initial=():Session=>({team:[],town:'*',includeUnassigned:false,selected:[],excluded:[],start:today()+'T07:00',duration:0,runningAt:null,note:'',step:0});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'Anfrage fehlgeschlagen';
 const steps=['Kolonne','Ort','Aufgaben','Arbeitszeit','Kontrolle'];
@@ -46,10 +46,10 @@ export function GreenPage(){
   const updateMaterial=(i:number,patch:Partial<MaterialUsage>)=>void change({materials:(session.materials??[]).map((m,j)=>j===i?{...m,...patch}:m)});
   const missing=session.selected.some(id=>!tasks.some(t=>t.id===id));
   const toggle=(items:number[],id:number)=>items.includes(id)?items.filter(x=>x!==id):[...items,id];
-  const event=(s:Session,phase:'start'|'stop'|'finish'):GreenEventBody=>({actorId:actor,operationId:s.operationId!,phase,employees:s.lockedEmployees!,sourceIds:s.lockedTasks!.map(t=>t.id),startedAt:s.startedAt!});
+  const event=(s:Session,phase:'start'|'stop'|'finish'):GreenEventBody=>({actorId:actor,operationId:s.operationId!,phase,employees:s.lockedEmployees!,...(s.lockedExcluded!==undefined?{excluded:s.lockedExcluded}:{}),sourceIds:s.lockedTasks!.map(t=>t.id),startedAt:s.startedAt!});
   const enqueue=async(body:GreenEventBody)=>{const id=body.operationId+':'+body.phase;if(!await db.greenEvents.get(id))await db.greenEvents.add({id,ownerId:actor,createdAt:Date.now(),body,state:'pending'});};
   const begin=async()=>{if(action.current||!chosen.length||!activeRecipients.length||missing||locked)return;action.current=true;setBusy(true);setError('');try{
-    await flush();const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(floorQuarterInstant(startedAt)),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,step:3};
+    await flush();const t=Date.now(),startedAt=new Date(t).toISOString(),next={...ref.current,startedAt,runningAt:t,start:inputTime(floorQuarterInstant(startedAt)),duration:0,operationId:crypto.randomUUID(),lockedTasks:chosen,lockedEmployees:recipients,lockedExcluded:recipients.filter(id=>choices[id]?.mode==='none'),step:3};
     await db.transaction('rw',db.settings,db.greenEvents,async()=>{await enqueue(event(next,'start'));await db.settings.put({key:'green-session:'+actor,value:next});});ref.current=next;setSession(next);setNow(t);void replayRapportQueue().catch(()=>undefined);
   }catch(e){setError(errorText(e));}finally{action.current=false;setBusy(false);}};
   const stop=async()=>{if(action.current||!running)return;const t=Date.now();if(t<=session.runningAt!)return;action.current=true;setBusy(true);setError('');try{
@@ -61,7 +61,7 @@ export function GreenPage(){
     await flush();const start=fromInputTime(session.start);if(!start||!isQuarterInstant(start))throw Error('Bitte einen Rapportbeginn auf :00, :15, :30 oder :45 wählen.');const end=new Date(Date.parse(start)+session.duration*60000).toISOString();
     if(session.duration%15!==0||session.duration>1440)throw Error('Bitte Viertelstundenraster verwenden.');
     const operationId=session.operationId??crypto.randomUUID(),startedAt=session.startedAt??start,endedAt=session.endedAt??end;
-    const next={...session,operationId,startedAt,endedAt,lockedTasks:chosen,lockedEmployees:recipients};
+    const next={...session,operationId,startedAt,endedAt,lockedTasks:chosen,lockedEmployees:recipients,...(!session.startedAt?{lockedExcluded:recipients.filter(id=>choices[id]?.mode==='none')}:{})};
     const activity=('Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):'')).trim();
     const participation=participationWindows(recipients,choices,start,session.duration);const materials=session.materials??[];if(materials.some(m=>!m.name.trim()||!m.unit.trim()||!Number.isFinite(m.quantity)||m.quantity<=0||(m.kind==='machine'&&(!Number.isInteger(m.quantity)||m.quantity>1440))))throw Error('Bitte Material, Einheit und positive Menge ergänzen.');
     const bodies=groupParticipation(participation).map((p,i)=>({actorId:actor,date:session.start.slice(0,10),employees:p.employees,line:{id:operationId+'-'+i,start:p.start,end:p.end,kind:'work' as const,activity,order:'',greenOperationId:operationId,sourceKind:'green' as const,sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}}));
