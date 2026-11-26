@@ -27,7 +27,7 @@ export type PushConfig = { enabled: boolean; publicKey: string | null };
 export type DevicePushSubscription = { endpoint: string; keys: { p256dh: string; auth: string }; expirationTime?: number | null };
 
 export type TicketBrowserStatus = 'open' | 'closed' | '*';
-export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number; filterUnavailable?:boolean };
+export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number; filterUnavailable?:boolean; nextOffset?:number; hasMore?:boolean; totalExact?:boolean };
 
 export type TechnicalSelection={storageProjectId:number|null;storageTrackerId:number|null;greenProjectId:number|null;greenTrackerId:number|null;greenFieldId:number|null};
 export type TechnicalSettings={selection:TechnicalSelection;defaults:TechnicalSelection;projects:{id:number;name:string;identifier:string;isPublic:boolean}[];trackers:{id:number;name:string;defaultStatusId:number|null}[];fields:{id:number;name:string;format:string}[];mode:string};

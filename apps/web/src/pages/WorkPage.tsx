@@ -1,8 +1,9 @@
-import { ActionIcon, Badge, Box, Button, Drawer, Group, Menu, MultiSelect, Paper, ScrollArea, Skeleton, Stack, Text, TextInput, ThemeIcon, Title, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Box, Button, Drawer, Group, Menu, MultiSelect, Paper, ScrollArea, Skeleton, Stack, Text, TextInput, ThemeIcon, Title, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { syncNow } from '../sync';
 import { db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
 import { IssueCard, dueInfo } from '../components/IssueCard';
@@ -13,7 +14,7 @@ import type { NamedRef } from '../types';
 type SortKey = 'priority' | 'due' | 'updated' | 'subject';
 type QuickView = 'all' | 'today' | 'late';
 type SavedFilter = { id: string; name: string; search: string; sort: SortKey; statuses: string[]; priorities: string[]; trackers: string[] };
-type SyncStatus = { state?: string; lastSuccess?: number };
+type SyncStatus = { state?: string; lastSuccess?: number;message?:string };
 
 const sortLabels: Record<SortKey, string> = {
   priority: 'Priorität',
@@ -139,6 +140,8 @@ export function WorkPage() {
       </Text>}
     </Group>
 
+    {syncStatus?.state==='error'&&<Alert color="orange" title="Auftragsabgleich nicht vollständig"><Stack gap="xs"><Text size="sm">{syncStatus.message??'Synchronisation fehlgeschlagen.'}</Text><Button variant="light" onClick={()=>void syncNow().catch(()=>undefined)}>Erneut synchronisieren</Button></Stack></Alert>}
+    {records.length>0&&!available.length&&<Alert color="orange">Alle geladenen Aufträge sind durch die Tracker-Auswahl ausgeblendet. <Button component={Link} to="/settings" variant="subtle">Tracker prüfen</Button></Alert>}
     <Button component={Link} to="/green" h={52} variant="light">Grünpflege</Button>
     <Button component={Link} to="/rapport" h={52} variant="light" leftSection={<UIIcon name="clock" size={20} />}>Arbeitszeit / Rapport</Button>
 
@@ -223,8 +226,8 @@ export function WorkPage() {
       <Stack align="center" gap="sm" ta="center">
         <ThemeIcon size={52} radius="xl" variant="light" color={records.length === 0 ? 'green' : 'blue'}>{records.length === 0 ? '✓' : '⌕'}</ThemeIcon>
         <Box>
-          <Text fw={800}>{records.length === 0 ? 'Keine offenen Aufträge' : 'Keine passenden Aufträge'}</Text>
-          <Text size="sm" c="dimmed" mt={4}>{records.length === 0 ? 'Aktuell ist dir und deinen Gruppen nichts Offenes zugewiesen.' : 'Passe Suche oder Filter an.'}</Text>
+          <Text fw={800}>{records.length === 0 ? (syncStatus?.state==='error'?'Aufträge konnten nicht geladen werden':'Keine offenen Aufträge') : 'Keine passenden Aufträge'}</Text>
+          <Text size="sm" c="dimmed" mt={4}>{records.length === 0 ? (syncStatus?.state==='error'?'Bitte Abgleich erneut versuchen.':'Aktuell ist dir und deinen Gruppen nichts Offenes zugewiesen.') : 'Passe Suche oder Filter an.'}</Text>
         </Box>
         {records.length > 0 ? <Button variant="light" onClick={clearAll} leftSection={<UIIcon name="refresh" size={17} />}>Filter zurücksetzen</Button>
           : <Button variant="light" component={Link} to="/tickets" leftSection={<UIIcon name="tickets" size={17} />}>Ticket-Browser öffnen</Button>}

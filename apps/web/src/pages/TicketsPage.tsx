@@ -32,6 +32,7 @@ export function TicketsPage() {
   const [compact, setCompact] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
   const [total, setTotal] = useState(0);
+  const [nextOffset,setNextOffset]=useState(0),[more,setMore]=useState(false),[totalExact,setTotalExact]=useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
@@ -45,15 +46,12 @@ export function TicketsPage() {
     void (async()=>{
       const [saved,cachedTrackers,cachedProjects]=await Promise.all([getSetting<BrowserState>('ticketBrowser',{status:'*'}),getSetting<NamedRef[]>('trackersMeta',[]),getSetting<NamedRef[]>('projectsMeta',[])]);
       if(disposed)return;setTrackers(cachedTrackers);setProjects(cachedProjects);
-      let next=saved;
+      // Restore saved filter and load tickets immediately; metadata is optional.
+      setBrowser(saved);setInitialized(true);
       if(navigator.onLine){
-        const [tr,pr]=await Promise.allSettled([api.meta<TrackerList>('trackers'),api.meta<ProjectList>('projects')]);
-        if(disposed)return;
-        if(tr.status==='fulfilled'){setTrackers(tr.value.trackers);void setSetting('trackersMeta',tr.value.trackers);}
-        if(pr.status==='fulfilled'){setProjects(pr.value.projects);void setSetting('projectsMeta',pr.value.projects);
-          if(saved.projectId&&!pr.value.projects.some(p=>p.id===saved.projectId)){next={...next,projectId:undefined};setFilterNotice('Der gespeicherte Projektfilter ist nicht mehr verfügbar und wurde zurückgesetzt.');}}
+        void api.meta<TrackerList>('trackers').then(result=>{if(!disposed){setTrackers(result.trackers);void setSetting('trackersMeta',result.trackers);}}).catch(()=>undefined);
+        void api.meta<ProjectList>('projects').then(result=>{if(!disposed){setProjects(result.projects);void setSetting('projectsMeta',result.projects);}}).catch(()=>undefined);
       }
-      if(!disposed){setBrowser(next);setInitialized(true);}
     })().catch(()=>{if(!disposed)setInitialized(true);});
     return () => { disposed = true; };
   }, []);
@@ -68,7 +66,7 @@ export function TicketsPage() {
     }).sort((a, b) => b.updated_on.localeCompare(a.updated_on));
     if (token !== requestId.current) return;
     setIssues(local);
-    setTotal(local.length);
+    setTotal(local.length);setNextOffset(local.length);setMore(false);setTotalExact(true);
     setError('Offline: Es werden die auf diesem Gerät gespeicherten Tickets angezeigt.');
   };
 
@@ -80,14 +78,15 @@ export function TicketsPage() {
       return;
     }
     append ? setLoadingMore(true) : setLoading(true);
+    if(!append){setMore(false);setNextOffset(0);}
     setError('');
     try {
-      const offset = append ? issues.length : 0;
+      const offset = append ? nextOffset : 0;
       const page = await api.browseIssues({ status: state.status, trackerId: state.trackerId, projectId: state.projectId, offset, limit: PAGE_SIZE });
       if (token !== requestId.current) return; // stale filter responses must not override the new selection
-      if(page.filterUnavailable&&state.projectId){setIssues([]);setTotal(0);setProjects(old=>old.filter(p=>p.id!==state.projectId));setFilterNotice('Dieses Projekt ist nicht mehr verfügbar. Der Projektfilter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined}));return;}
+      if(page.filterUnavailable&&state.projectId){setIssues([]);setTotal(0);setProjects(old=>old.filter(p=>p.id!==state.projectId));setFilterNotice('Dieses Projekt ist nicht mehr verfügbar. Der Projektfilter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined,trackerId:undefined}));return;}
       setIssues((current) => append ? [...current, ...page.issues.filter(i=>!current.some(c=>c.id===i.id))] : page.issues);
-      setTotal(page.total_count);
+      setTotal(page.total_count);setNextOffset(page.nextOffset??offset+page.issues.length);setMore(page.hasMore??offset+page.issues.length<page.total_count);setTotalExact(page.totalExact??true);
     } catch (caught) {
       if (token !== requestId.current) return;
       if(caught instanceof AuthRequiredError||(caught instanceof ApiError&&[401,403,404].includes(caught.status))){setIssues([]);setTotal(0);if(state.projectId&&caught instanceof ApiError&&[403,404].includes(caught.status)){setFilterNotice('Projekt nicht zugänglich. Der Filter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined}));return;}}else if (!append) await loadOffline(state, token);
@@ -117,9 +116,9 @@ export function TicketsPage() {
   const updateBrowser = (patch: Partial<BrowserState>) => setBrowser((current) => ({ ...current, ...patch }));
   const trackerData = trackers.map((tracker) => ({ value: String(tracker.id), label: tracker.name }));
   const projectData = projects.map((project) => ({ value: String(project.id), label: project.name }));
-  const hasMore = navigator.onLine && issues.length < total;
+  const hasMore = navigator.onLine && more;
   const activeFilters = Number(Boolean(browser.projectId)) + Number(Boolean(browser.trackerId));
-  const resetFilters = () => { setSearch(''); setBrowser({ status: '*' }); };
+  const resetFilters = () => { setSearch(''); if(!browser.projectId&&!browser.trackerId&&browser.status==='*')void load(browser);else setBrowser({ status: '*' }); };
   const switchView = (value: boolean) => { setCompact(value); void setSetting('ticketCompactView', value); };
 
   return <Stack gap="md" maw={900} mx="auto">
@@ -129,7 +128,7 @@ export function TicketsPage() {
         <Title order={1} size="h2">Alle Tickets</Title>
         <Text className="page-subtitle" mt={4}>Auch erledigte und geschlossene Aufträge wiederfinden</Text>
       </Box>
-      <Badge variant="light" size="lg" color="brand">{total} Treffer</Badge>
+      <Badge variant="light" size="lg" color="brand">{totalExact?total:issues.length+'+'} Treffer</Badge>
     </Group>
 
     <Paper withBorder p="sm" className="surface-card ticket-browser-toolbar">
@@ -188,13 +187,13 @@ export function TicketsPage() {
       <Stack align="center" gap="sm" ta="center">
         <ThemeIcon size={52} radius="xl" variant="light"><UIIcon name="search" size={24} /></ThemeIcon>
         <Box><Text fw={800}>Keine passenden Tickets</Text><Text size="sm" c="dimmed" mt={4}>Status, Tracker, Projekt oder Suche anpassen.</Text></Box>
-        <Button variant="light" onClick={resetFilters}>Suche zurücksetzen</Button>
+        <Button variant="light" onClick={resetFilters}>Suche zurücksetzen</Button>{hasMore&&<Button variant="light" loading={loadingMore} onClick={()=>void load(browser,true)}>Weitere Tickets suchen</Button>}
       </Stack>
     </Paper> : <Stack gap="sm">
-      <Text size="xs" c="dimmed" fw={650}>{issues.length} von {total} Tickets geladen · Suche durchsucht nur geladene Tickets</Text>
+      <Text size="xs" c="dimmed" fw={650}>{issues.length} Tickets geladen{totalExact?' von '+total:''} · Suche durchsucht nur geladene Tickets</Text>
       {compact ? <Stack gap={0} className="compact-ticket-list">{filtered.map((issue) => <CompactIssueRow key={issue.id} issue={issue} />)}</Stack>
         : filtered.map((issue) => <IssueCard key={issue.id} issue={issue} />)}
-      {hasMore && <Button variant="light" loading={loadingMore} onClick={() => void load(browser, true)} leftSection={<UIIcon name="download" size={17} />}>Weitere {Math.min(PAGE_SIZE, total - issues.length)} laden{search ? ' (Suche erweitern)' : ''}</Button>}
+      {hasMore && <Button variant="light" loading={loadingMore} onClick={() => void load(browser, true)} leftSection={<UIIcon name="download" size={17} />}>Weitere Tickets laden{search ? ' (Suche erweitern)' : ''}</Button>}
     </Stack>}
   </Stack>;
 }
