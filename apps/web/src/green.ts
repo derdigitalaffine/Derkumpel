@@ -1,0 +1,3 @@
+export type GreenTask={id:number;subject:string;municipalities:string[]};
+export function filterTasks(tasks:GreenTask[],municipality:string,includeUnassigned:boolean,query:string){const q=query.trim().toLocaleLowerCase('de');return tasks.filter(t=>((municipality==='*'&&t.municipalities.length>0)||t.municipalities.includes(municipality)||(includeUnassigned&&!t.municipalities.length))&&(!q||('#'+t.id+' '+t.subject).toLocaleLowerCase('de').includes(q)));}
+export function roundedDuration(start:number,end:number){if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return 0;return Math.min(1440,Math.max(15,Math.round((end-start)/900000)*15));}

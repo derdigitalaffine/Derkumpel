@@ -1,18 +1,18 @@
 // A4 landscape, native PDF syntax, standard WinAnsi font; no extra service.
-type Row={start:string;end:string;kind:string;activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[]};
-type Input={date:string;owner:{name:string};state:string;lines:Row[];material:string;submitted?:{by:{name:string};at:string};reviewed?:{by:{name:string};at:string}};
+type Row={sources?:{id:number;subject:string}[];start:string;end:string;kind:string;activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[]};
+type Input={correction?:{reportId:number;reason:string};date:string;owner:{name:string};state:string;lines:Row[];material:string;submitted?:{by:{name:string};at:string};reviewed?:{by:{name:string};at:string}};
 const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
 const local=(s:string)=>new Date(s).toLocaleTimeString('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'});
 const escape=(s:string)=>Array.from(s).map(c=>{const n=c.charCodeAt(0);return n>=32&&n<=255?'\\'+n.toString(8).padStart(3,'0'):'?';}).join('');
 const wrap=(s:string,n:number)=>{const text=s.replace(/\s+/g,' ');const result:string[]=[];for(let i=0;i<text.length;i+=n)result.push(text.slice(i,i+n));return result.length?result:[''];};
 function reportPages(d:Input):string[] {
-  const rows=d.lines.flatMap(l=>{const cells=[d.date.split('-').reverse().join('.'),local(l.start),local(l.end),fmt(Math.round((Date.parse(l.end)-Date.parse(l.start))/60000)),l.kind==='pause'?'Pause':l.activity,l.machines.map(m=>m.name).join('; '),l.machines.map(m=>fmt(m.minutes)).join('; '),l.order];const wrapped=cells.map((c,i)=>wrap(c,[12,8,8,8,48,14,9,12][i]!));const count=Math.max(...wrapped.map(c=>c.length));return Array.from({length:Math.ceil(count/4)},(_,p)=>wrapped.map(c=>c.slice(p*4,p*4+4)));});
+  const rows=d.lines.flatMap(l=>{const cells=[d.date.split('-').reverse().join('.'),local(l.start),local(l.end),fmt(Math.round((Date.parse(l.end)-Date.parse(l.start))/60000)),l.kind==='pause'?'Pause':l.activity+(l.sources?.length?' — '+l.sources.map(s=>s.subject).join('; '):''),l.machines.map(m=>m.name).join('; '),l.machines.map(m=>fmt(m.minutes)).join('; '),[l.order,...(l.sources??[]).map(s=>'#'+s.id)].filter(Boolean).join(', ')];const wrapped=cells.map((c,i)=>wrap(c,[12,8,8,8,48,14,9,12][i]!));const count=Math.max(...wrapped.map(c=>c.length));return Array.from({length:Math.ceil(count/4)},(_,p)=>wrapped.map(c=>c.slice(p*4,p*4+4)));});
   const material=[d.material,...d.lines.flatMap(l=>l.materials.map(m=>m.name+' '+m.quantity+' '+m.unit))].filter(Boolean).join('; ');
   const materialLines=wrap(material,125);const pages:string[]=[];
   const total=Math.max(1,Math.ceil(rows.length/7),Math.ceil(materialLines.length/3));
   for(let p=0;p<total;p++){
     let stream='';const text=(x:number,y:number,s:string,size=10,bold=false)=>{stream+='BT /'+(bold?'F2':'F1')+' '+size+' Tf 1 0 0 1 '+x+' '+y+' Tm ('+escape(s)+') Tj ET\n';};const line=(x:number,y:number,x2:number,y2:number)=>{stream+=x+' '+y+' m '+x2+' '+y2+' l S\n';};
-    text(35,560,'Verbandsgemeinde Otterbach-Otterberg',13,true);text(35,534,'Rapportzettel',18,true);text(420,535,'Arbeitnehmer bzw. Leistender: '+d.owner.name,11,true);text(35,516,d.state==='closed'?'Abgeschlossen':'ENTWURF / '+({draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben'} as Record<string,string>)[d.state],10,true);
+    text(35,560,'Verbandsgemeinde Otterbach-Otterberg',13,true);text(35,534,'Rapportzettel',18,true);text(420,535,'Arbeitnehmer bzw. Leistender: '+d.owner.name,11,true);text(35,516,d.state==='closed'?'Abgeschlossen'+(d.correction?' · Korrektur zu #'+d.correction.reportId:''):'ENTWURF / '+({draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben'} as Record<string,string>)[d.state],10,true);
     const xs=[35,105,153,201,253,550,650,710,807];const top=505,head=475,bottom=153;
     for(const x of xs)line(x,x===153||x===201?491:top,x,bottom);line(xs[0]!,top,xs[8]!,top);line(xs[0]!,head,xs[8]!,head);
     text(155,496,'Arbeitszeit',9,true);['Datum','von','bis','Stunden','Art der Leistung','Maschinen','Stunden','Auftrag Nr.'].forEach((v,i)=>text(xs[i]!+4,482,v,9,true));text(554,496,'Einsatz',9,true);

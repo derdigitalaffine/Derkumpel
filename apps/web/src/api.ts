@@ -30,7 +30,11 @@ export type TicketBrowserStatus = 'open' | 'closed' | '*';
 export type TicketBrowserPage = { issues: RedmineIssue[]; total_count: number; offset: number; limit: number };
 
 export const api = {
+  greenTasks: () => request<{tasks:{id:number;subject:string;municipalities:string[]}[]}>('/api/rapport/green/tasks'),
+  rapportOrders: (q:string) => request<{orders:{id:number;subject:string}[]}>(`/api/rapport/orders?q=${encodeURIComponent(q)}`),
   rapportList: (from:string,to:string,all=false) => request<{reports:RapportReport[];dispatcher:boolean}>(`/api/rapport/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&all=${all?'1':'0'}`),
+  rapportCorrection: (id:number,reason:string) => request<RapportReport>(`/api/rapport/reports/${id}/correction`,{method:'POST',body:JSON.stringify({reason})}),
+  rapportArchive: (id:number) => request<{id:number}>(`/api/rapport/reports/${id}/archive`,{method:'POST'}),
   rapportDetail: (id:number) => request<RapportReport>(`/api/rapport/reports/${id}`),
   rapportSave: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}`,{method:'PUT',body:JSON.stringify(body)}),
   rapportTransition: (id:number,body:unknown) => request<RapportReport>(`/api/rapport/reports/${id}/transition`,{method:'POST',body:JSON.stringify(body)}),

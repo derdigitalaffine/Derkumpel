@@ -21,7 +21,7 @@ function SectionHeading({ icon, title, description }: { icon: IconName; title: s
 }
 
 export function SettingsPage() {
-  const pendingCount = useDexieLive(useCallback(async () => await db.outbox.count()+(await currentRapportQueue()).length, []), 0);
+  const pendingCount = useDexieLive(useCallback(async () => await db.outbox.count()+(await currentRapportQueue()).length+await db.rapportDrafts.where('ownerId').equals((await getSetting<{id:number}|null>('lastUser',null))?.id??0).count(), []), 0);
   const [retention, setRetention] = useState(30);
   const [trackers, setTrackers] = useState<NamedRef[]>([]);
   const [excluded, setExcluded] = useState<number[]>([]);
