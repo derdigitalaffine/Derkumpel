@@ -89,7 +89,7 @@ export function TicketsPage() {
       setTotal(page.total_count);setNextOffset(page.nextOffset??offset+page.issues.length);setMore(page.hasMore??offset+page.issues.length<page.total_count);setTotalExact(page.totalExact??true);
     } catch (caught) {
       if (token !== requestId.current) return;
-      if(caught instanceof AuthRequiredError||(caught instanceof ApiError&&[401,403,404].includes(caught.status))){setIssues([]);setTotal(0);if(state.projectId&&caught instanceof ApiError&&[403,404].includes(caught.status)){setFilterNotice('Projekt nicht zugänglich. Der Filter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined}));return;}}else if (!append) await loadOffline(state, token);
+      if(caught instanceof AuthRequiredError||(caught instanceof ApiError&&[401,403,404].includes(caught.status))){setIssues([]);setTotal(0);if(state.projectId&&caught instanceof ApiError&&[403,404].includes(caught.status)){setFilterNotice('Projekt nicht zugänglich. Der Filter wurde zurückgesetzt.');setBrowser(old=>({...old,projectId:undefined,trackerId:undefined}));return;}}else if (!append) await loadOffline(state, token);
       if(token!==requestId.current)return;
       setError(caught instanceof Error ? `Ticketbrowser konnte nicht aktualisiert werden: ${caught.message}` : 'Ticketbrowser konnte nicht aktualisiert werden.');
     } finally {

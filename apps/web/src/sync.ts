@@ -190,7 +190,7 @@ async function doSync(): Promise<void> {
   await setSync('status', { state: 'syncing', at: Date.now() });
   try {
     // Normal ticket reads must not wait for rapport writes or a broken technical project.
-    const tasks=await Promise.allSettled([refreshMyWork(),(async()=>{await replayOutbox();await replayRapportQueue();})()]);
+    const tasks=await Promise.allSettled([(async()=>{const result=await Promise.allSettled([refreshMyWork()]);if(result[0]?.status==='rejected'&&result[0].reason instanceof AuthRequiredError)throw result[0].reason;await replayOutbox();if(result[0]?.status==='rejected')throw result[0].reason;})(),replayRapportQueue()]);
     const failures=tasks.filter((r):r is PromiseRejectedResult=>r.status==='rejected');
     const auth=failures.find(r=>r.reason instanceof AuthRequiredError);if(auth)throw auth.reason;
     if(tasks[0]?.status==='fulfilled')await purgeStale();
