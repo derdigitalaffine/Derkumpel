@@ -76,12 +76,19 @@ function description(d:Data) {
   const safe=(s:string)=>s.replace(/[\r\n|]/g,' ').replace(/</g,'‹').replace(/>/g,'›');
   return [d.correction?'Korrektur zu Rapport #'+d.correction.reportId+' — '+safe(d.correction.reason):'Tagesrapport '+d.date+' — '+safe(d.owner.name),'','| Von | Bis | Stunden | Art der Leistung | Auftrag |','| --- | --- | --- | --- | --- |',...d.lines.map(l=>'| '+[time(l.start),time(l.end),fmt(duration(l)),safe(l.kind==='pause'?'Pause':l.activity),safe([l.order,...(l.sources??[]).map(s=>'#'+s.id)].filter(Boolean).join(', '))].join(' | ')+' |'),'','Arbeitszeit: '+fmt(summary(d).work)+' h; explizite Pausen: '+fmt(summary(d).pause)+' h','Material: '+safe(d.material),...d.lines.flatMap(l=>[...l.machines.map(m=>'Maschine: '+safe(m.name)+' '+fmt(m.minutes)+' h'),...l.materials.map(m=>'Material: '+safe(m.name)+' '+m.quantity+' '+safe(m.unit))])].join('\n');
 }
+// Redmine's Issue#description= normalizes LF and CR to CRLF.
+function automaticRapportJson(description:unknown):string {
+  if(typeof description!=='string')throw Error('missing description');
+  const match=/^DERKUMPEL-RAPPORT\/1(?:\r\n|\n|\r)/.exec(description);
+  if(!match)throw Error('missing storage marker');
+  return description.slice(match[0].length);
+}
 function decode(i:Issue,s:Settings):Report {
   if(i.project.id!==s.project||(!s.automatic&&![s.tracker,s.correctionTracker].includes(i.tracker.id)))return fail(404,'Rapport nicht gefunden');
   if(s.automatic&&!/^Rapport [0-9]+ [0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(i.subject)&&!/^Rapportkorrektur [0-9]+$/.test(i.subject))fail(404,'Rapport nicht gefunden');
   let state=states.find(k=>s.statuses[k]===i.status.id);
   let d:Data;
-  try {d=JSON.parse(s.automatic?(i.description??'').startsWith('DERKUMPEL-RAPPORT/1\n')?(i.description??'').slice('DERKUMPEL-RAPPORT/1\n'.length):'':String(i.custom_fields?.find(c=>c.id===s.field)?.value??'')) as Data;if(d.version!==1||!validDate(d.date)||!Number.isInteger(d.owner.id)||!Array.isArray(d.lines))throw Error('invalid');if((s.automatic?i.subject.startsWith('Rapportkorrektur '):i.tracker.id===s.correctionTracker)&&(!d.correction||!Number.isSafeInteger(d.correction.reportId)||d.correction.reportId===i.id))throw Error('invalid correction');if((s.automatic?!i.subject.startsWith('Rapportkorrektur '):i.tracker.id===s.tracker)&&d.correction)throw Error('unexpected correction');}catch{return fail(409,'Rapportdaten in Redmine ungültig');}
+  try {d=JSON.parse(s.automatic?automaticRapportJson(i.description):String(i.custom_fields?.find(c=>c.id===s.field)?.value??'')) as Data;if(d.version!==1||!validDate(d.date)||!Number.isInteger(d.owner.id)||!Array.isArray(d.lines))throw Error('invalid');if(s.automatic&&!d.correction&&i.subject!=='Rapport '+d.owner.id+' '+d.date)throw Error('identity mismatch');if((s.automatic?i.subject.startsWith('Rapportkorrektur '):i.tracker.id===s.correctionTracker)&&(!d.correction||!Number.isSafeInteger(d.correction.reportId)||d.correction.reportId===i.id))throw Error('invalid correction');if((s.automatic?!i.subject.startsWith('Rapportkorrektur '):i.tracker.id===s.tracker)&&d.correction)throw Error('unexpected correction');}catch{return fail(409,'Rapportdaten in Redmine ungültig');}
   if(s.automatic){if(!/^Rapport (?:[0-9]+) \d{4}-\d{2}-\d{2}$/.test(i.subject)&&!/^Rapportkorrektur [0-9]+$/.test(i.subject))fail(404,'Rapport nicht gefunden');state=d.storageState;if(!state||!states.includes(state))fail(409,'Ungültiger Rapportstatus');return {...d,id:i.id,state,revision:revision(i),reviewed:d.storageReviewed,returnNote:d.storageReturnNote,history:(i.journals??[]).filter(j=>j.notes&&!j.private_notes).map(j=>({by:j.user?.name??'Redmine',at:j.created_on,note:j.notes!}))};}
   if(!state)fail(409,'Unbekannter Rapportstatus');
   const review=[...(i.journals??[])].reverse().find(j=>j.details?.some(x=>x.property==='attr'&&x.name==='status_id'&&Number(x.new_value)===s.statuses.closed));

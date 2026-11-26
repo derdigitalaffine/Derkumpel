@@ -8,6 +8,7 @@ type Person={id:number;name:string};
 type FixtureIssue={id:number;subject:string;project:{id:number};tracker:{id:number};status:{id:number};updated_on:string;custom_fields:{id:number;value:string}[];journals:{user:Person;created_on:string;notes:string;private_notes?:boolean;details:{property:string;name:string;new_value:string}[]}[];description:string};
 const people:Record<string,Person>={alice:{id:1,name:'Alice'},bob:{id:2,name:'Bob'},dispatcher:{id:3,name:'Disponent'},outsider:{id:4,name:'Extern'}};
 const cfg={redmineBaseUrl:new URL('https://redmine.example.invalid'),redmineTimeoutMs:3000} as AppConfig;
+const normalizeDescription=(value:string)=>value.replace(/\r\n|\r|\n/g,'\r\n');
 const response=(body:unknown,status=200)=>status===204?new Response(null,{status}):Response.json(body,{status});
 function mockRedmine(deletedTasks=new Set<number>()){
   for(const [k,v] of Object.entries({RAPPORT_STORAGE_MODE:'native',RAPPORT_ENABLED:'true',RAPPORT_DIRECTORY_KEY:'directory',RAPPORT_SERVICE_KEY:'service',RAPPORT_PROJECT_ID:'10',RAPPORT_CATALOG_PROJECT_ID:'20',RAPPORT_TRACKER_ID:'11',RAPPORT_MACHINE_TRACKER_ID:'21',RAPPORT_MATERIAL_TRACKER_ID:'22',RAPPORT_DATA_FIELD_ID:'5',RAPPORT_STATUS_DRAFT:'1',RAPPORT_STATUS_SUBMITTED:'2',RAPPORT_STATUS_REVIEW:'3',RAPPORT_STATUS_RETURNED:'4',RAPPORT_STATUS_CLOSED:'5'}))vi.stubEnv(k,v);
@@ -39,7 +40,7 @@ function mockRedmine(deletedTasks=new Set<number>()){
     if(url.pathname==='/issues.json'&&key==='service'){
       if(method==='GET'){const tracker=url.searchParams.get('tracker_id');const visible=[...issues.values()].filter(i=>!tracker||String(i.tracker.id)===tracker);return response({issues:visible,total_count:visible.length});}
       if(method==='POST'){
-        const b=JSON.parse(String(init.body)).issue;const i:FixtureIssue={id:100+issues.size,subject:b.subject,project:{id:b.project_id},tracker:{id:b.tracker_id},status:{id:b.status_id??1},custom_fields:b.custom_fields??[],description:b.description,updated_on:new Date().toISOString(),journals:[]};issues.set(i.id,i);return response({issue:i},201);
+        const b=JSON.parse(String(init.body)).issue;const i:FixtureIssue={id:100+issues.size,subject:b.subject,project:{id:b.project_id},tracker:{id:b.tracker_id},status:{id:b.status_id??1},custom_fields:b.custom_fields??[],description:normalizeDescription(b.description),updated_on:new Date().toISOString(),journals:[]};issues.set(i.id,i);return response({issue:i},201);
       }
     }
     const match=/^\/issues\/(\d+)\.json$/.exec(url.pathname);
@@ -48,7 +49,7 @@ function mockRedmine(deletedTasks=new Set<number>()){
       const allowed=key==='service'?(issue.status.id===1||issue.status.id===4?[2]:[]):issue.status.id===2?[3,4,5]:issue.status.id===3?[4,5]:[];
       if(method==='GET')return response({issue:{...issue,allowed_statuses:allowed.map(id=>({id}))}});
       if(method==='PUT'){if(issue.status.id===5)return response({},403);const b=JSON.parse(String(init.body)).issue;if(b.status_id&&!allowed.includes(b.status_id))return response({},422);
-        if(b.custom_fields){if(key!=='service')return response({},403);issue.custom_fields=b.custom_fields;}if(b.description!==undefined){if(key!=='service')return response({},403);issue.description=b.description;}
+        if(b.custom_fields){if(key!=='service')return response({},403);issue.custom_fields=b.custom_fields;}if(b.description!==undefined){if(key!=='service')return response({},403);issue.description=normalizeDescription(b.description);}
         const details=b.status_id?[{property:'attr',name:'status_id',new_value:String(b.status_id)}]:[];
         if(b.status_id)issue.status={id:b.status_id};issue.updated_on=new Date().toISOString();
         issue.journals.push({user:person??{id:99,name:'Service'},created_on:issue.updated_on,notes:b.notes??'',details});return response(null,204);}
@@ -60,6 +61,27 @@ function mockRedmine(deletedTasks=new Set<number>()){
 const line={id:'capture-123',start:'2026-11-26T06:00:00.000Z',end:'2026-11-26T07:00:00.000Z',kind:'work',activity:'Grünpflege',order:'',machines:[],materials:[]};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Rapport REST boundary',()=>{
+  it('accepts Redmine CRLF descriptions and retries an already stored 30-minute capture exactly once',async()=>{
+    const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');
+    app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));
+    registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));
+    const headers={'x-test-user':'alice'};
+    const body={actorId:1,date:'2026-11-26',employees:[1],line:{...line,id:'capture-crlf-30',end:'2026-11-26T06:30:00.000Z',activity:''}};
+    const capture=()=>app.inject({method:'POST',url:'/api/rapport/capture',headers,payload:body});
+    try{
+      const first=await capture();expect(first.json().results[0].ok).toBe(true);
+      expect(issues.get(100)?.description.startsWith('DERKUMPEL-RAPPORT/1\r\n')).toBe(true);
+      const retry=await capture();expect(retry.json().results[0]).toMatchObject({ok:true,reportId:100});
+      expect(issues.size).toBe(1);
+      const report=await app.inject({method:'GET',url:'/api/rapport/reports/100',headers});expect(report.statusCode).toBe(200);expect(report.json().lines).toHaveLength(1);expect(report.json().lines[0].activity).toBe('');
+      const listed=await app.inject({method:'GET',url:'/api/rapport/reports?from=2026-11-26&to=2026-11-26',headers});expect(listed.statusCode).toBe(200);expect(listed.json().reports).toHaveLength(1);
+      const updated=await app.inject({method:'PUT',url:'/api/rapport/reports/100',headers,payload:{revision:report.json().revision,lines:report.json().lines,material:'Test'}});expect(updated.statusCode).toBe(200);
+      expect((await capture()).json().results[0].ok).toBe(true);expect(issues.size).toBe(1);
+      // Do not silently overwrite genuinely damaged records.
+      issues.get(100)!.description='DERKUMPEL-RAPPORT/1\r\n{invalid';
+      expect((await capture()).json().results[0].ok).toBe(false);expect(issues.size).toBe(1);expect(issues.get(100)!.description.endsWith('{invalid')).toBe(true);
+    }finally{await app.close();}
+  });
   it('auto-configures a private storage project without memberships and runs all workflow steps with only the service key',async()=>{const issues=mockRedmine(),app=Fastify();vi.stubEnv('RAPPORT_STORAGE_MODE','automatic');vi.stubEnv('RAPPORT_ENABLED','false');vi.stubEnv('RAPPORT_DIRECTORY_KEY','');vi.stubEnv('DERKUMPEL_ADMIN_API_KEY','');vi.stubEnv('PUSH_POLL_API_KEY','directory');app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));const send=(method:'GET'|'POST'|'PUT',url:string,user:string,payload?:object)=>app.inject({method,url,headers:{'x-test-user':user},...(payload?{payload}:{})});try{const roster=await send('GET','/api/rapport/users','alice');expect(roster.statusCode).toBe(200);expect(roster.json().users).toHaveLength(3);const b={actorId:1,date:'2026-11-26',employees:[1,2],line};expect((await send('POST','/api/rapport/capture','alice',b)).json().results.every((r:{ok:boolean})=>r.ok)).toBe(true);expect(issues.size).toBe(2);expect(issues.get(100)?.custom_fields).toEqual([]);expect(issues.get(100)?.description).toContain('DERKUMPEL-RAPPORT/1');const own=(await send('GET','/api/rapport/reports/100','alice')).json();expect(own.state).toBe('draft');expect((await send('GET','/api/rapport/reports/101','alice')).statusCode).toBe(404);const submitted=(await send('POST','/api/rapport/reports/100/transition','alice',{revision:own.revision,action:'submit'})).json();expect(submitted.state).toBe('submitted');const closed=(await send('POST','/api/rapport/reports/100/transition','dispatcher',{revision:submitted.revision,action:'close'})).json();expect(closed.state).toBe('closed');expect(closed.reviewed.by.id).toBe(3);expect(issues.get(100)?.status.id).toBe(1);expect((await send('PUT','/api/rapport/reports/100','dispatcher',{revision:closed.revision,lines:[],material:'',reason:'Test'})).statusCode).toBe(409);const correction=await send('POST','/api/rapport/reports/100/correction','dispatcher',{reason:'Test'});expect(correction.statusCode).toBe(200);expect(correction.json().correction.reportId).toBe(100);expect((await send('POST','/api/rapport/catalog','dispatcher',{kind:'machine',name:'Traktor'})).statusCode).toBe(200);const catalog=await send('GET','/api/rapport/catalog','alice');expect(catalog.json().machines).toEqual([{id:103,name:'Traktor'}]);const list=await send('GET','/api/rapport/reports?from=2026-11-26&to=2026-11-26','alice');expect(list.json().reports).toHaveLength(2);expect((await send('GET','/api/rapport/users','outsider')).statusCode).toBe(403);}finally{await app.close();}});
   it('discovers Grünpflegearbeiten and the exact Ort issue field without configured IDs',async()=>{mockRedmine();vi.stubEnv('GREEN_TRACKER_ID','');vi.stubEnv('GREEN_MUNICIPALITY_FIELD_ID','');vi.stubEnv('GREEN_ENABLED','false');const app=Fastify();app.setErrorHandler((e,_,reply)=>reply.code(e instanceof RedmineError?e.status:500).send({message:e instanceof Error?e.message:String(e)}));registerRapport(app,cfg,r=>({version:1,username:String(r.headers['x-test-user']),password:'test',issuedAt:0}));try{const result=await app.inject({method:'GET',url:'/api/rapport/green/tasks',headers:{'x-test-user':'alice'}});expect(result.statusCode).toBe(200);expect(result.json().tasks).toEqual([{id:701,subject:'Friedhof',municipalities:['Otterberg']},{id:702,subject:'Hecke',municipalities:[]}]);}finally{await app.close();}});
   it('reads closed catalogue tickets without workflows and preserves snapshots after deletion',async()=>{
