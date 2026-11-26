@@ -34,7 +34,7 @@ export function GreenPage(){
     try{
       const cleared={...session,selected:[],excluded:[],duration:0,runningAt:null,note:'',operationId:undefined};
       await db.transaction('rw',db.settings,db.rapportQueue,async()=>{
-        const old=await db.rapportQueue.get(operationId);if(!old){const body={actorId:actor,date:session.start.slice(0,10),employees:recipients,line:{id:operationId,start:startAt,end:new Date(Date.parse(startAt)+session.duration*60000).toISOString(),kind:'work' as const,activity:'Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):''),order:'',sourceKind:'green',sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}};await db.rapportQueue.add({id:operationId,ownerId:actor,createdAt:Date.now(),body,state:'pending'});}
+        const old=await db.rapportQueue.get(operationId);if(!old){const body={actorId:actor,date:session.start.slice(0,10),employees:recipients,line:{id:operationId,start:startAt,end:new Date(Date.parse(startAt)+session.duration*60000).toISOString(),kind:'work' as const,activity:'Grünpflege: '+chosen.map(t=>t.subject).join('; ').slice(0,800)+(session.note?' · '+session.note.slice(0,150):''),order:'',sourceKind:'green' as const,sourceIds:chosen.map(t=>t.id),machines:[],materials:[]}};await db.rapportQueue.add({id:operationId,ownerId:actor,createdAt:Date.now(),body,state:'pending'});}
         await db.settings.put({key:'green-session:'+actor,value:cleared});
       });
       setSession(cleared);setNotice('Einsatz lokal gesichert. Übertragungen und Konflikte findest du unter Rapporte → Erfassen.');await replayRapportQueue();
