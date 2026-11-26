@@ -1,0 +1,3 @@
+import {describe,it,expect} from 'vitest';
+import {participationWindows,groupParticipation} from './green';
+describe('green crew participation',()=>{it('groups full and partial crew without omitted members or duplicate shared usage',()=>{const start='2026-11-26T06:00:00.000Z';const p=participationWindows([1,2,3,4],{2:{mode:'partial',offset:15,minutes:30},3:{mode:'none',offset:0,minutes:0}},start,60);expect(p.map(x=>x.employee)).toEqual([1,2,4]);expect(groupParticipation(p)).toEqual([{employees:[1,4],start,end:'2026-11-26T07:00:00.000Z'},{employees:[2],start:'2026-11-26T06:15:00.000Z',end:'2026-11-26T06:45:00.000Z'}]);expect(()=>participationWindows([1],{1:{mode:'partial',offset:45,minutes:30}},start,60)).toThrow();});});

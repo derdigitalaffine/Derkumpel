@@ -7,9 +7,10 @@ export type IconName =
   | 'camera' | 'message' | 'route' | 'arrow-left' | 'wifi' | 'wifi-off' | 'alert'
   | 'download' | 'external' | 'layers' | 'shield' | 'trash' | 'logout' | 'cloud'
   | 'close' | 'info' | 'file' | 'refresh' | 'list' | 'archive' | 'plus' | 'eye'
-  | 'save' | 'sliders' | 'bolt' | 'check-circle' | 'menu' | 'edit';
+  | 'leaf' | 'save' | 'sliders' | 'bolt' | 'check-circle' | 'menu' | 'edit';
 
 const paths: Record<IconName, ReactNode> = {
+  leaf: <><path d="M20 4C8 3 3 9 5 15s12 7 15-11Z"/><path d="M4 20 15 9"/></>,
   work: <><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2" /></>,
   tickets: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15" /></>,

@@ -414,3 +414,7 @@ body {
 .rapport-inline-trigger:hover,.rapport-inline-trigger:focus-visible { background:var(--mantine-color-default-hover); outline:1px solid var(--mantine-primary-color-filled); }
 .rapport-wide-table td { vertical-align:top; }
 .rapport-wide-table td:has(.mantine-Select-root) { min-width:105px; }
+
+.green-page{width:100%;min-width:0}.green-team-summary{padding:12px;border:1px solid var(--dk-border);border-radius:14px;background:var(--mantine-color-default-hover);display:grid;gap:8px}.green-team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:6px}.green-team-person{padding:8px;border-radius:9px;background:var(--mantine-color-body);border:1px solid var(--dk-border);min-width:0}.green-team-person[data-excluded=true]{border-color:var(--mantine-color-orange-5)}.green-person-option{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--dk-border);border-radius:8px}.green-person-option:hover{background:var(--mantine-color-default-hover)}
+
+.green-team-summary .mantine-Button-root{min-height:36px}.green-team-summary .mantine-Button-label{white-space:normal}.green-page .mantine-Badge-root{max-width:100%}.green-page .mantine-Paper-root{min-width:0}.green-page .mantine-Button-label{white-space:normal}.green-page .mantine-Button-root{min-height:40px}

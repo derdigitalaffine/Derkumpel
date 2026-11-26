@@ -37,6 +37,8 @@ export const api = {
   technicalProject:(id:number)=>request<{id:number;name:string;trackers:{id:number;name:string}[];isPublic:boolean}>('/api/rapport/settings/project/'+id),
   technicalSave:(value:TechnicalSelection)=>request<{selection:TechnicalSelection;storageProjectId:number;storageTrackerId:number}>('/api/rapport/settings',{method:'PUT',body:JSON.stringify(value)}),
   technicalCheck:()=>request<{checks:{label:string;ok:boolean;detail:string}[];elapsedMs:number}>('/api/rapport/settings/check'),
+  materialRows:()=>request<import('./green').MaterialRows>('/api/rapport/materials'),
+  addMaterialRow:(body:import('./green').MaterialItem)=>request<import('./green').MaterialRows>('/api/rapport/materials',{method:'POST',body:JSON.stringify(body)}),
   greenEvent:(body:unknown)=>request<{id:number}>('/api/rapport/green/event',{method:'POST',body:JSON.stringify(body)}),
   greenTasks: () => request<{tasks:{id:number;subject:string;municipalities:string[]}[]}>('/api/rapport/green/tasks'),
   rapportOrders: (q:string) => request<{orders:{id:number;subject:string}[]}>(`/api/rapport/orders?q=${encodeURIComponent(q)}`),
