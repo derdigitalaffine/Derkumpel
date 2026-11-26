@@ -65,8 +65,8 @@ export function daySignal(date:string,reports:RapportReport[],owner:number,loade
  return {signal:minutes>=510?'complete':'short',minutes,label:Math.floor(minutes/60)+':'+String(minutes%60).padStart(2,'0')+' h / 8:30 h'};
 }
 export function equipmentOptions(catalog:Catalog,recent:string[]=[]):string[]{
- const names=[...recent,...(catalog.equipmentRows??[]),...(catalog.materialRows??[]).filter(m=>m.kind==='machine').map(m=>m.name),...catalog.machines.map(m=>m.name)],seen=new Set<string>();
- return names.filter(n=>{const k=n.trim().normalize('NFKC').toLocaleLowerCase('de').replace(/\s+/g,' ');if(!k||seen.has(k))return false;seen.add(k);return true;});
+ const materialNames=new Set((catalog.materialRows??[]).filter(m=>m.kind!=='machine').map(m=>m.name.trim().normalize('NFKC').toLocaleLowerCase('de').replace(/\s+/g,' ')));const names=[...recent,...(catalog.equipmentRows??[]),...(catalog.materialRows??[]).filter(m=>m.kind==='machine').map(m=>m.name),...catalog.machines.map(m=>m.name)],seen=new Set<string>();
+ return names.filter(n=>{const k=n.trim().normalize('NFKC').toLocaleLowerCase('de').replace(/\s+/g,' ');if(!k||seen.has(k)||materialNames.has(k))return false;seen.add(k);return true;});
 }
 
 /** Date selection is civil Berlin time, not an instant or the browser's UTC day. */
