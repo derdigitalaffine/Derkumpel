@@ -4,9 +4,10 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import { registerRapport } from './rapport.js';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
-import { fetchRapportUsers, fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
 import { createRedminePollApi, RedminePushPoller } from './pushPoller.js';
 
@@ -188,10 +189,7 @@ app.post('/api/auth/login', async (request, reply) => {
 app.post('/api/auth/logout', async (_request, reply) => { clearSession(reply); return { ok: true }; });
 app.get('/api/auth/me', async (request) => (await fetchCurrentUser(config, credentials(request))).user);
 
-app.get('/api/rapport/users', async (request, reply) => {
-  reply.header('Cache-Control', 'no-store');
-  return fetchRapportUsers(config, credentials(request));
-});
+registerRapport(app, config, credentials);
 
 app.get('/api/issues/my', async (request) => {
   const query = request.query as { status?: string };

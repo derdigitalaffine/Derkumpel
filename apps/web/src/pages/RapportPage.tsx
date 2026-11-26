@@ -31,6 +31,9 @@ export function RapportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [saving,setSaving]=useState(false);
+  const [captureError,setCaptureError]=useState('');
+  const [captureId,setCaptureId]=useState('');
   useEffect(() => {
     let active = true;
     setLoading(true); setError(''); setPeople([]); setMissing([]); setActor(null);
@@ -63,10 +66,18 @@ export function RapportPage() {
   const visible = rankRapportPeople(people.filter(person => person.name.toLocaleLowerCase('de').includes(search.trim().toLocaleLowerCase('de')) && (filter === 'all' || (filter === 'favorites' ? preferences.favorites.includes(person.id) : filter === 'frequent' ? (preferences.counts[person.id] ?? 0) > 0 : filter === 'selected' ? selected.includes(person.id) : person.groups?.includes(filter)))), preferences.favorites, preferences.counts, actor?.id);
   const toggle = (id: number) => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]);
   const canAdd = !!actor && !loading && !error && !!startAt && minutes > 0 && selectedPeople.length > 0;
-  const addBatch = () => {
+  const addBatch = async () => {
     if (!actor || !canAdd || !startAt) return;
     const draft = makeRapportEntries(people, selected, actor, minutes, activity, new Date().toISOString(), startAt);
-    if (!draft.length) return;
+    if (!draft.length || saving || !endAt) return;
+    setSaving(true);setCaptureError('');const id=captureId||crypto.randomUUID();setCaptureId(id);
+    try {
+      const firstEnd=new Date(new Date(startAt).getTime()+minutes*60000).toISOString();
+      const result=await api.rapportCapture({date,employees:selected,line:{id,start:startAt,end:firstEnd,kind:'work',activity,order:'',machines:[],materials:[]}});
+      const failed=result.results.filter(x=>!x.ok);
+      if(failed.length){setCaptureError(failed.map(x=>(people.find(p=>p.id===x.employee)?.name??x.employee)+': '+x.message).join('; '));return;}
+      setCaptureId('');
+    } catch(e){setCaptureError(e instanceof Error?e.message:'Übertragung fehlgeschlagen');return;} finally{setSaving(false);}
     setBatches(old => [...old, { id: nextId, entries: draft }]);
     const counts = { ...preferences.counts };
     for (const entry of draft) counts[entry.employee.id] = (counts[entry.employee.id] ?? 0) + 1;
@@ -74,9 +85,9 @@ export function RapportPage() {
     setNextId(id => id + 1); setMinutes(0); setUseFullDay(false); setActivity('');
   };
   return <Stack maw={900} mx="auto" gap="md">
-    <Button component={Link} to="/" variant="subtle" h={48} style={{ alignSelf: 'flex-start' }}>← Meine Arbeit</Button>
+    <Group><Button component={Link} to="/" variant="subtle" h={48}>← Meine Arbeit</Button><Button component={Link} to="/rapport/book" h={48} variant="light">Tagesrapporte</Button></Group>
     <Group justify="space-between" align="center"><Title order={1} size="h2">Arbeitszeit / Rapport</Title><Badge variant="light">Entwurf</Badge></Group>
-    <Alert variant="light">Nur Vorschau. Keine Buchung. Rapportdaten gehen beim Verlassen verloren. Nur Favoriten und Auswahlhäufigkeiten bleiben auf diesem Gerät gespeichert.</Alert>
+    <Alert variant="light">Leistungen werden in den persönlichen Tagesrapporten in Redmine vorerfasst. Erst die Einreichung bestätigt den Tagesrapport.</Alert>
     <Paper withBorder p="md" className="surface-card">
       <Text size="sm" c="dimmed">Summe im Rapport-Entwurf</Text>
       <Title order={2} aria-live="polite">{formatDuration(total)} h</Title>
@@ -115,18 +126,19 @@ export function RapportPage() {
         <Button h={48} variant="subtle" color="gray" onClick={() => {setMinutes(0);setUseFullDay(false);}}>Zeit zurücksetzen</Button>
         <Textarea label="Tätigkeit (optional)" placeholder="z. B. Grünpflege am Friedhof" value={activity} onChange={e => setActivity(e.currentTarget.value)} autosize minRows={2} maxRows={5} maxLength={1000} />
         <Text size="sm" fw={650}>Gesamt für die Auswahl: {formatDuration((minutes ?? 0) * selectedPeople.length)} h</Text>
-        <Button h={56} disabled={!canAdd} onClick={addBatch}>In Entwurf übernehmen ({selectedPeople.length})</Button>
+        {captureError&&<Alert color="red">{captureError} – erneuter Versuch verwendet dieselbe Vorgangs-ID.</Alert>}
+        <Button h={56} loading={saving} disabled={!canAdd} onClick={()=>void addBatch()}>In Tagesrapporte übernehmen ({selectedPeople.length})</Button>
       </Stack></Paper>
     </>}
     {batches.length > 0 && <Stack gap="sm">
-      <Title order={2} size="h4">Rapport-Entwurf</Title>
+      <Title order={2} size="h4">Übertragene Leistungen dieser Sitzung</Title>
       {batches.map(batch => <Paper key={batch.id} withBorder p="md" className="surface-card"><Stack gap="xs">
         <Group justify="space-between"><Text fw={800}>{formatDuration(batch.entries[0]!.minutes)} h je Person</Text><Badge variant="light">{batch.entries.length} Personen</Badge></Group>
         <Text size="sm" fw={650}>{new Date(batch.entries[0]!.startAt).toLocaleString('de-DE')} – {new Date(batch.entries[0]!.endAt).toLocaleString('de-DE')}</Text>
         {batch.entries.map(entry => <Text key={entry.employee.id} size="sm">{entry.employee.name} · {formatDuration(entry.minutes)} h</Text>)}
         {batch.entries[0]!.activity && <Text style={{ overflowWrap: 'anywhere' }}>Tätigkeit: {batch.entries[0]!.activity}</Text>}
         <Text size="xs" c="dimmed">Erfasst von {batch.entries[0]!.recordedBy.name} · {new Date(batch.entries[0]!.recordedAt).toLocaleString('de-DE')}</Text>
-        <Button h={48} color="red" variant="subtle" onClick={() => setBatches(old => old.filter(item => item.id !== batch.id))}>Eintrag entfernen</Button>
+        <Button component={Link} to="/rapport/book" h={48} variant="subtle">Im Tagesrapport bearbeiten</Button>
       </Stack></Paper>)}
       <Paper withBorder p="md"><Stack gap="xs"><Text fw={800}>Summen je Mitarbeiter</Text>{people.filter(person => totals.has(person.id)).map(person => <Group key={person.id} justify="space-between"><Text>{person.name}</Text><Text fw={700}>{formatDuration(totals.get(person.id) ?? 0)} h</Text></Group>)}</Stack></Paper>
     </Stack>}
