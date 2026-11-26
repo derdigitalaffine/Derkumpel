@@ -216,9 +216,8 @@ app.get('/api/issues/browse', async (request) => {
 });
 
 async function assertOrdinaryIssue(request:FastifyRequest,id:number) {
-  if(process.env.RAPPORT_ENABLED!=='true')return;
-  const {issue}=await redmineJson<{issue:{project:{id:number}}}>(config,credentials(request),'/issues/'+id+'.json');
-  if(internalRapportProject(issue.project.id))throw new RedmineError(404,'Auftrag nicht gefunden');
+  const {issue}=await redmineJson<{issue:{project:{id:number;name?:string}}}>(config,credentials(request),'/issues/'+id+'.json');
+  if(internalRapportProject(issue.project.id,issue.project.name))throw new RedmineError(404,'Auftrag nicht gefunden');
 }
 app.get('/api/issues/:id', async (request) => {
   const { id } = request.params as { id: string };

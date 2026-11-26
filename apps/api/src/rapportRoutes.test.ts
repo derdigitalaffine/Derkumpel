@@ -10,7 +10,7 @@ const people:Record<string,Person>={alice:{id:1,name:'Alice'},bob:{id:2,name:'Bo
 const cfg={redmineBaseUrl:new URL('https://redmine.example.invalid'),redmineTimeoutMs:3000} as AppConfig;
 const response=(body:unknown,status=200)=>status===204?new Response(null,{status}):Response.json(body,{status});
 function mockRedmine(){
-  for(const [k,v] of Object.entries({RAPPORT_ENABLED:'true',RAPPORT_DIRECTORY_KEY:'directory',RAPPORT_SERVICE_KEY:'service',RAPPORT_PROJECT_ID:'10',RAPPORT_CATALOG_PROJECT_ID:'20',RAPPORT_TRACKER_ID:'11',RAPPORT_MACHINE_TRACKER_ID:'21',RAPPORT_MATERIAL_TRACKER_ID:'22',RAPPORT_DATA_FIELD_ID:'5',RAPPORT_STATUS_DRAFT:'1',RAPPORT_STATUS_SUBMITTED:'2',RAPPORT_STATUS_REVIEW:'3',RAPPORT_STATUS_RETURNED:'4',RAPPORT_STATUS_CLOSED:'5'}))vi.stubEnv(k,v);
+  for(const [k,v] of Object.entries({RAPPORT_STORAGE_MODE:'native',RAPPORT_ENABLED:'true',RAPPORT_DIRECTORY_KEY:'directory',RAPPORT_SERVICE_KEY:'service',RAPPORT_PROJECT_ID:'10',RAPPORT_CATALOG_PROJECT_ID:'20',RAPPORT_TRACKER_ID:'11',RAPPORT_MACHINE_TRACKER_ID:'21',RAPPORT_MATERIAL_TRACKER_ID:'22',RAPPORT_DATA_FIELD_ID:'5',RAPPORT_STATUS_DRAFT:'1',RAPPORT_STATUS_SUBMITTED:'2',RAPPORT_STATUS_REVIEW:'3',RAPPORT_STATUS_RETURNED:'4',RAPPORT_STATUS_CLOSED:'5'}))vi.stubEnv(k,v);
   const issues=new Map<number,FixtureIssue>();
   const tasks=[{id:701,subject:'Friedhof',project:{id:30},tracker:{id:31},status:{id:1},custom_fields:[{id:32,value:'Otterberg'}]},{id:702,subject:'Hecke',project:{id:30},tracker:{id:31},status:{id:5},custom_fields:[]}];
   vi.stubEnv('GREEN_ENABLED','true');vi.stubEnv('GREEN_TRACKER_ID','31');vi.stubEnv('GREEN_MUNICIPALITY_FIELD_ID','32');
