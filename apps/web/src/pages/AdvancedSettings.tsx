@@ -19,7 +19,7 @@ export function AdvancedSettings(){
     <Title order={2} size="h3">Redmine-Zuordnungen</Title>
     <Text size="sm" c="dimmed">Globale technische Konfiguration. Nur Redmine-Administratoren können sie ändern. Arbeitsdaten bleiben in Redmine.</Text>
     {error&&<Alert color="red" title="Redmine-Konfiguration">{error}</Alert>}{notice&&<Alert color="green">{notice}</Alert>}
-    {allowed===false?<Alert>Dieser Bereich ist ausschließlich für Redmine-Administratoren verfügbar.</Alert>:<><Button variant="light" h={48} loading={busy&&!data} disabled={busy&&!!data} onClick={()=>void load()}>Redmine-Auswahllisten aktualisieren</Button>
+    {allowed===false?<Alert color="orange" title="Administratorberechtigung erforderlich">Du bist mit einem normalen Redmine-Konto angemeldet. Zum Ändern der globalen Zuordnungen mit einem Redmine-Administratorkonto anmelden.</Alert>:<><Button variant="light" h={48} loading={busy&&!data} disabled={busy&&!!data} onClick={()=>void load()}>Redmine-Auswahllisten aktualisieren</Button>
     {data&&selection&&<>
       <Card withBorder><Stack><Title order={3} size="h4">Rapportwesen – technischer Speicher</Title><Text size="sm">Tagesrapporte, Korrekturen, Maschinen, Material und Archive werden in diesem Projekt gespeichert. Der Tracker wird bei Bedarf aktiviert. Vorhandene Daten werden nicht verschoben.</Text>
       <Select label="Speicherprojekt" searchable clearable value={asString(selection.storageProjectId)} data={projects} disabled={busy} onChange={v=>change('storageProjectId',v)}/>

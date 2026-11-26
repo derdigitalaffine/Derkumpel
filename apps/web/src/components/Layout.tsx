@@ -14,7 +14,7 @@ const items: Array<{ to: string; label: string; fullLabel: string; icon: IconNam
   { to: '/green', label: 'Grünpflege', fullLabel: 'Grünpflege', icon: 'work' },
   { to: '/rapport/book', label: 'Rapporte', fullLabel: 'Tagesrapporte', icon: 'clock' },
   { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
-  { to: '/settings', label: 'Mehr', fullLabel: 'Einstellungen', icon: 'settings' },
+  { to: '/settings', label: 'Settings', fullLabel: 'Einstellungen', icon: 'settings' },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

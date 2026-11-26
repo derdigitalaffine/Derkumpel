@@ -47,7 +47,8 @@ export async function rescheduleRapportQueue(id:string,start:string,end:string,d
   if(!r||r.state!=='conflict')throw Error('Vorgang ist nicht mehr im Konflikt.');
   // Check original operation before changing its identity, including unknown outcomes from older versions.
   const check=await api.rapportCaptureCheck(r.body);
-  if(check.results.length!==r.body.employees.length||check.results.some(x=>x.stored||!x.editable))throw Error('Mindestens ein Vorgang wurde bereits gespeichert oder der Rapport ist gesperrt. Bitte erneut übertragen bzw. Tagesrapport prüfen.');
+  if(check.results.length!==r.body.employees.length||r.body.employees.some(id=>!check.results.some(x=>x.employee===id))||check.results.some(x=>x.stored||!x.editable))throw Error('Mindestens ein Vorgang wurde bereits gespeichert oder der Rapport ist gesperrt. Bitte erneut übertragen bzw. Tagesrapport prüfen.');
+  if(!navigator.onLine)throw Error('Für die Konfliktauflösung ist eine Verbindung erforderlich.');
   const newId=crypto.randomUUID(),body={...r.body,date,line:{...r.body.line,id:newId,start,end,activity}};
   await db.transaction('rw',db.rapportQueue,async()=>{const current=await db.rapportQueue.get(id);if(!current||current.state!=='conflict'||JSON.stringify(current.body)!==JSON.stringify(r.body))throw Error('Vorgang wurde zwischenzeitlich geändert.');await db.rapportQueue.add({...r,id:newId,body,state:'pending',message:undefined,conflicts:undefined});await db.rapportQueue.delete(id);});
   await replayRapportQueue();

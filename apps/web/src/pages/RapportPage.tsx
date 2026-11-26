@@ -84,7 +84,7 @@ export function RapportPage() {
     try{await replayRapportQueue();setNotice(navigator.onLine?'Erfassung gespeichert. Übertragungsstatus unten prüfen.':'Offline erfasst. Übertragung bei Verbindung.');}catch(e){setNotice('Erfassung lokal gesichert. Übertragung steht aus.');}finally{setSaving(false);}
   };
   return <Stack maw={900} mx="auto" gap="md">
-    <Group><Button component={Link} to="/" variant="subtle" h={48}>← Meine Arbeit</Button><Button component={Link} to="/rapport/book" h={48} variant="light">Tagesrapporte</Button></Group>
+    <Group><Button component={Link} to="/" variant="subtle" h={48}>← Meine Arbeit</Button><Button component={Link} to="/rapport/book" h={48} variant="light">Tagesrapporte</Button><Button component={Link} to="/settings?tab=advanced" h={48} variant="default">Einrichtung</Button></Group>
     <Group justify="space-between" align="center"><Title order={1} size="h2">Arbeitszeit / Rapport</Title><Badge variant="light">Entwurf</Badge></Group>
     <Alert variant="light">Leistungen werden in den persönlichen Tagesrapporten in Redmine vorerfasst. Erst die Einreichung bestätigt den Tagesrapport.</Alert>
     <Paper withBorder p="md" className="surface-card"><Text fw={650}>Erfasst von: {actor?.name??'–'}</Text><Text c="dimmed" size="sm">{queue.length} lokale Vorgänge ausstehend</Text></Paper>{notice&&<Alert color="blue">{notice}</Alert>}

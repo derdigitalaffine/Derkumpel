@@ -52,3 +52,5 @@ Der Rapportspeicher kann auch ohne fertigen Grünpflegekatalog eingerichtet werd
 
 ## Ticketbrowser und Rapportkonflikte
 Nicht mehr verfügbare Projektfilter werden zurückgesetzt; technische Projekte werden nicht mit persönlichen Zugangsdaten abgefragt. Ein allgemeines 403 bleibt ein Berechtigungsfehler. Bei einem Rapportkonflikt lässt sich die lokale Erfassung korrigieren oder der berechtigte Tagesrapport öffnen. Vor einer Änderung wird geprüft, ob der ursprüngliche Vorgang bereits gespeichert wurde; in diesem Fall darf nur mit gleicher Vorgangs-ID wiederholt werden. Fremde Rapportdetails bleiben geschützt. Keine automatische Überschreibung vorhandener Arbeitszeiten.
+
+Direkter Zugang zur globalen Konfiguration: `/settings?tab=advanced`. Auf Mobilgeräten ist der Navigationspunkt Settings; zusätzlich gibt es einen sichtbaren Einrichtungsbutton im Rapportwesen und Grünpflege. Alte PWA-Versionen ggf. neu laden, aber keine Browserdaten löschen, solange lokale Rapporte ausstehen.

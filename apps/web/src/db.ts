@@ -62,6 +62,6 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
 
 export async function clearBusinessData(): Promise<void> {
   await db.transaction('rw', db.issues, db.attachments, db.outbox, db.syncState, db.settings, async () => {
-    await Promise.all([db.issues.clear(), db.attachments.clear(), db.outbox.clear(), db.syncState.clear(), db.settings.delete('rapport-roster'),db.settings.delete('green-cache'),db.settings.delete('rapport-view-cache')]);
+    await Promise.all([db.issues.clear(), db.attachments.clear(), db.outbox.clear(), db.syncState.clear(), db.settings.delete('rapport-roster'),db.settings.delete('green-cache'),db.settings.delete('rapport-view-cache'),db.settings.delete('ticketBrowser'),db.settings.delete('projectsMeta'),db.settings.delete('trackersMeta')]);
   });
 }
