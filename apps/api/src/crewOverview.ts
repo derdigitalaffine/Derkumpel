@@ -1,4 +1,4 @@
-export type CrewEvent={operationId:string;actor:{id:number;name:string};employees:number[];excluded?:number[];sources:{id:number;subject:string;municipalities?:string[]}[];startedAt:string;endedAt?:string;phase:'start'|'stop'|'finish';participation?:{employee:number;start:string;end:string}[];activity?:string};
+export type CrewEvent={operationId:string;actor:{id:number;name:string};employees:number[];excluded?:number[];sources:{id:number;subject:string;municipalities?:string[];orderNumber?:string}[];stoppedBy?:{id:number;name:string};startedAt:string;endedAt?:string;phase:'start'|'stop'|'finish';participation?:{employee:number;start:string;end:string}[];activity?:string};
 export type CrewRecord={id:number;updatedAt:string;event:CrewEvent};
 const day=(s:string)=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(s));
 const valid=(s:unknown):s is string=>typeof s==='string'&&Number.isFinite(Date.parse(s));
@@ -17,7 +17,7 @@ export function crewOverview(records:CrewRecord[],members:Map<number,{id:number;
  const crew=e.employees.map(id=>{const parts=Array.isArray(finish?.event.participation)?finish.event.participation:undefined,p=parts?.find(x=>x.employee===id);
  return {id,name:members.get(id)?.name??(id===e.actor.id?e.actor.name:'#'+id),participation:parts?(p?'included':'excluded'):e.excluded?.includes(id)?'excluded':e.excluded?'included':'unknown',...(p&&valid(p.start)&&valid(p.end)?{start:p.start,end:p.end}:{})};});
  const elapsed=Math.max(0,Math.floor((Date.parse(endedAt??now.toISOString())-Date.parse(e.startedAt))/60000));
- return [{key,actor:e.actor,crew,sources:e.sources,municipalities:[...new Set(e.sources.flatMap(s=>s.municipalities??[]))].sort((a,b)=>a.localeCompare(b,'de')),startedAt:e.startedAt,endedAt,state,activity:finish?.event.activity,updatedAt:latest.updatedAt,eventId:latest.id,elapsed,stale:state==='running'&&(day(e.startedAt)!==day(now.toISOString())||elapsed>=720)}];});
+ return [{key,startEventId:start.id,stoppedBy:stop?.event.stoppedBy,actor:e.actor,crew,sources:e.sources,municipalities:[...new Set(e.sources.flatMap(s=>s.municipalities??[]))].sort((a,b)=>a.localeCompare(b,'de')),startedAt:e.startedAt,endedAt,state,activity:finish?.event.activity,updatedAt:latest.updatedAt,eventId:latest.id,elapsed,stale:state==='running'&&(day(e.startedAt)!==day(now.toISOString())||elapsed>=720)}];});
  const counts=new Map<number,number>();for(const c of crews.filter(c=>c.state==='running'))for(const p of c.crew)if(p.participation!=='excluded')counts.set(p.id,(counts.get(p.id)??0)+1);
  return {crews:crews.map(c=>({...c,overlaps:c.state==='running'?c.crew.filter(p=>p.participation!=='excluded'&&(counts.get(p.id)??0)>1).map(p=>p.id):[]})).sort((a,b)=>({running:0,stopped:1,finished:2}[a.state]-{running:0,stopped:1,finished:2}[b.state])||b.startedAt.localeCompare(a.startedAt)),warnings,asOf:now.toISOString()};
 }

@@ -7,9 +7,14 @@ export type IconName =
   | 'camera' | 'message' | 'route' | 'arrow-left' | 'wifi' | 'wifi-off' | 'alert'
   | 'download' | 'external' | 'layers' | 'shield' | 'trash' | 'logout' | 'cloud'
   | 'close' | 'info' | 'file' | 'refresh' | 'list' | 'archive' | 'plus' | 'eye'
-  | 'leaf' | 'save' | 'sliders' | 'bolt' | 'check-circle' | 'menu' | 'edit';
+  | 'users' | 'package' | 'wrench' | 'play' | 'stop' | 'leaf' | 'save' | 'sliders' | 'bolt' | 'check-circle' | 'menu' | 'edit';
 
 const paths: Record<IconName, ReactNode> = {
+  users: <><circle cx="9" cy="8" r="3"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 5a3 3 0 0 1 0 6m2 3a6 6 0 0 1 4 5v2"/></>,
+  package: <><path d="m3 7 9-5 9 5v10l-9 5-9-5zM3 7l9 5 9-5m-9 5v10M7.5 4.5l9 5"/></>,
+  wrench: <path d="M14 6a5 5 0 0 0-6 6L3 17a3 3 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-3 3-4-4z"/>,
+  play: <path d="m8 4 12 8-12 8z"/>,
+  stop: <rect x="5" y="5" width="14" height="14" rx="2"/>,
   leaf: <><path d="M20 4C8 3 3 9 5 15s12 7 15-11Z"/><path d="M4 20 15 9"/></>,
   work: <><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2" /></>,
   tickets: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
