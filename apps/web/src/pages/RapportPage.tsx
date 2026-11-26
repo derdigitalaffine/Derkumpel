@@ -1,10 +1,10 @@
-import { ActionIcon, Alert, Badge, Button, Checkbox, Group, Paper, ScrollArea, Select, SimpleGrid, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Checkbox, Group, Modal, Paper, ScrollArea, Select, SimpleGrid, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { getSetting, setSetting } from '../db';
+import { getSetting, setSetting, type RapportQueueRecord } from '../db';
 import { useDexieLive } from '../live';
-import { currentRapportQueue,queueCapture,replayRapportQueue,retryRapportQueue,discardRapportQueue } from '../rapportQueue';
+import { currentRapportQueue,queueCapture,replayRapportQueue,retryRapportQueue,discardRapportQueue,rescheduleRapportQueue } from '../rapportQueue';
 import { fromInputTime,inputTime,today } from '../rapportBook';
 import type { CurrentUser } from '../types';
 import { formatDuration, fullDayMinutes, rankRapportPeople, type RapportPerson } from '../rapport';
@@ -37,6 +37,13 @@ export function RapportPage() {
   const [attempt, setAttempt] = useState(0);
   const [saving,setSaving]=useState(false);
   const [captureError,setCaptureError]=useState('');
+  const [editing,setEditing]=useState<RapportQueueRecord|null>(null);
+  const [editStart,setEditStart]=useState(''),[editEnd,setEditEnd]=useState(''),[editActivity,setEditActivity]=useState('');
+  const [editError,setEditError]=useState('');
+  const [preview,setPreview]=useState<Awaited<ReturnType<typeof api.rapportCaptureCheck>>['results']>([]);
+  const editConflict=async(item:RapportQueueRecord)=>{setEditing(item);setEditStart(inputTime(item.body.line.start));setEditEnd(inputTime(item.body.line.end));setEditActivity(item.body.line.activity);setEditError('');setPreview([]);setSaving(true);try{const result=await api.rapportCaptureCheck(item.body);setPreview(result.results);}catch(e){setEditError(e instanceof Error?e.message:String(e));}finally{setSaving(false);}};
+  const saveConflict=async()=>{if(!editing)return;const start=fromInputTime(editStart,editing.body.line.start),end=fromInputTime(editEnd,editing.body.line.end);if(!start||!end||Date.parse(end)<=Date.parse(start)||Date.parse(end)-Date.parse(start)>86400000){setEditError('Bitte gültigen Zeitraum bis maximal 24 Stunden wählen.');return;}setSaving(true);setEditError('');try{await rescheduleRapportQueue(editing.id,start,end,editStart.slice(0,10),editActivity);setEditing(null);}catch(e){setEditError(e instanceof Error?e.message:String(e));}finally{setSaving(false);}};
+
   useEffect(() => {
     let active=true;setLoading(true);setError('');setPeople([]);setMissing([]);setActor(null);
     async function load(){
@@ -121,8 +128,16 @@ export function RapportPage() {
       <Group justify="space-between"><Text fw={800}>{item.body.date} · {formatDuration(Math.round((Date.parse(item.body.line.end)-Date.parse(item.body.line.start))/60000))} h</Text><Badge color={item.state==='conflict'?'red':'orange'}>{item.state==='conflict'?'Konflikt':'Ausstehend'}</Badge></Group>
       <Text>{item.body.line.activity||'Ohne Tätigkeit'} · {item.body.employees.map(id=>people.find(p=>p.id===id)?.name??'#'+id).join(', ')}</Text>
       {item.message&&<Text size="sm" c="red">{item.message}</Text>}
+      {item.state==='conflict'&&<Button h={48} variant="filled" disabled={saving||!navigator.onLine} onClick={()=>void editConflict(item)}>Konflikt lösen / Zeit korrigieren</Button>}
       <Button h={48} variant="light" disabled={saving||!navigator.onLine} onClick={()=>{setSaving(true);void retryRapportQueue(item.id).catch(e=>setCaptureError(String(e))).finally(()=>setSaving(false));}}>Erneut übertragen</Button>
       <Button h={48} color="red" variant="subtle" disabled={saving} onClick={()=>{if(window.confirm('Nur noch nicht bestätigte lokale Übertragung verwerfen? Bereits übertragene Leistungen bleiben erhalten.'))void discardRapportQueue(item.id);}}>Lokalen Vorgang verwerfen</Button>
     </Stack></Paper>)}</Stack>}
+    <Modal opened={!!editing} onClose={()=>{if(!saving)setEditing(null);}} title="Rapportkonflikt lösen" fullScreen={false}><Stack>
+      <Alert variant="light">Die vorhandenen Arbeitszeiten bleiben unverändert. Du kannst diese noch nicht gespeicherte Erfassung verschieben oder den bestehenden Tagesrapport öffnen.</Alert>
+      {preview.map(p=><Paper withBorder p="sm" key={p.employee}><Stack gap="xs"><Text fw={700}>{people.find(x=>x.id===p.employee)?.name??'#'+p.employee}</Text><Text size="sm">{p.stored?'Bereits gespeichert – bitte erneut übertragen.':!p.editable?'Rapport gesperrt':p.overlap?'Zeitüberschneidung':'Keine Überschneidung'}</Text>{p.overlaps?.map((l,i)=><Text size="sm" key={i}>{inputTime(l.start).replace('T',' ')} – {inputTime(l.end).replace('T',' ')} · {l.activity||'Ohne Tätigkeit'}</Text>)}{p.reportId&&<Button component={Link} to={'/rapport/book?date='+editing?.body.date+'&report='+p.reportId} variant="light" h={48}>Tagesrapport #{p.reportId} öffnen</Button>}</Stack></Paper>)}
+      <TextInput type="datetime-local" label="Neuer Beginn" value={editStart} onChange={e=>setEditStart(e.currentTarget.value)} disabled={saving}/><TextInput type="datetime-local" label="Neues Ende" value={editEnd} onChange={e=>setEditEnd(e.currentTarget.value)} disabled={saving}/><Textarea label="Tätigkeit" value={editActivity} onChange={e=>setEditActivity(e.currentTarget.value)} disabled={saving}/>{editError&&<Alert color="red">{editError}</Alert>}
+      <Button h={52} loading={saving} disabled={!preview.length||preview.some(p=>p.stored||!p.editable)} onClick={()=>void saveConflict()}>Korrigierten Vorgang übertragen</Button>
+      <Button h={48} variant="default" disabled={saving} onClick={()=>setEditing(null)}>Abbrechen</Button>
+    </Stack></Modal>
   </Stack>;
 }

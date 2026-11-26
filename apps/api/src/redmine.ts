@@ -129,7 +129,10 @@ export async function fetchIssueBrowser(
   config: AppConfig,
   creds: CredentialEnvelope,
   options: { status: string; trackerId?: number; projectId?: number; offset: number; limit: number },
-): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number }> {
+): Promise<{ issues: Array<Record<string, unknown>>; total_count: number; offset: number; limit: number; filterUnavailable?: boolean }> {
+  const unavailable=()=>({issues:[],total_count:0,offset:options.offset,limit:options.limit,filterUnavailable:true});
+  if(options.projectId&&internalRapportProject(options.projectId))return unavailable();
+  try {
   if(process.env.RAPPORT_STORAGE_MODE!=='disabled'||process.env.RAPPORT_ENABLED==='true') {
     const all=await listIssues(config,creds,{status_id:options.status,include:'attachments,relations', ...(options.projectId?{project_id:String(options.projectId)}:{}), ...(options.trackerId?{tracker_id:String(options.trackerId)}:{})});
     return {issues:all.slice(options.offset,options.offset+options.limit),total_count:all.length,offset:options.offset,limit:options.limit};
@@ -151,6 +154,7 @@ export async function fetchIssueBrowser(
     offset: page.offset ?? options.offset,
     limit: page.limit ?? options.limit,
   };
+  } catch(e){if(options.projectId&&e instanceof RedmineError&&[403,404].includes(e.status))return unavailable();throw e;}
 }
 
 const rapportGroups = ['Disponenten Bauhof', 'Bauhofmitarbeiter'] as const;
