@@ -1,26 +1,19 @@
-import { AppShell, Badge, Box, Group, Image, NavLink, Stack, Text, UnstyledButton } from '@mantine/core';
-import { useNetwork } from '@mantine/hooks';
+import { AppShell, Badge, Box, Drawer, Group, Image, NavLink, Stack, Text, UnstyledButton } from '@mantine/core';
+import { useMediaQuery, useNetwork } from '@mantine/hooks';
 import { Link, useLocation } from 'react-router-dom';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { db } from '../db';
 import { currentRapportQueue,currentGreenEvents } from '../rapportQueue';
 import { useDexieLive } from '../live';
 import {useDispatcher} from './useDispatcher';
-import { UIIcon, type IconName } from './UIIcon';
+import { UIIcon } from './UIIcon';
 
-const items: Array<{ to: string; label: string; fullLabel: string; icon: IconName }> = [
-  { to: '/', label: 'Arbeit', fullLabel: 'Meine Arbeit', icon: 'work' },
-  { to: '/tickets', label: 'Tickets', fullLabel: 'Ticket-Browser', icon: 'tickets' },
-  { to: '/map', label: 'Karte', fullLabel: 'Auftragskarte', icon: 'map' },
-  { to: '/green', label: 'Grünpflege', fullLabel: 'Grünpflege', icon: 'leaf' },
-  { to: '/green/mine', label: 'Meine Kolonne', fullLabel: 'Meine Kolonne', icon: 'users' },
-  { to: '/rapport/book', label: 'Rapporte', fullLabel: 'Tagesrapporte', icon: 'clock' },
-  { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
-  { to: '/settings', label: 'Settings', fullLabel: 'Einstellungen', icon: 'settings' },
-];
+import { activeNavigation, visibleNavigation, navigationGroups } from '../navigation';
 
 export function Layout({ children }: { children: ReactNode }) {
-  const location = useLocation();const dispatcher=useDispatcher();const navItems=dispatcher?[...items.slice(0,5),{to:'/green/crews',label:'Kolonnen',fullLabel:'Kolonnenübersicht',icon:'user' as const},{to:'/rapport/review',label:'Abnahme',fullLabel:'Rapportabnahme',icon:'check-circle' as const},...items.slice(5)]:items;
+  const location=useLocation(),dispatcher=useDispatcher(),navItems=visibleNavigation(dispatcher),activeItem=activeNavigation(location.pathname,navItems);
+  const [menuOpen,setMenuOpen]=useState(false),desktop=useMediaQuery('(min-width: 48em)');
+  useEffect(()=>{setMenuOpen(false);},[location.key,desktop]);
   const network = useNetwork();
   const queue = useDexieLive(useCallback(() => db.outbox.toArray(), []), []);
   const rapportQueue=useDexieLive(useCallback(currentRapportQueue,[]),[]);
@@ -63,17 +56,10 @@ export function Layout({ children }: { children: ReactNode }) {
     </AppShell.Header>
 
     <AppShell.Navbar p="md" style={{ background: '#f9fcfc', borderColor: 'var(--dk-border)' }}>
-      <Stack gap="xs">
-        <Text size="xs" fw={850} c="dimmed" tt="uppercase" px="sm" mb={6}
-          style={{ letterSpacing: '.1em' }}>Arbeitsbereiche</Text>
-        {navItems.map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?(location.pathname==='/rapport'||location.pathname.startsWith('/rapport/book')):item.to==='/green'?location.pathname==='/green':location.pathname.startsWith(item.to);
-          return <NavLink key={item.to} component={Link} to={item.to} active={active}
-            label={item.fullLabel} className="desktop-nav-link"
-            aria-current={active ? 'page' : undefined}
-            leftSection={<UIIcon name={item.icon} size={20} />}
-            rightSection={item.to === '/sync' ? syncBadge : null} />;
-        })}
+      <Stack gap="md" className="desktop-nav-scroll">
+        {navigationGroups.map(group=>{const entries=navItems.filter(item=>item.group===group.id);return entries.length>0&&<Box key={group.id}><Text size="xs" fw={850} c="dimmed" tt="uppercase" px="sm" mb={6} style={{letterSpacing:'.08em'}}>{group.title}</Text>{entries.map(item=><NavLink key={item.to} component={Link} to={item.to} active={activeItem?.to===item.to}
+            label={item.fullLabel} className="desktop-nav-link" aria-current={activeItem?.to===item.to?'page':undefined}
+            leftSection={<UIIcon name={item.icon} size={20}/>} rightSection={item.to==='/sync'?syncBadge:null}/>)}</Box>;})}
       </Stack>
     </AppShell.Navbar>
 
@@ -83,23 +69,24 @@ export function Layout({ children }: { children: ReactNode }) {
 
     <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
       bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
-      <Group grow gap={3} px={5} pt={7} align="stretch">
-        {navItems.filter(item=>item.to!=='/sync'&&item.to!=='/map'&&item.to!=='/rapport/review'&&item.to!=='/green/crews'&&item.to!=='/green/mine').map((item) => {
-          const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?(location.pathname==='/rapport'||location.pathname.startsWith('/rapport/book')):item.to==='/green'?location.pathname==='/green':location.pathname.startsWith(item.to);
-          return <UnstyledButton key={item.to} component={Link} to={item.to}
-            className="mobile-nav-item" data-active={active}
-            aria-current={active ? 'page' : undefined}
-            aria-label={item.to === '/sync' && pendingCount > 0 ? `Synchronisation, ${queueLabel}` : item.fullLabel}>
-            <Stack align="center" gap={3} justify="center">
-              <Group gap={2} wrap="nowrap" justify="center">
-                <span className="nav-icon"><UIIcon name={item.icon} size={22} strokeWidth={active ? 2.25 : 1.8} /></span>
-                {item.to === '/sync' && syncBadge}
-              </Group>
-              <Text size="xs" fw={active ? 850 : 650} lh={1.15}>{item.label}</Text>
-            </Stack>
-          </UnstyledButton>;
-        })}
-      </Group>
+      <div className="mobile-nav-grid">
+        {navItems.filter(item=>item.quick).map(item=>{const active=activeItem?.to===item.to;return <UnstyledButton key={item.to} component={Link} to={item.to}
+          className="mobile-nav-item" data-active={active} aria-current={active?'page':undefined} aria-label={item.fullLabel}>
+          <span className="mobile-nav-inner"><UIIcon name={item.icon} size={23} strokeWidth={active?2.25:1.8}/><span>{item.label}</span></span>
+        </UnstyledButton>;})}
+        <UnstyledButton className="mobile-nav-item" data-active={menuOpen||!!activeItem&&!activeItem.quick} aria-label="Alle Arbeitsbereiche öffnen" aria-haspopup="dialog" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}>
+          <span className="mobile-nav-inner"><span className="mobile-nav-more-icon"><UIIcon name="menu" size={23}/>{pendingCount>0&&<span className="mobile-nav-count" data-conflict={conflictCount>0}>{pendingCount>99?'99+':pendingCount}</span>}</span><span>Mehr</span></span>
+        </UnstyledButton>
+      </div>
     </Box>
+    <Drawer opened={menuOpen&&!desktop} onClose={()=>setMenuOpen(false)} position="bottom" size="auto" title={<Text fw={850} size="lg">Alle Arbeitsbereiche</Text>} classNames={{content:'mobile-menu-drawer',header:'mobile-menu-header',body:'mobile-menu-body'}} closeButtonProps={{'aria-label':'Menü schließen',size:'lg'}} returnFocus>
+      <Stack gap="md" component="nav" aria-label="Alle Arbeitsbereiche">
+        {activeItem&&<Text size="sm" c="dimmed">Aktuell: <b>{activeItem.fullLabel}</b></Text>}
+        {navigationGroups.map(group=>{const entries=navItems.filter(item=>item.group===group.id);return entries.length>0&&<Box key={group.id}><Text size="xs" fw={800} c="dimmed" tt="uppercase" mb={6}>{group.title}</Text>
+          <div className="mobile-menu-grid">{entries.map(item=>{const active=activeItem?.to===item.to;return <UnstyledButton key={item.to} component={Link} to={item.to} onClick={()=>setMenuOpen(false)} className="mobile-menu-link" data-active={active} aria-current={active?'page':undefined}>
+            <span className="mobile-menu-icon"><UIIcon name={item.icon} size={24}/></span><span className="mobile-menu-copy"><Text component="span" fw={750} size="sm">{item.fullLabel}</Text><Text component="span" size="xs" c="dimmed">{item.description}</Text>{item.to==='/sync'&&pendingCount>0&&<Badge color={queueColor} variant="light" size="sm">{queueLabel}</Badge>}</span>{active?<UIIcon name="check" size={17}/>:<UIIcon name="chevron-right" size={17}/>}
+          </UnstyledButton>;})}</div></Box>;})}
+      </Stack>
+    </Drawer>
   </AppShell>;
 }

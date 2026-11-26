@@ -124,7 +124,7 @@ The Mantine polish expectations remain release requirements:
 - attachment cards clearly distinguish cached/offline versus not-yet-offline files; missing files expose an online recovery action
 - Sync queue entries link back to their issue and distinguish pending/retrying/conflict states
 - conflict resolution is guarded against repeated taps while a choice is being applied
-- bottom navigation remains touch-friendly with five destinations: Arbeit, Tickets, Karte, Sync, Mehr
+- bottom navigation retains four quick destinations plus Mehr: Arbeit, Tickets, Grünpflege, Rapporte, Mehr. Full menu includes Karte, Sync, Meine Kolonne and role-specific destinations
 
 ## Live acceptance still required before organization-wide rollout
 

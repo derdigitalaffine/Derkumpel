@@ -145,3 +145,8 @@
 ## Meine Kolonne und Führung
 - Ersteller führt standardmäßig, sofern aktiv beteiligt. Andernfalls Auswahl aus den aktiven Mitgliedern; Führung und Ersteller werden getrennt gespeichert. Bestehende Einsätze ohne explizite Führung bleiben kompatibel.
 - Benachrichtigungen öffnen /green/mine?order=ID, markieren den Auftrag und zeigen den aktuellen Einsatz auch ohne lokalen Entwurf. Nur eigene erstellte oder geführte Kolonnen sind sichtbar, nur die Führung übernimmt Aufträge. Online erforderlich; Offline-Arbeit bleibt unter Grünpflege verfügbar.
+
+## Mobile Hauptnavigation
+- Vier unveränderliche Schnellzugriffe plus Mehr, alle Menüpunkte im gruppierten Vollmenü (einschließlich Karte, Meine Kolonne, Sync, Einstellungen sowie Disponentenbereiche nach Berechtigungsprüfung). Keine horizontalen Menüüberläufe bei 320/360/390/430 px; Touch-Ziele mindestens 48 px, Safe Areas und kurze Querformat-Displays beachten.
+- Mehr öffnet einen scrollbaren Mantine-Drawer, schließt bei Auswahl, Escape, Overlay oder Wechsel zum Desktop. Aktive Route und Sync-Konflikte bleiben erkennbar. Navigation ist auch offline erreichbar; serverseitige Berechtigungen unverändert.
+- Automatisierte Tests für Menüvollständigkeit, Rollenfilter, Schnellzugriffe und Unterrouten; reale Viewport-/Geräteprüfung zusätzlich erforderlich.
