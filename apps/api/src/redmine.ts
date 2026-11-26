@@ -145,14 +145,14 @@ export async function fetchIssueBrowser(
 
 const rapportGroups = ['Disponenten Bauhof', 'Bauhofmitarbeiter'] as const;
 type GroupRef = { id: number; name: string };
-export async function fetchRapportUsers(config: AppConfig, creds: CredentialEnvelope): Promise<{ users: GroupRef[]; missingGroups: string[] }> {
+export async function fetchRapportUsers(config: AppConfig, creds: CredentialEnvelope): Promise<{ users: (GroupRef & { groups: string[] })[]; missingGroups: string[] }> {
   const result = await redmineJson<{ groups: GroupRef[] }>(config, creds, '/groups.json');
   const groups = result.groups.filter(group => rapportGroups.some(name => name === group.name));
-  const users = new Map<number, GroupRef>();
+  const users = new Map<number, GroupRef & { groups: string[] }>();
   for (const group of groups) {
     const detail = await redmineJson<{ group: { users?: GroupRef[] } }>(config, creds, `/groups/${group.id}.json?include=users`);
     if (!Array.isArray(detail.group.users)) throw new RedmineError(502, 'Redmine liefert keine Gruppenmitglieder.');
-    for (const user of detail.group.users) users.set(user.id, { id: user.id, name: user.name });
+    for (const user of detail.group.users) users.set(user.id, { id: user.id, name: user.name, groups: [...new Set([...(users.get(user.id)?.groups ?? []), group.name])] });
   }
   return { users: [...users.values()].sort((a, b) => a.name.localeCompare(b.name, 'de')), missingGroups: rapportGroups.filter(name => !groups.some(group => group.name === name)) };
 }
