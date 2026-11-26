@@ -429,3 +429,5 @@ body {
 .rapport-signal-dot[data-signal="missing"]{background:#d44b4b}.rapport-signal-dot[data-signal="short"]{background:#d9aa23}.rapport-signal-dot[data-signal="complete"]{background:#35985b}
 
 .review-page{width:100%;min-width:0}.review-card{width:100%;min-width:0;min-height:84px;padding:14px;border:1px solid var(--mantine-color-default-border);border-radius:14px;background:var(--mantine-color-body);text-align:left;overflow-wrap:anywhere;touch-action:manipulation}.review-card:hover,.review-card:active{background:var(--mantine-color-default-hover)}.review-card:focus-visible{outline:2px solid var(--mantine-primary-color-filled);outline-offset:2px}.review-holiday-row{padding:9px 0;border-bottom:1px solid var(--mantine-color-default-border)}.review-detail-body{max-width:760px;margin-inline:auto;padding-bottom:max(20px,env(safe-area-inset-bottom))}.review-actions{margin-top:8px}.review-page .mantine-Button-label{white-space:normal}.review-page .mantine-Badge-root{max-width:100%}
+
+.rapport-wide-table td .mantine-Text-root {overflow-wrap:anywhere;} .rapport-touch-body .mantine-Text-root {overflow-wrap:anywhere;}

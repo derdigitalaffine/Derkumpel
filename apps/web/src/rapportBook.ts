@@ -1,5 +1,5 @@
 export type Person={id:number;name:string};
-export type RapportLine={greenEventId?:number;sources?:{id:number;subject:string;municipalities?:string[]}[];sourceIds?:number[];id:string;start:string;end:string;kind:'work'|'pause';activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[];recordedBy?:Person;recordedAt?:string};
+export type RapportLine={sharedResources?:import('./green').MaterialUsage[];greenEventId?:number;sources?:{id:number;subject:string;municipalities?:string[]}[];sourceIds?:number[];id:string;start:string;end:string;kind:'work'|'pause';activity:string;order:string;machines:{name:string;minutes:number}[];materials:{name:string;quantity:number;unit:string}[];recordedBy?:Person;recordedAt?:string};
 export type RapportReport={correction?:{reportId:number;reason:string;createdBy:Person;createdAt:string};id:number;version:1;owner:Person;date:string;state:'draft'|'submitted'|'review'|'returned'|'closed';revision:string;lines:RapportLine[];material:string;submitted?:{by:Person;at:string};reviewed?:{by:Person;at:string};returnNote?:string;history?:{by:string;at:string;note:string}[]};
 export type Catalog={equipmentRows?:string[];materialRows?:import('./green').MaterialItem[];machines:{id:number;name:string}[];materials:{id:number;name:string}[]};
 export const stateLabels={draft:'Entwurf',submitted:'Eingereicht',review:'In Prüfung',returned:'Zurückgegeben',closed:'Abgeschlossen'};
@@ -65,6 +65,6 @@ export function daySignal(date:string,reports:RapportReport[],owner:number,loade
  return {signal:minutes>=510?'complete':'short',minutes,label:Math.floor(minutes/60)+':'+String(minutes%60).padStart(2,'0')+' h / 8:30 h'};
 }
 export function equipmentOptions(catalog:Catalog,recent:string[]=[]):string[]{
- const names=[...recent,...(catalog.equipmentRows??[]),...catalog.machines.map(m=>m.name)],seen=new Set<string>();
+ const names=[...recent,...(catalog.equipmentRows??[]),...(catalog.materialRows??[]).filter(m=>m.kind==='machine').map(m=>m.name),...catalog.machines.map(m=>m.name)],seen=new Set<string>();
  return names.filter(n=>{const k=n.trim().normalize('NFKC').toLocaleLowerCase('de').replace(/\s+/g,' ');if(!k||seen.has(k))return false;seen.add(k);return true;});
 }

@@ -1,6 +1,7 @@
+import {resourceText,usageText,noteMarker,orderTicket,type ResourceUsage} from './resourceNotes.js';
 import {holidaySubject,holidayTemplate,parseHolidays,validHolidayYear,overtimeRows,type HolidayCalendar,type Holiday} from './holidays.js';
 import { equipmentSubject,equipmentTemplate,equipmentNames,equipmentAdditions,equipmentKey } from './equipmentCatalog.js';
-import { materialSubject,materialTemplate,parseMaterials,materialRow,type MaterialItem } from './materialCatalog.js';
+import { materialSubject,materialTemplate,parseMaterials,materialRow,classifyMaterial,type MaterialItem } from './materialCatalog.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
@@ -15,7 +16,7 @@ type Person = { id: number; name: string };
 type Member = Person & { groups: string[] };
 type State = 'draft'|'submitted'|'review'|'returned'|'closed';
 type SourceRef={id:number;subject:string;municipalities?:string[]};
-type Line = { greenEventId?:number; sources?:SourceRef[]; id: string; start: string; end: string; kind: 'work'|'pause'; activity: string; order: string; machines: {name:string; minutes:number}[]; materials: {name:string; quantity:number; unit:string}[]; recordedBy: Person; recordedAt:string };
+type Line = { sharedResources?:ResourceUsage[]; greenEventId?:number; sources?:SourceRef[]; id: string; start: string; end: string; kind: 'work'|'pause'; activity: string; order: string; machines: {name:string; minutes:number}[]; materials: {name:string; quantity:number; unit:string}[]; recordedBy: Person; recordedAt:string };
 type Correction={reportId:number;reason:string;createdBy:Person;createdAt:string};
 type Data = { storageState?:State; storageReviewed?:{by:Person;at:string}; storageReturnNote?:string; correction?:Correction; version:1; owner:Person; date:string; lines:Line[]; material:string; submitted?:{by:Person;at:string} };
 type Issue = { attachments?:{id:number;filename:string;content_url:string}[]; description?:string; id:number; subject:string; project:{id:number;name?:string}; tracker:{id:number}; status:{id:number;is_closed?:boolean}; updated_on:string; custom_fields?:{id:number;value:unknown}[]; allowed_statuses?:{id:number}[]; journals?:{user?:Person;created_on:string;notes?:string;private_notes?:boolean;details?:{property:string;name:string;new_value?:string}[]}[] };
@@ -76,7 +77,7 @@ function parseLine(value:unknown,actor:Person,prior?:Line):Line {
   const materials=arr(v.materials??[],30).map(x=>{const m=obj(x);return {name:str(m.name,200),quantity:positive(m.quantity,1e8),unit:str(m.unit,40)};});
   if(machines.some(m=>!m.name||/[\r\n]/.test(m.name)||m.name.startsWith('#'))||materials.some(m=>!m.name||!m.unit))fail(400,'Maschine oder Material unvollständig');
   if(v.kind==='pause'&&(machines.length||materials.length))fail(400,'Keine Maschinen oder Materialien in Pausen');
-  return {...(prior?.greenEventId?{greenEventId:prior.greenEventId}:{}),sources:prior?.sources??[],id:uid(v.id),start,end,kind:v.kind,activity:str(v.activity??''),order:str(v.order??'',200),machines,materials,recordedBy:prior?.recordedBy??actor,recordedAt:prior?.recordedAt??new Date().toISOString()};
+  return {...(prior?.greenEventId?{greenEventId:prior.greenEventId}:{}),...(prior?.sharedResources?{sharedResources:prior.sharedResources}:{}),sources:prior?.sources??[],id:uid(v.id),start,end,kind:v.kind,activity:str(v.activity??''),order:str(v.order??'',200),machines,materials,recordedBy:prior?.recordedBy??actor,recordedAt:prior?.recordedAt??new Date().toISOString()};
 }
 export function summary(data:Data) {return {work:data.lines.filter(l=>l.kind==='work').reduce((n,l)=>n+duration(l),0),pause:data.lines.filter(l=>l.kind==='pause').reduce((n,l)=>n+duration(l),0),target:target(data.date)};}
 const fmt=(n:number)=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
@@ -286,7 +287,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
   type Participation={employee:number;start:string;end:string};
-  type Usage={code?:string;name:string;unit:string;quantity:number;note:string};
+  type Usage=ResourceUsage;
   type GreenEvent={version:1;participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
@@ -323,10 +324,17 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
         data.start=instant(b.start);data.end=instant(b.end);data.activity=str(b.activity??'');if(!prior)validateQuarterTimes({start:data.start,end:data.end});
         if(Date.parse(data.end)<=Date.parse(data.start)||Date.parse(data.end)-Date.parse(data.start)>86400000||(Date.parse(data.end)-Date.parse(data.start))%900000!==0)fail(400,'Ungültige Rapportdauer');
         if(b.participation!==undefined){const seen=new Set<number>();data.participation=arr(b.participation,100).map(v=>{const x=obj(v),employee=Number(x.employee),start=instant(x.start),end=instant(x.end);if(!employees.includes(employee)||seen.has(employee)||start<data.start!||end>data.end!||end<=start||dateInBerlin(new Date(start))!==dateInBerlin(new Date(data.start!)))fail(400,'Ungültige individuelle Teilnahme');seen.add(employee);validateQuarterTimes({start,end});return {employee,start,end};}).sort((a,b)=>a.employee-b.employee);if(!data.participation.length)fail(400,'Mindestens eine Person rapportieren');}
-        if(b.materials!==undefined)data.materials=arr(b.materials,50).map(v=>{const x=obj(v),name=str(x.name,200),unit=str(x.unit,40),quantity=positive(x.quantity,1e8),note=str(x.note??'',300),code=x.code===undefined?undefined:str(x.code,60);if(!name||!unit)fail(400,'Material und Einheit erforderlich');return {...(code?{code}:{}),name,unit,quantity,note};});
+        if(b.materials!==undefined)data.materials=arr(b.materials,50).map(v=>{const x=obj(v),name=str(x.name,200),unit=str(x.unit,40),quantity=positive(x.quantity,1e8),note=str(x.note??'',300),code=x.code===undefined?undefined:str(x.code,60);if(!name||!unit)fail(400,'Material und Einheit erforderlich');if(x.kind!==undefined&&x.kind!=='machine'&&x.kind!=='material')fail(400,'Ungültiger Ressourcentyp');if(x.kind==='machine'&&(!Number.isInteger(quantity)||quantity>1440||unit!=='min'))fail(400,'Gerätezeit in Minuten erforderlich');return {...(code?{code}:{}),name,unit,quantity,note,...(x.kind==='machine'?{kind:'machine' as const}:{})};});
       }
     }
-    if(prior){const comparable=(d:GreenEvent)=>JSON.stringify({...d,actor:{id:d.actor.id,name:''}});if(comparable(prior.data)!==comparable(data))fail(409,'Einsatzereignis bereits mit abweichenden Daten gespeichert');return {id:prior.issue.id};}
+    const commentGreen=async(event:GreenEvent,eventId:number)=>{
+      if(event.phase!=='finish'||!event.materials?.length)return;
+      const body='DerKumpel – gemeinsamer Grünpflegeeinsatz vom '+dateInBerlin(new Date(event.start!)).split('-').reverse().join('.')+' (Einsatz #'+eventId+').\n'+usageText(event.materials).join('\n')+'\nGemeinsame Ressourcen für '+event.sources.length+' ausgewählte Aufgabe(n); nicht pro Aufgabe oder Mitarbeiter addieren. Ticketstatus unverändert.';
+      // Deleted catalogue tasks do not invalidate historical reports.
+      for(const source of event.sources){if(!store.tasks.some(t=>t.id===source.id))continue;
+        await resourceJournal(store.admin,source.id,'green-'+eventId,body,i=>i.project.id===store.project.id&&i.tracker.id===store.tracker&&store.tasks.some(t=>t.id===i.id));}
+    };
+    if(prior){const comparable=(d:GreenEvent)=>JSON.stringify({...d,actor:{id:d.actor.id,name:''}});if(comparable(prior.data)!==comparable(data))fail(409,'Einsatzereignis bereits mit abweichenden Daten gespeichert');await commentGreen(prior.data,prior.issue.id);return {id:prior.issue.id};}
     const statuses=(await store.admin<{issue_statuses:{id:number;is_closed:boolean}[]}>('/issue_statuses.json')).issue_statuses;
     const closed=store.defaultStatusId;
     if(!closed||!statuses.some(s=>s.id===closed&&s.is_closed))fail(503,'Grünpflegetracker benötigt einen geschlossenen Standardstatus (Erledigt), damit technische Ereignisse ohne Workflow angelegt werden können.');
@@ -334,7 +342,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const created=await store.admin<{issue:Issue}>('/issues.json','POST',{issue:{project_id:store.project.id,tracker_id:store.tracker,status_id:closed,is_private:true,subject,description:'DERKUMPEL-GREEN/1\n'+JSON.stringify(data),...(places.length===1?{custom_fields:[{id:store.field,value:places[0]}]}:{})}});
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+created.issue.id+'.json');
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.status.id!==closed||JSON.stringify(readEvent(issue))!==JSON.stringify(data))fail(409,'Redmine hat das Einsatzereignis nicht vollständig übernommen.');
-    return {id:issue.id};
+    await commentGreen(data,issue.id);return {id:issue.id};
   }
   app.post('/api/rapport/green/event',async r=>{const c=await context(r);return serialized(()=>greenEvent(c,r.body));});
   async function greenCaptureSources(c:C,value:unknown,line:Line,employees:number[]){
@@ -343,7 +351,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+matches[0]!.id+'.json');
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject)fail(409,'Einsatzkennung stimmt nicht');
     const event=readEvent(issue);if(event.actor.id!==c.actor.id||event.activity!==line.activity||employees.some(id=>event.participation?!event.participation.some(x=>x.employee===id&&x.start===line.start&&x.end===line.end):!event.employees.includes(id)||event.start!==line.start||event.end!==line.end))fail(409,'Rapport stimmt nicht mit gespeichertem Einsatz überein');
-    line.greenEventId=issue.id;return event.sources;
+    line.greenEventId=issue.id;if(event.materials?.length)line.sharedResources=event.materials;return event.sources;
   }
   async function sourceRefs(c:C,value:unknown,kind?:unknown):Promise<SourceRef[]> {
     const ids=[...new Set(arr(value??[],50).map(x=>{if(typeof x!=='number'||!Number.isSafeInteger(x)||x<=0)fail(400,'Ungültige Auftragsreferenz');return x;}))];
@@ -471,8 +479,38 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     });
   });
   app.put('/api/rapport/reports/:id',async r=>{const c=await context(r),b=obj(r.body);return serialized(async()=>{const {i,r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);if(d.revision!==b.revision)fail(409,'Rapport wurde geändert. Bitte neu laden.');if(d.state==='closed'||(!c.dispatcher&&!['draft','returned'].includes(d.state)))fail(409,'Rapport ist gesperrt');const reason=str(b.reason??'');if(c.dispatcher&&d.owner.id!==c.actor.id&&!reason)fail(400,'Korrekturbegründung erforderlich');if(!['draft','returned'].includes(d.state)&&!reason)fail(400,'Korrekturbegründung erforderlich');const lines=await Promise.all(arr(b.lines,200).map(async x=>{const prior=d.lines.find(l=>l.id===obj(x).id);const line=parseLine(x,c.actor,prior);validateQuarterTimes(line,prior);if(obj(x).sourceIds!==undefined)line.sources=await sourceRefs(c,obj(x).sourceIds,obj(x).sourceKind);return line;}));validateLines(lines,d.date,false);const next:Data={version:1,owner:d.owner,date:d.date,lines,material:str(b.material??'',5000),...(d.submitted?{submitted:d.submitted}:{}),...(d.correction?{correction:d.correction}:{})};await registerEquipment(c,lines.flatMap(l=>l.machines.map(m=>m.name)),d.lines.flatMap(l=>l.machines.map(m=>m.name)));const prior=summary(d),after=summary(next);const changed=lines.filter(l=>JSON.stringify(l)!==JSON.stringify(d.lines.find(x=>x.id===l.id))).length;const removed=d.lines.filter(l=>!lines.some(x=>x.id===l.id)).length;return write(c,i,next,note(c,'Rapport korrigiert; Arbeitszeit '+fmt(prior.work)+' → '+fmt(after.work)+' h; '+changed+' geänderte/neue und '+removed+' entfernte Positionen'+(reason?': '+reason:'')));});});
+  // Journal writes only: no status, assignment, or other ticket fields.
+  async function resourceJournal(get:Get,id:number,scope:string,body:string,check:(i:Issue)=>boolean){
+    const path='/issues/'+id+'.json?include=journals';
+    const {issue}=await get<{issue:Issue}>(path);
+    if(issue.id!==id||!check(issue))fail(403,'Originalticket #'+id+' ist kein zulässiger Auftrag.');
+    const marker=noteMarker(scope,id,body);
+    if(issue.journals?.some(j=>j.notes?.includes(marker)))return;
+    if(!Array.isArray(issue.journals))fail(409,'Kommentare von Ticket #'+id+' können nicht geprüft werden.');
+    await get('/issues/'+id+'.json','PUT',{issue:{notes:body+'\n\n'+marker}});
+    const {issue:updated}=await get<{issue:Issue}>(path);
+    if(updated.status.id!==issue.status.id)fail(409,'Status von Originalticket #'+id+' hat sich während der Kommentierung geändert. Bitte prüfen.');
+    if(!updated.journals?.some(j=>j.notes?.includes(marker)))fail(409,'Ressourcenkommentar in Ticket #'+id+' wurde nicht bestätigt.');
+  }
+  async function reportResourceNotes(c:C,d:Report){
+    const personal:Get=<T>(path:string,method='GET',body?:unknown)=>redmineJson<T>(config,c.creds,path,{method,...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const byTicket=new Map<number,string[]>();
+    const gather=(report:Report)=>{const map=new Map<number,string[]>();for(const l of report.lines){if(l.kind!=='work')continue;
+      // Shared green resources are journaled once on the shared finish, never per person.
+      const content=resourceText(l.machines,l.materials);if(!content.length)continue;
+      const ids=[...new Set([orderTicket(l.order),...(l.greenEventId?[]:(l.sources??[]).filter(s=>!s.municipalities).map(s=>s.id))].filter(Boolean))];
+      for(const id of ids){const lines=map.get(id)??[];lines.push(...content,...(ids.length>1?['Gemeinsame Zuordnung zu '+ids.length+' Aufträgen; Ressourcen nicht mehrfach summieren.']:[]));map.set(id,lines);}
+    }return map;};
+    const current=gather(d);for(const [id,lines] of current)byTicket.set(id,lines);
+    if(d.correction){const original=(await detail(c,d.correction.reportId)).r;for(const id of gather(original).keys())if(!byTicket.has(id))byTicket.set(id,[]);}
+    for(const [id,lines] of byTicket){
+      const body='DerKumpel – Ressourcenrapport vom '+d.date.split('-').reverse().join('.')+' (Beleg #'+d.id+').'+(d.correction?' Korrektur – ersetzt die Ressourcenangaben aus Beleg #'+d.correction.reportId+'.':'')+'\n'+(lines.length?lines.join('\n'):'Keine Ressourcen mehr für diesen Auftrag rapportiert.')+'\nZur Abnahme erfasst; neuere Ressourcenangaben desselben Belegs ersetzen frühere Angaben. Der Ticketstatus bleibt unverändert.';
+      try{await resourceJournal(personal,id,'rapport-'+d.id,body,i=>![c.s.project,c.s.catalogProject].includes(i.project.id)&&!internalRapportProject(i.project.id,i.project.name));}
+      catch(e){fail(e instanceof RedmineError?e.status:502,'Ressourcenkommentar in Originalticket #'+id+' fehlgeschlagen: '+(e instanceof Error?e.message:String(e))+' – Rapport bleibt zur Prüfung offen. Erneut abschließen, bereits bestätigte Kommentare werden erkannt.');}
+    }
+  }
   app.post('/api/rapport/reports/:id/transition',async r=>{const c=await context(r),b=obj(r.body);return serialized(async()=>{const {i,r:d}=await detail(c,Number((r.params as {id:string}).id));allowed(c,d);if(d.revision!==b.revision)fail(409,'Rapport wurde geändert. Bitte neu laden.');const action=b.action,reason=str(b.reason??'');if(action==='submit'&&d.owner.id===c.actor.id&&['draft','returned'].includes(d.state)){validateLines(d.lines,d.date,true);const next:Data={version:1,owner:d.owner,date:d.date,lines:d.lines,material:d.material,submitted:{by:{id:c.actor.id,name:c.actor.name},at:new Date().toISOString()},...(d.correction?{correction:d.correction}:{})};if(c.s.automatic)return write(c,i,{...next,storageState:'submitted'},note(c,'Eingereicht'));if(!i.allowed_statuses?.some(s=>s.id===c.s.statuses.submitted))fail(409,'Redmine-Workflow erlaubt Einreichung nicht');return write(c,i,next,note(c,'Eingereicht'),c.s.statuses.submitted);}
-    if(!c.dispatcher)return fail(403,'Nur Disponenten');const next:State|undefined=action==='review'&&d.state==='submitted'?'review':action==='return'&&['submitted','review'].includes(d.state)?'returned':action==='close'&&['submitted','review'].includes(d.state)?'closed':undefined;if(!next)return fail(409,'Unzulässiger Statuswechsel');if(next==='returned'&&!reason)fail(400,'Rückgabebegründung erforderlich');if(next==='closed'){validateLines(d.lines,d.date,true);if(!d.submitted)fail(409,'Digitale Einreichung fehlt');}
+    if(!c.dispatcher)return fail(403,'Nur Disponenten');const next:State|undefined=action==='review'&&d.state==='submitted'?'review':action==='return'&&['submitted','review'].includes(d.state)?'returned':action==='close'&&['submitted','review'].includes(d.state)?'closed':undefined;if(!next)return fail(409,'Unzulässiger Statuswechsel');if(next==='returned'&&!reason)fail(400,'Rückgabebegründung erforderlich');if(next==='closed'){validateLines(d.lines,d.date,true);if(!d.submitted)fail(409,'Digitale Einreichung fehlt');await reportResourceNotes(c,d);}
     if(c.s.automatic){const data:Data={version:1,owner:d.owner,date:d.date,lines:d.lines,material:d.material,submitted:d.submitted,correction:d.correction,storageState:next,...(next==='closed'?{storageReviewed:{by:{id:c.actor.id,name:c.actor.name},at:new Date().toISOString()}}:{}),...(next==='returned'?{storageReturnNote:reason}:{})};return write(c,i,data,note(c,action+(reason?': '+reason:'')+(next==='closed'&&d.owner.id===c.actor.id?' (Selbstprüfung)':'')));}
     const personal=(await redmineJson<{issue:Issue}>(config,c.creds,'/issues/'+i.id+'.json?include=allowed_statuses')).issue;if(!personal.allowed_statuses?.some(s=>s.id===c.s.statuses[next]))fail(403,'Redmine-Workflow erlaubt Statuswechsel nicht');
     await redmineJson(config,c.creds,'/issues/'+i.id+'.json',{method:'PUT',body:JSON.stringify({issue:{status_id:c.s.statuses[next],notes:note(c,action+(reason?': '+reason:'')+(next==='closed'&&d.owner.id===c.actor.id?' (Selbstprüfung)':''))}})});const actual=await detail(c,i.id);if(actual.i.status.id!==c.s.statuses[next])fail(409,'Redmine hat den Statuswechsel nicht übernommen');return actual.r;});});
@@ -506,13 +544,33 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   }
   app.get('/api/rapport/materials',async r=>{const c=await context(r);return serialized(async()=>{const issue=await materialTicket(c);return {ticketId:issue.id,...parseMaterials(issue.description??'')};});});
   app.post('/api/rapport/materials',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');const b=obj(r.body);
-    const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)})};
+    if(b.kind!==undefined&&b.kind!=='machine'&&b.kind!=='material')fail(400,'Ungültiger Ressourcentyp');const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)}),...(b.kind==='machine'?{kind:'machine'}:{})};
     if(Object.values(item).some(v=>typeof v==='string'&&/[\r\n|]/.test(v))||parseMaterials(materialRow(item)).items.length!==1)fail(400,'Ungültige Materialzeile');
     return serialized(async()=>{const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen. Bitte in Redmine korrigieren.');
       const old=parsed.items.find(x=>x.code.toLowerCase()===item.code.toLowerCase());if(old){if(JSON.stringify(old)===JSON.stringify(item))return {ticketId:issue.id,...parsed};fail(409,'Materialkennung bereits vergeben');}
       const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
       await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description:(issue.description??'').trimEnd()+'\n'+materialRow(item)+'\n',notes:note(c,'Materialzeile ergänzt: '+item.code)}});
       const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');const result=parseMaterials(updated.description??'');if(!result.items.some(x=>JSON.stringify(x)===JSON.stringify(item)))fail(409,'Materialzeile nicht vollständig gespeichert');
+      return {ticketId:issue.id,...result};
+    });
+  });
+  app.put('/api/rapport/materials/:code/classification',async r=>{
+    const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');
+    const code=(r.params as {code:string}).code,b=obj(r.body),kind=b.kind;
+    if(kind!=='machine'&&kind!=='material')fail(400,'Ungültiger Ressourcentyp');
+    if(b.previous!=='machine'&&b.previous!=='material')fail(400,'Bisheriger Ressourcentyp fehlt');
+    return serialized(async()=>{
+      const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');
+      if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen.');
+      const current=parsed.items.find(x=>x.code.toLowerCase()===code.toLowerCase());if(!current)fail(404,'Katalogeintrag nicht gefunden');
+      const old=current.kind??'material';if(old===kind)return {ticketId:issue.id,...parsed};
+      if(old!==b.previous)fail(409,'Ressourcentyp wurde bereits geändert. Bitte neu laden.');
+      const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
+      if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
+      const description=classifyMaterial(issue.description??'',code,kind);
+      await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description,notes:note(c,'Ressourcentyp geändert: '+current.code+' → '+(kind==='machine'?'Maschine':'Material'))}});
+      const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');
+      const result=parseMaterials(updated.description??'');if((result.items.find(x=>x.code===current.code)?.kind??'material')!==kind||!result.items.some(x=>x.code===current.code))fail(409,'Ressourcentyp nicht übernommen');
       return {ticketId:issue.id,...result};
     });
   });
