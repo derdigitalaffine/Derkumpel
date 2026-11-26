@@ -4,9 +4,10 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import { registerRapport } from './rapport.js';
 import { loadConfig } from './config.js';
 import { decryptCredentials, encryptCredentials, type CredentialEnvelope } from './session.js';
-import { fetchRapportUsers, fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
+import { internalRapportProject, fetchCurrentUser, fetchIssueBrowser, fetchMyWork, fetchVisibleIssues, redmineBinary, redmineJson, RedmineError, uploadToRedmine } from './redmine.js';
 import { normalizePreferences, PushRegistry, safeEvent, validSubscription, verifyEventToken } from './push.js';
 import { createRedminePollApi, RedminePushPoller } from './pushPoller.js';
 
@@ -188,10 +189,7 @@ app.post('/api/auth/login', async (request, reply) => {
 app.post('/api/auth/logout', async (_request, reply) => { clearSession(reply); return { ok: true }; });
 app.get('/api/auth/me', async (request) => (await fetchCurrentUser(config, credentials(request))).user);
 
-app.get('/api/rapport/users', async (request, reply) => {
-  reply.header('Cache-Control', 'no-store');
-  return fetchRapportUsers(config, credentials(request));
-});
+registerRapport(app, config, credentials);
 
 app.get('/api/issues/my', async (request) => {
   const query = request.query as { status?: string };
@@ -217,13 +215,20 @@ app.get('/api/issues/browse', async (request) => {
   });
 });
 
+async function assertOrdinaryIssue(request:FastifyRequest,id:number) {
+  if(process.env.RAPPORT_ENABLED!=='true')return;
+  const {issue}=await redmineJson<{issue:{project:{id:number}}}>(config,credentials(request),'/issues/'+id+'.json');
+  if(internalRapportProject(issue.project.id))throw new RedmineError(404,'Auftrag nicht gefunden');
+}
 app.get('/api/issues/:id', async (request) => {
   const { id } = request.params as { id: string };
+  await assertOrdinaryIssue(request,numeric(id));
   return redmineJson(config, credentials(request), `/issues/${numeric(id)}.json?include=children,attachments,relations,journals,allowed_statuses`);
 });
 
 app.put('/api/issues/:id', async (request, reply) => {
   const { id } = request.params as { id: string };
+  await assertOrdinaryIssue(request,numeric(id));
   const body = request.body as { issue?: Record<string, unknown> } | undefined;
   if (!body?.issue || typeof body.issue !== 'object') return reply.code(400).send({ error: 'invalid_issue' });
   await redmineJson(config, credentials(request), `/issues/${numeric(id)}.json`, { method: 'PUT', body: JSON.stringify({ issue: body.issue }) });
@@ -232,6 +237,7 @@ app.put('/api/issues/:id', async (request, reply) => {
 
 app.post('/api/issues/:id/comments', async (request, reply) => {
   const { id } = request.params as { id: string };
+  await assertOrdinaryIssue(request,numeric(id));
   const body = request.body as { notes?: string; private?: boolean } | undefined;
   const notes = body?.notes?.trim() ?? '';
   if (!notes || notes.length > 20_000) return reply.code(400).send({ error: 'invalid_notes' });
@@ -242,6 +248,7 @@ app.post('/api/issues/:id/comments', async (request, reply) => {
 app.post('/api/issues/:id/attachments', async (request, reply) => {
   const { id } = request.params as { id: string };
   const issueId = numeric(id);
+  await assertOrdinaryIssue(request,issueId);
   const part = await request.file();
   if (!part) return reply.code(400).send({ error: 'file_required' });
   const bytes = await part.toBuffer();

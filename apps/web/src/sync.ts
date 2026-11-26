@@ -1,4 +1,5 @@
 import { api, ApiError, AuthRequiredError } from './api';
+import { replayRapportQueue } from './rapportQueue';
 import { db, getSetting, type OutboxRecord } from './db';
 import { prepareOfflinePreview } from './image';
 import { redminePatchValue, sameValue } from './issueUtils';
@@ -190,6 +191,7 @@ async function doSync(): Promise<void> {
   await setSync('status', { state: 'syncing', at: Date.now() });
   try {
     await replayOutbox();
+    await replayRapportQueue();
     await refreshMyWork();
     await purgeStale();
     await setSync('status', { state: 'idle', at: Date.now(), lastSuccess: Date.now() });

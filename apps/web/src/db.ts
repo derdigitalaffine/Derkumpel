@@ -19,6 +19,8 @@ export type OutboxRecord = {
   conflict?: { server: unknown; local: unknown; reason: string };
   lastError?: string;
 };
+export type RapportCaptureBody={actorId:number;date:string;employees:number[];line:{id:string;start:string;end:string;kind:'work';activity:string;order:string;machines:never[];materials:never[]}};
+export type RapportQueueRecord={id:string;ownerId:number;createdAt:number;body:RapportCaptureBody;state:'pending'|'retrying'|'conflict';message?:string};
 export type SettingRecord = { key: string; value: unknown };
 export type SyncStateRecord = { key: string; value: unknown };
 
@@ -27,6 +29,7 @@ class DerkumpelDB extends Dexie {
   attachments!: EntityTable<AttachmentRecord, 'id'>;
   outbox!: EntityTable<OutboxRecord, 'id'>;
   settings!: EntityTable<SettingRecord, 'key'>;
+  rapportQueue!: EntityTable<RapportQueueRecord,'id'>;
   syncState!: EntityTable<SyncStateRecord, 'key'>;
 
   constructor() {
@@ -38,6 +41,7 @@ class DerkumpelDB extends Dexie {
       settings: 'key',
       syncState: 'key',
     });
+    this.version(2).stores({rapportQueue:'id, ownerId, createdAt, state'});
   }
 }
 
@@ -53,7 +57,7 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
 }
 
 export async function clearBusinessData(): Promise<void> {
-  await db.transaction('rw', db.issues, db.attachments, db.outbox, db.syncState, async () => {
-    await Promise.all([db.issues.clear(), db.attachments.clear(), db.outbox.clear(), db.syncState.clear()]);
+  await db.transaction('rw', db.issues, db.attachments, db.outbox, db.syncState, db.settings, async () => {
+    await Promise.all([db.issues.clear(), db.attachments.clear(), db.outbox.clear(), db.syncState.clear(), db.settings.delete('rapport-roster')]);
   });
 }

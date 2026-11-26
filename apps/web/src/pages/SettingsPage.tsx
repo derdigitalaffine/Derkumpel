@@ -5,6 +5,7 @@ import { api, type PushPreferences, type PushConfig } from '../api';
 import { disablePush, enablePush, pushState, pushSupported, updatePushPreferences } from '../push';
 import { clearBusinessData, db, getSetting, setSetting } from '../db';
 import { useDexieLive } from '../live';
+import { currentRapportQueue } from '../rapportQueue';
 import { boundsAround, prefetchOfflineMap } from '../mapOffline';
 import type { NamedRef, PublicConfig } from '../types';
 import { Link } from 'react-router-dom';
@@ -20,7 +21,7 @@ function SectionHeading({ icon, title, description }: { icon: IconName; title: s
 }
 
 export function SettingsPage() {
-  const pendingCount = useDexieLive(useCallback(() => db.outbox.count(), []), 0);
+  const pendingCount = useDexieLive(useCallback(async () => await db.outbox.count()+(await currentRapportQueue()).length, []), 0);
   const [retention, setRetention] = useState(30);
   const [trackers, setTrackers] = useState<NamedRef[]>([]);
   const [excluded, setExcluded] = useState<number[]>([]);
