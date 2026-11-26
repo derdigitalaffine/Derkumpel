@@ -1,3 +1,4 @@
+import { materialSubject,materialTemplate,parseMaterials,materialRow,type MaterialItem } from './materialCatalog.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename, unlink } from 'node:fs/promises';
@@ -282,7 +283,9 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     return {admin,project,tracker,field,issues,tasks,defaultStatusId:trackers.find(t=>t.id===tracker)?.default_status?.id};
   }
   async function greenCatalogue(c:GreenScope){return (await greenStore(c)).tasks;}
-  type GreenEvent={version:1;operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
+  type Participation={employee:number;start:string;end:string};
+  type Usage={code?:string;name:string;unit:string;quantity:number;note:string};
+  type GreenEvent={version:1;participation?:Participation[];materials?:Usage[];operationId:string;actor:Person;employees:number[];sources:SourceRef[];startedAt:string;endedAt?:string;start?:string;end?:string;activity?:string;phase:'start'|'stop'|'finish'};
   const eventSubject=(actor:number,operation:string,phase:string)=>'DK Grünpflege-Einsatz '+actor+' '+operation+' '+phase;
   function readEvent(issue:Issue):GreenEvent {
     const m=/^DERKUMPEL-GREEN\/1(?:\r\n|\n|\r)/.exec(issue.description??'');if(!m)fail(409,'Ungültiger Grünpflege-Einsatz #'+issue.id);
@@ -317,6 +320,8 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
         if(!stopped||stopped.data.endedAt!==data.endedAt)fail(409,'Arbeitsende noch nicht eindeutig synchronisiert');
         data.start=instant(b.start);data.end=instant(b.end);data.activity=str(b.activity??'');if(!prior)validateQuarterTimes({start:data.start,end:data.end});
         if(Date.parse(data.end)<=Date.parse(data.start)||Date.parse(data.end)-Date.parse(data.start)>86400000||(Date.parse(data.end)-Date.parse(data.start))%900000!==0)fail(400,'Ungültige Rapportdauer');
+        if(b.participation!==undefined){const seen=new Set<number>();data.participation=arr(b.participation,100).map(v=>{const x=obj(v),employee=Number(x.employee),start=instant(x.start),end=instant(x.end);if(!employees.includes(employee)||seen.has(employee)||start<data.start!||end>data.end!||end<=start||dateInBerlin(new Date(start))!==dateInBerlin(new Date(data.start!)))fail(400,'Ungültige individuelle Teilnahme');seen.add(employee);validateQuarterTimes({start,end});return {employee,start,end};}).sort((a,b)=>a.employee-b.employee);if(!data.participation.length)fail(400,'Mindestens eine Person rapportieren');}
+        if(b.materials!==undefined)data.materials=arr(b.materials,50).map(v=>{const x=obj(v),name=str(x.name,200),unit=str(x.unit,40),quantity=positive(x.quantity,1e8),note=str(x.note??'',300),code=x.code===undefined?undefined:str(x.code,60);if(!name||!unit)fail(400,'Material und Einheit erforderlich');return {...(code?{code}:{}),name,unit,quantity,note};});
       }
     }
     if(prior){const comparable=(d:GreenEvent)=>JSON.stringify({...d,actor:{id:d.actor.id,name:''}});if(comparable(prior.data)!==comparable(data))fail(409,'Einsatzereignis bereits mit abweichenden Daten gespeichert');return {id:prior.issue.id};}
@@ -335,7 +340,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     const matches=store.issues.filter(i=>i.subject===subject);if(matches.length!==1)fail(409,'Arbeitsende noch nicht eindeutig synchronisiert');
     const {issue}=await store.admin<{issue:Issue}>('/issues/'+matches[0]!.id+'.json');
     if(issue.project.id!==store.project.id||issue.tracker.id!==store.tracker||issue.subject!==subject)fail(409,'Einsatzkennung stimmt nicht');
-    const event=readEvent(issue);if(event.actor.id!==c.actor.id||event.start!==line.start||event.end!==line.end||event.activity!==line.activity||employees.some(id=>!event.employees.includes(id)))fail(409,'Rapport stimmt nicht mit gespeichertem Einsatz überein');
+    const event=readEvent(issue);if(event.actor.id!==c.actor.id||event.activity!==line.activity||employees.some(id=>event.participation?!event.participation.some(x=>x.employee===id&&x.start===line.start&&x.end===line.end):!event.employees.includes(id)||event.start!==line.start||event.end!==line.end))fail(409,'Rapport stimmt nicht mit gespeichertem Einsatz überein');
     return event.sources;
   }
   async function sourceRefs(c:C,value:unknown,kind?:unknown):Promise<SourceRef[]> {
@@ -382,7 +387,7 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
       // Do not move or abandon existing records when changing the storage project.
       const prev=selected();let oldProjectId=prev.storageProjectId;
       if(!oldProjectId){const all=await allProjects(admin);oldProjectId=all.find(p=>p.identifier===(process.env.DERKUMPEL_PROJECT_IDENTIFIER||'derkumpel'))?.id??all.find(p=>p.name.toLocaleLowerCase('de')==='derkumpel')?.id??null;}
-      if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: )/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
+      if(oldProjectId&&oldProjectId!==next.storageProjectId){const old=await pages<Issue>(admin,'/issues.json?project_id='+oldProjectId+'&status_id=*');if(old.some(i=>/^(Rapport |Rapportkorrektur |Rapportarchiv |DK Maschine: |DK Material: |DK Materialkatalog$)/.test(i.subject)))fail(409,'Bisheriger Speicher enthält Daten. Projektwechsel ohne Migration nicht möglich.');}
       if(setupPending)await setupPending.catch(()=>undefined);
       const ready=await automaticSettings(config,next);
       await persistSelection(next);selection=next;setupCache={value:ready,until:Date.now()+30000};resetInternalRapportProjects([ready.project,ready.catalogProject,...(next.greenProjectId?[next.greenProjectId]:[])]);
@@ -432,6 +437,28 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     await redmineJson(config,c.creds,'/issues/'+i.id+'.json',{method:'PUT',body:JSON.stringify({issue:{status_id:c.s.statuses[next],notes:note(c,action+(reason?': '+reason:'')+(next==='closed'&&d.owner.id===c.actor.id?' (Selbstprüfung)':''))}})});const actual=await detail(c,i.id);if(actual.i.status.id!==c.s.statuses[next])fail(409,'Redmine hat den Statuswechsel nicht übernommen');return actual.r;});});
   app.get('/api/rapport/orders',async r=>{const c=await context(r);const q=(r.query as {q?:string}).q?.trim()??'';if(q.length<2||q.length>100)return {orders:[]};const personal:Get=<T>(path:string)=>redmineJson<T>(config,c.creds,path);const items=await pages<Issue>(personal,'/issues.json?status_id=*&subject='+encodeURIComponent('~'+q));return {orders:items.filter(i=>![c.s.project,c.s.catalogProject].includes(i.project.id)&&!internalRapportProject(i.project.id,i.project.name)&&i.subject.toLocaleLowerCase('de').includes(q.toLocaleLowerCase('de'))).slice(0,30).map(i=>({id:i.id,subject:i.subject}))};});
   app.get('/api/rapport/order/:id',async r=>{const c=await context(r),id=Number((r.params as {id:string}).id);if(!Number.isSafeInteger(id)||id<=0)return fail(400,'Auftragsnummer ungültig');const {issue}=await redmineJson<{issue:Issue}>(config,c.creds,'/issues/'+id+'.json');if([c.s.project,c.s.catalogProject].includes(issue.project.id)||internalRapportProject(issue.project.id,issue.project.name))return fail(404,'Auftrag nicht gefunden');return {id:issue.id,subject:issue.subject};});
+  async function materialTicket(c:C){
+    if(!c.s.automatic)fail(409,'Zeilenbasierter Materialkatalog benötigt den automatischen DerKumpel-Speichermodus.');
+    const matches=(await pages<Issue>(c.service,'/issues.json?project_id='+c.s.project+'&status_id=*')).filter(i=>i.project.id===c.s.project&&i.subject===materialSubject);
+    if(matches.length>1)fail(409,'Mehrere Materialkataloge vorhanden. Bitte in Redmine bereinigen.');
+    let id=matches[0]?.id;
+    if(!id){const result=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.project,tracker_id:c.s.tracker,status_id:c.s.statuses.draft,subject:materialSubject,is_private:true,description:materialTemplate}});id=result.issue.id;}
+    const {issue}=await c.service<{issue:Issue}>('/issues/'+id+'.json');
+    if(issue.project.id!==c.s.project||issue.subject!==materialSubject)fail(409,'Materialkatalog nicht eindeutig');
+    return issue;
+  }
+  app.get('/api/rapport/materials',async r=>{const c=await context(r);return serialized(async()=>{const issue=await materialTicket(c);return {ticketId:issue.id,...parseMaterials(issue.description??'')};});});
+  app.post('/api/rapport/materials',async r=>{const c=await context(r);if(!c.dispatcher)fail(403,'Nur Disponenten pflegen den Materialkatalog');const b=obj(r.body);
+    const item:MaterialItem={code:str(b.code,60),name:str(b.name,200),unit:str(b.unit,40),category:str(b.category??'',100),...(b.price===undefined||b.price===null?{}:{price:Number(b.price)})};
+    if(Object.values(item).some(v=>typeof v==='string'&&/[\r\n|]/.test(v))||parseMaterials(materialRow(item)).items.length!==1)fail(400,'Ungültige Materialzeile');
+    return serialized(async()=>{const issue=await materialTicket(c),parsed=parseMaterials(issue.description??'');if(parsed.warnings.length)fail(409,'Materialkatalog enthält fehlerhafte Zeilen. Bitte in Redmine korrigieren.');
+      const old=parsed.items.find(x=>x.code.toLowerCase()===item.code.toLowerCase());if(old){if(JSON.stringify(old)===JSON.stringify(item))return {ticketId:issue.id,...parsed};fail(409,'Materialkennung bereits vergeben');}
+      const {issue:latest}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');if(latest.description!==issue.description||latest.updated_on!==issue.updated_on)fail(409,'Materialkatalog wurde gleichzeitig geändert. Bitte neu laden.');
+      await c.service('/issues/'+issue.id+'.json','PUT',{issue:{description:(issue.description??'').trimEnd()+'\n'+materialRow(item)+'\n',notes:note(c,'Materialzeile ergänzt: '+item.code)}});
+      const {issue:updated}=await c.service<{issue:Issue}>('/issues/'+issue.id+'.json');const result=parseMaterials(updated.description??'');if(!result.items.some(x=>JSON.stringify(x)===JSON.stringify(item)))fail(409,'Materialzeile nicht vollständig gespeichert');
+      return {ticketId:issue.id,...result};
+    });
+  });
   app.get('/api/rapport/catalog',async r=>{const c=await context(r);const items=await pages<Issue>(c.service,'/issues.json?project_id='+c.s.catalogProject+'&status_id='+(c.s.automatic?'*':'open'));return {machines:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Maschine: '):i.tracker.id===c.s.machineTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Maschine: '.length):i.subject})),materials:items.filter(i=>c.s.automatic?i.subject.startsWith('DK Material: '):i.tracker.id===c.s.materialTracker).map(i=>({id:i.id,name:c.s.automatic?i.subject.slice('DK Material: '.length):i.subject}))};});
   app.post('/api/rapport/catalog',async r=>{const c=await context(r);if(!c.dispatcher)return fail(403,'Nur Disponenten');const b=obj(r.body),name=str(b.name,200);if(!name||!['machine','material'].includes(String(b.kind)))return fail(400,'Ungültige Stammdaten');const result=await c.service<{issue:Issue}>('/issues.json','POST',{issue:{project_id:c.s.catalogProject,tracker_id:b.kind==='machine'?c.s.machineTracker:c.s.materialTracker,...(c.s.automatic?{status_id:c.s.statuses.draft}:{}),subject:c.s.automatic?(b.kind==='machine'?'DK Maschine: ':'DK Material: ')+name:name,...(c.s.automatic?{is_private:true}:{}),description:note(c,'Stammdatum angelegt')}});return {id:result.issue.id,name};});
   app.get('/api/rapport/pdf',async(r,reply)=>{const c=await context(r),q=r.query as {ids?:string};const ids=[...new Set((q.ids??'').split(',').map(Number))];if(!ids.length||ids.length>100||ids.some(id=>!Number.isSafeInteger(id)||id<=0))return fail(400,'Bitte maximal 100 gültige Rapporte auswählen');const reports:Report[]=[];for(let i=0;i<ids.length;i+=6){const batch=await Promise.all(ids.slice(i,i+6).map(async id=>{const {r:d}=await detail(c,id);allowed(c,d);return d;}));reports.push(...batch);}return reply.type('application/pdf').header('Content-Disposition','attachment; filename="Rapporte.pdf"').send(rapportPdfMany(reports));});

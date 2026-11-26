@@ -142,8 +142,7 @@ export function WorkPage() {
 
     {syncStatus?.state==='error'&&<Alert color="orange" title="Auftragsabgleich nicht vollständig"><Stack gap="xs"><Text size="sm">{syncStatus.message??'Synchronisation fehlgeschlagen.'}</Text><Button variant="light" onClick={()=>void syncNow().catch(()=>undefined)}>Erneut synchronisieren</Button></Stack></Alert>}
     {records.length>0&&!available.length&&<Alert color="orange">Alle geladenen Aufträge sind durch die Tracker-Auswahl ausgeblendet. <Button component={Link} to="/settings" variant="subtle">Tracker prüfen</Button></Alert>}
-    <Button component={Link} to="/green" h={52} variant="light">Grünpflege</Button>
-    <Button component={Link} to="/rapport" h={52} variant="light" leftSection={<UIIcon name="clock" size={20} />}>Arbeitszeit / Rapport</Button>
+    <Group grow gap="xs"><Button component={Link} to="/green" h={56} variant="light" leftSection={<UIIcon name="leaf" size={20}/>}>Grünpflege</Button><Button component={Link} to="/rapport/book" h={56} variant="light" leftSection={<UIIcon name="clock" size={20}/>}>Rapporte</Button></Group><Button component={Link} to="/rapport" h={48} variant="default">Arbeitszeit erfassen</Button><Button component={Link} to="/map" variant="subtle">Auftragskarte</Button>
 
     <Box className="summary-strip">
       <Group justify="space-between" align="flex-end" wrap="nowrap">

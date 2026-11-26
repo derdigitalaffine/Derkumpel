@@ -11,7 +11,7 @@ const items: Array<{ to: string; label: string; fullLabel: string; icon: IconNam
   { to: '/', label: 'Arbeit', fullLabel: 'Meine Arbeit', icon: 'work' },
   { to: '/tickets', label: 'Tickets', fullLabel: 'Ticket-Browser', icon: 'tickets' },
   { to: '/map', label: 'Karte', fullLabel: 'Auftragskarte', icon: 'map' },
-  { to: '/green', label: 'Grünpflege', fullLabel: 'Grünpflege', icon: 'work' },
+  { to: '/green', label: 'Grünpflege', fullLabel: 'Grünpflege', icon: 'leaf' },
   { to: '/rapport/book', label: 'Rapporte', fullLabel: 'Tagesrapporte', icon: 'clock' },
   { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
   { to: '/settings', label: 'Settings', fullLabel: 'Einstellungen', icon: 'settings' },
@@ -82,7 +82,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
       bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
       <Group grow gap={3} px={5} pt={7} align="stretch">
-        {items.filter(item=>item.to!=='/sync'&&item.to!=='/green').map((item) => {
+        {items.filter(item=>item.to!=='/sync'&&item.to!=='/map').map((item) => {
           const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?location.pathname.startsWith('/rapport'):location.pathname.startsWith(item.to);
           return <UnstyledButton key={item.to} component={Link} to={item.to}
             className="mobile-nav-item" data-active={active}
