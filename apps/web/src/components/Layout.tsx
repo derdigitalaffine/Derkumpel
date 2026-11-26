@@ -13,6 +13,7 @@ const items: Array<{ to: string; label: string; fullLabel: string; icon: IconNam
   { to: '/tickets', label: 'Tickets', fullLabel: 'Ticket-Browser', icon: 'tickets' },
   { to: '/map', label: 'Karte', fullLabel: 'Auftragskarte', icon: 'map' },
   { to: '/green', label: 'Grünpflege', fullLabel: 'Grünpflege', icon: 'leaf' },
+  { to: '/green/mine', label: 'Meine Kolonne', fullLabel: 'Meine Kolonne', icon: 'users' },
   { to: '/rapport/book', label: 'Rapporte', fullLabel: 'Tagesrapporte', icon: 'clock' },
   { to: '/sync', label: 'Sync', fullLabel: 'Synchronisation', icon: 'sync' },
   { to: '/settings', label: 'Settings', fullLabel: 'Einstellungen', icon: 'settings' },
@@ -83,7 +84,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <Box hiddenFrom="sm" component="nav" aria-label="Hauptnavigation" pos="fixed"
       bottom={0} left={0} right={0} style={{ zIndex: 100 }} className="mobile-nav safe-bottom">
       <Group grow gap={3} px={5} pt={7} align="stretch">
-        {navItems.filter(item=>item.to!=='/sync'&&item.to!=='/map'&&item.to!=='/rapport/review'&&item.to!=='/green/crews').map((item) => {
+        {navItems.filter(item=>item.to!=='/sync'&&item.to!=='/map'&&item.to!=='/rapport/review'&&item.to!=='/green/crews'&&item.to!=='/green/mine').map((item) => {
           const active = item.to === '/' ? location.pathname === '/' : item.to==='/rapport/book'?(location.pathname==='/rapport'||location.pathname.startsWith('/rapport/book')):item.to==='/green'?location.pathname==='/green':location.pathname.startsWith(item.to);
           return <UnstyledButton key={item.to} component={Link} to={item.to}
             className="mobile-nav-item" data-active={active}

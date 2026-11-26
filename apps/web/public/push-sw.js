@@ -3,7 +3,7 @@
 self.addEventListener('push', function (event) {
   var payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch (_) {}
-  var route = typeof payload.url === 'string' && (payload.url === '/green' || /^\/issues\/[0-9]{1,10}$/.test(payload.url))
+  var route = typeof payload.url === 'string' && (payload.url === '/green' || /^\/green\/mine(?:\?order=[0-9]{1,10})?$/.test(payload.url) || /^\/issues\/[0-9]{1,10}$/.test(payload.url))
     ? payload.url : '/';
   event.waitUntil(self.registration.showNotification('DerKumpel', {
     body: typeof payload.body === 'string' ? payload.body.slice(0, 140) : 'Ein Ticket wurde aktualisiert.',
@@ -18,7 +18,7 @@ self.addEventListener('push', function (event) {
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
   var path = event.notification.data && typeof event.notification.data.url === 'string'
-    && (event.notification.data.url === '/green' || /^\/issues\/[0-9]{1,10}$/.test(event.notification.data.url))
+    && (event.notification.data.url === '/green' || /^\/green\/mine(?:\?order=[0-9]{1,10})?$/.test(event.notification.data.url) || /^\/issues\/[0-9]{1,10}$/.test(event.notification.data.url))
     ? event.notification.data.url : '/';
   var destination = new URL(path, self.location.origin).href;
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async function (clients) {

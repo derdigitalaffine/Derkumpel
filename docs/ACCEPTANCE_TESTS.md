@@ -141,3 +141,7 @@
 
 ## Ressourcen-Unterseiten
 - Normaler und nachträglicher Grünpflegeabschluss zeigen nur zwei optionale Symbolbuttons mit Anzahl. Maschinen und Verbrauchsmaterial öffnen getrennte Vollbildansichten; ohne Positionen ist keine Eingabe erforderlich. Zurück erhält alle erfassten Werte. Maschinen bleiben im Halbstundenraster, Verbrauchsmaterial mit Menge und Einheit.
+
+## Meine Kolonne und Führung
+- Ersteller führt standardmäßig, sofern aktiv beteiligt. Andernfalls Auswahl aus den aktiven Mitgliedern; Führung und Ersteller werden getrennt gespeichert. Bestehende Einsätze ohne explizite Führung bleiben kompatibel.
+- Benachrichtigungen öffnen /green/mine?order=ID, markieren den Auftrag und zeigen den aktuellen Einsatz auch ohne lokalen Entwurf. Nur eigene erstellte oder geführte Kolonnen sind sichtbar, nur die Führung übernimmt Aufträge. Online erforderlich; Offline-Arbeit bleibt unter Grünpflege verfügbar.

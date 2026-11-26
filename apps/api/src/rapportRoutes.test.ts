@@ -86,7 +86,7 @@ describe('Rapport REST boundary',()=>{
      expect((await send('GET',tasks,'alice')).json().tasks.some((t:{id:number})=>t.id===id)).toBe(false);
      expect((await send('POST','/api/rapport/green/event','alice',start)).json().id).toBe(started.json().id);
      const stop='/api/rapport/green/crews/'+started.json().id+'/stop';
-     expect((await send('POST',stop,'alice')).statusCode).toBe(403);
+     expect((await send('POST',stop,'bob')).statusCode).toBe(403);
      const stopped=await send('POST',stop,'dispatcher');expect(stopped.statusCode).toBe(200);expect((await send('POST',stop,'dispatcher')).json()).toEqual(stopped.json());
      expect((await send('GET','/api/rapport/green/stop/'+operationId,'alice')).json()).toMatchObject({endedAt:stopped.json().endedAt,stoppedBy:{id:3}});
      expect((await send('GET','/api/rapport/green/stop/'+operationId,'bob')).json()).toEqual({});
