@@ -14,15 +14,15 @@ export function InlineText({value,label,disabled,onChange,multiline=false}:{valu
   const key=(e:KeyboardEvent<HTMLInputElement|HTMLTextAreaElement>)=>{if(e.key==='Escape'){e.preventDefault();cancelled.current=true;setActive(false);}else if(e.key==='Enter'&&(!multiline||!e.shiftKey)){e.preventDefault();e.currentTarget.blur();}};
   return multiline?<Textarea autoFocus autosize minRows={2} aria-label={label} value={raw} onChange={e=>setRaw(e.currentTarget.value)} onBlur={commit} onKeyDown={key}/>:<TextInput autoFocus aria-label={label} value={raw} onChange={e=>setRaw(e.currentTarget.value)} onBlur={commit} onKeyDown={key}/>;
 }
-export function InlineTime({value,label,disabled,onChange,onError}:{value:string;label:string;disabled:boolean;onChange:(v:string)=>void;onError:(s:string)=>void}){
+export function InlineTime({value,date,label,disabled,onChange,onError}:{value:string;date:string;label:string;disabled:boolean;onChange:(v:string)=>void;onError:(s:string)=>void}){
   const [active,setActive]=useState(false);const local=inputTime(value),clock=local.slice(11);
   if(!active||disabled)return <Trigger label={label+' bearbeiten'} disabled={disabled} onClick={()=>setActive(true)}>{clock||'–'}</Trigger>;
-  return <Select autoFocus searchable defaultDropdownOpened aria-label={label} value={clock||null} data={quarterOptions(clock)} allowDeselect={false} onDropdownClose={()=>setActive(false)} onChange={v=>{if(v){const next=fromInputTime(local.slice(0,10)+'T'+v,value);if(next)onChange(next);else onError('Ungültige oder mehrdeutige Uhrzeit am '+displayDate(local.slice(0,10)));}setActive(false);}}/>;
+  return <Select autoFocus searchable defaultDropdownOpened aria-label={label} value={clock||null} data={quarterOptions(clock)} allowDeselect={false} onDropdownClose={()=>setActive(false)} onChange={v=>{if(v){const next=fromInputTime((local.slice(0,10)||date)+'T'+v,value);if(next)onChange(next);else onError('Ungültige oder mehrdeutige Uhrzeit am '+displayDate(local.slice(0,10)));}setActive(false);}}/>;
 }
 export function InlineDuration({line,disabled,onChange}:{line:RapportLine;disabled:boolean;onChange:(v:string)=>void}){
   const [active,setActive]=useState(false);const mins=lineMinutes(line),value=String(mins),data=Array.from({length:96},(_,i)=>({value:String((i+1)*15),label:formatDuration((i+1)*15)+' h'}));
   if(!data.some(x=>x.value===value))data.unshift({value,label:formatDuration(Math.max(0,mins||0))+' h (Altbestand)'});
-  if(!active||disabled)return <Trigger label="Dauer bearbeiten" disabled={disabled} onClick={()=>setActive(true)}>{formatDuration(Math.max(0,mins||0))} h</Trigger>;
+  if(!active||disabled)return <Trigger label="Dauer bearbeiten" disabled={disabled} onClick={()=>setActive(true)}>{Number.isFinite(mins)?formatDuration(Math.max(0,mins))+' h':'–'}</Trigger>;
   return <Select autoFocus searchable defaultDropdownOpened aria-label="Dauer" value={value} data={data} allowDeselect={false} onDropdownClose={()=>setActive(false)} onChange={v=>{if(v&&Number(v)%15===0&&Number(v)>0&&Number.isFinite(Date.parse(line.start)))onChange(new Date(Date.parse(line.start)+Number(v)*60000).toISOString());setActive(false);}}/>;
 }
 export function InlineMachines({line,catalog,disabled,field,onChange}:{line:RapportLine;catalog:Catalog;disabled:boolean;field:'name'|'minutes';onChange:(machines:RapportLine['machines'])=>void}){

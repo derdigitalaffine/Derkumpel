@@ -40,6 +40,7 @@ export const api = {
   materialRows:()=>request<import('./green').MaterialRows>('/api/rapport/materials'),
   classifyMaterial:(code:string,previous:'machine'|'material',kind:'machine'|'material')=>request<import('./green').MaterialRows>('/api/rapport/materials/'+encodeURIComponent(code)+'/classification',{method:'PUT',body:JSON.stringify({previous,kind})}),
   addMaterialRow:(body:import('./green').MaterialItem)=>request<import('./green').MaterialRows>('/api/rapport/materials',{method:'POST',body:JSON.stringify(body)}),
+  greenCrews:()=>request<import('./crews').CrewOverview>('/api/rapport/green/crews'),
   greenEvent:(body:unknown)=>request<{id:number}>('/api/rapport/green/event',{method:'POST',body:JSON.stringify(body)}),
   greenTasks: () => request<{tasks:{id:number;subject:string;municipalities:string[]}[]}>('/api/rapport/green/tasks'),
   rapportOrders: (q:string) => request<{orders:{id:number;subject:string}[]}>(`/api/rapport/orders?q=${encodeURIComponent(q)}`),
