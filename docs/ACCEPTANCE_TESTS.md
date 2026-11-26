@@ -128,3 +128,8 @@
 - default bind address is loopback
 - optional Caddy profile starts proxy
 - `/api/health/live` and `/api/health/ready` succeed
+
+## Nachträgliche Aufträge laufender Kolonnen
+- Nur Disponenten dürfen einen freien Auftrag an die eindeutige Start-Ticket-ID einer laufenden Kolonne binden; Mitglieder und Führung sind unveränderlich.
+- Bis zur ausdrücklichen Online-Übernahme durch den Erfasser bleibt er als ausstehend sichtbar, nicht im allgemeinen Katalog. Web Push (optional) öffnet Grünpflege, In-App-Abfrage erfolgt regelmäßig.
+- Übernahme ist ein unveränderliches privates Redmine-Ereignis; Start bleibt erhalten. Stop/Finish und Rapport enthalten die bestätigten Aufgaben, ohne die Einsatzzeit neu zu starten. Nicht übernommene Einmalaufträge bleiben historisch zugeordnet; Daueraufgaben können nach Einsatzende wieder gewählt werden.

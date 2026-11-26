@@ -113,7 +113,7 @@ export class PushRegistry {
   }
 
   /** Idempotent delivery. Never includes issue subject, description or private comments in lock-screen payload. */
-  async dispatch(event: PushEvent): Promise<{ delivered: number; failed: number; duplicate: boolean }> {
+  async dispatch(event: PushEvent, greenAssignment=false): Promise<{ delivered: number; failed: number; duplicate: boolean }> {
     if (this.store.recentEvents.includes(event.event_id)) return { delivered: 0, failed: 0, duplicate: true };
     if (this.busy) throw new Error('Push delivery busy');
     this.busy = true;
@@ -125,8 +125,8 @@ export class PushRegistry {
       let failed = 0;
       const payload = JSON.stringify({
         title: 'DerKumpel',
-        body: `${labels[event.kind]} · Ticket #${event.issue_id}`,
-        url: `/issues/${event.issue_id}`,
+        body: greenAssignment ? 'Neuer Auftrag für die Kolonne' : `${labels[event.kind]} · Ticket #${event.issue_id}`,
+        url: greenAssignment ? '/green' : `/issues/${event.issue_id}`,
         tag: `issue-${event.issue_id}`,
       });
       for (let start = 0; start < targets.length; start += 8) {
