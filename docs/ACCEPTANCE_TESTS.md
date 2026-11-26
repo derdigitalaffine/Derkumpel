@@ -133,3 +133,8 @@
 - Nur Disponenten dürfen einen freien Auftrag an die eindeutige Start-Ticket-ID einer laufenden Kolonne binden; Mitglieder und Führung sind unveränderlich.
 - Bis zur ausdrücklichen Online-Übernahme durch den Erfasser bleibt er als ausstehend sichtbar, nicht im allgemeinen Katalog. Web Push (optional) öffnet Grünpflege, In-App-Abfrage erfolgt regelmäßig.
 - Übernahme ist ein unveränderliches privates Redmine-Ereignis; Start bleibt erhalten. Stop/Finish und Rapport enthalten die bestätigten Aufgaben, ohne die Einsatzzeit neu zu starten. Nicht übernommene Einmalaufträge bleiben historisch zugeordnet; Daueraufgaben können nach Einsatzende wieder gewählt werden.
+
+## Fehlende Kolonnenabschlüsse
+- Beendete, nicht abgeschlossene Einsätze sind für den ursprünglichen Erfasser auch ohne lokalen Entwurf und für Disponenten sichtbar und nachtragbar. Andere Mitarbeiter erhalten keinen Zugriff.
+- Unveränderte tatsächliche Einsatzzeit und Auftragsreferenzen; Teilnahme und gemeinsame Ressourcen kontrollieren, Disponent muss den Nachtrag begründen. Tatsächlicher Erfasser wird im Abschluss und Rapport gespeichert.
+- Vorhandene Rapporte und Überschneidungen werden geprüft; Wiederholung verwendet identische Vorgangs-IDs. Ein Nachtrag bleibt bei unvollständiger Einzelrapportübertragung offen; eine technische Redmine-Bestätigung schließt ihn erst nach erfolgreicher Übertragung ab. Keine automatische Rapportabnahme.
