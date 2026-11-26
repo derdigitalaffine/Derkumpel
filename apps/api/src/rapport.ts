@@ -377,15 +377,15 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
     }
     const expanded=records.map(record=>record.event.phase==='start'?{...record,event:{...record.event,sources:combinedSources(store,record.id,record.event)}}:record);
     const overview=crewOverview(expanded,members);
-    return {...overview,crews:overview.crews.map(crew=>({...crew,pendingOrders:linkedOrders(store,crew.startEventId).filter(t=>!crew.sources.some(s=>s.id===t.id)).map(({assignment:_,...task})=>task)})),warnings:[...warnings,...overview.warnings]};
+    return {...overview,crews:overview.crews.map(crew=>({...crew,acceptedOrderIds:acceptedOrders(store,crew.startEventId).map(t=>t.id),recoverySaved:crew.state==='stopped'&&store.issues.some(i=>i.subject===eventSubject(crew.actor.id,crew.key.slice(String(crew.actor.id).length+1),'finish')),pendingOrders:linkedOrders(store,crew.startEventId).filter(t=>!crew.sources.some(s=>s.id===t.id)).map(({assignment:_,...task})=>task)})),warnings:[...warnings,...overview.warnings]};
   }
   const recoveryReceipt=(id:number)=>'DK Grünpflege-Rapportbestätigung '+id;
-  function recovered(store:GreenStore,id:number){return store.issues.some(i=>i.subject===recoveryReceipt(id)&&i.description?.trim()==='DERKUMPEL-GREEN-RECEIPT/1 '+id);}
+  function recovered(store:GreenStore,id:number){const matches=store.issues.filter(i=>i.subject===recoveryReceipt(id));if(matches.length>1||matches.some(i=>i.description?.trim()!=='DERKUMPEL-GREEN-RECEIPT/1 '+id))fail(409,'Ungültige oder doppelte Rapportbestätigung');return matches.length===1;}
   function recoveryEvents(store:GreenStore,c:{actor:Person;dispatcher:boolean},id:number){
     const i=store.issues.find(i=>i.id===id&&i.subject.startsWith('DK Grünpflege-Einsatz ')&&i.subject.endsWith(' start'));
     if(!i)fail(404,'Einsatz nicht gefunden');const begun=readEvent(i);if(begun.actor.id!==c.actor.id&&crewLeader(begun).id!==c.actor.id&&!c.dispatcher)fail(404,'Einsatz nicht gefunden');
     const get=(phase:string)=>{const matches=store.issues.filter(i=>i.subject===eventSubject(begun.actor.id,begun.operationId,phase));if(matches.length>1)fail(409,'Doppelte Einsatzereignisse');return matches[0];};
-    const stop=get('stop'),finish=get('finish');if(!stop)fail(409,'Einsatz wurde noch nicht beendet.');const stopped=readEvent(stop);
+    if(get('start')?.id!==id)fail(409,'Arbeitsbeginn nicht eindeutig');const stop=get('stop'),finish=get('finish');if(!stop)fail(409,'Einsatz wurde noch nicht beendet.');const stopped=readEvent(stop);
     if(stopped.startedAt!==begun.startedAt||JSON.stringify(stopped.employees)!==JSON.stringify(begun.employees)||JSON.stringify(stopped.sources.map(s=>s.id))!==JSON.stringify(combinedSources(store,id,begun).map(s=>s.id)))fail(409,'Einsatzdaten sind widersprüchlich.');
     return {begun,stopped,finish,finished:finish?readEvent(finish):undefined};
   }
@@ -402,7 +402,9 @@ export function registerRapport(app:FastifyInstance,config:AppConfig,credentials
   app.get('/api/rapport/green/recovery',async(r,reply)=>{
     reply.header('Cache-Control','no-store');const c=await context(r),store=await greenStore(c);
     const overview=projectCrews(store,c.members);
-    return {crews:overview.crews.filter(x=>x.state==='stopped'&&(x.actor.id===c.actor.id||x.leader.id===c.actor.id))};
+    const operation=(r.query as {operation?:string}).operation;let current:{id:number;saved:boolean;confirmed:boolean;completedBy?:Person}|undefined;
+    if(operation){const key=uid(operation),start=store.issues.find(i=>i.subject===eventSubject(c.actor.id,key,'start')),finish=store.issues.find(i=>i.subject===eventSubject(c.actor.id,key,'finish'));if(start&&finish){const e=readEvent(finish);current={id:start.id,saved:true,confirmed:recovered(store,finish.id),completedBy:e.completedBy};}}
+    return {crews:overview.crews.filter(x=>x.state==='stopped'&&(x.actor.id===c.actor.id||x.leader.id===c.actor.id)),current};
   });
   app.get('/api/rapport/green/recovery/:id',async(r,reply)=>{
     reply.header('Cache-Control','no-store');const c=await context(r),store=await greenStore(c);return recoveryView(store,c,Number((r.params as {id:string}).id));

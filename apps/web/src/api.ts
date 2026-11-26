@@ -45,7 +45,7 @@ export const api = {
   greenAccept:(operation:string,id:number)=>request<{task:import('./green').GreenTask;baseSourceIds:number[]}>('/api/rapport/green/active/'+encodeURIComponent(operation)+'/accept/'+id,{method:'POST'}),
   greenMyCrews:()=>request<import('./crews').CrewOverview>('/api/rapport/green/my-crews'),
   greenAcceptCrew:(id:number,task:number)=>request<{task:import('./green').GreenTask}>('/api/rapport/green/crews/'+id+'/accept/'+task,{method:'POST'}),
-  greenRecoveryList:()=>request<{crews:import('./crews').Crew[]}>('/api/rapport/green/recovery'),
+  greenRecoveryList:(operation?:string)=>request<{crews:import('./crews').Crew[];current?:{id:number;saved:boolean;confirmed:boolean;completedBy?:{id:number;name:string}}}>('/api/rapport/green/recovery'+(operation?'?operation='+encodeURIComponent(operation):'')),
   greenRecovery:(id:number)=>request<import('./crews').CrewRecovery>('/api/rapport/green/recovery/'+id),
   greenRecover:(id:number,body:unknown)=>request<{complete:boolean;results:{employee:number;ok:boolean;message?:string;reportId?:number}[]}>('/api/rapport/green/recovery/'+id,{method:'POST',body:JSON.stringify(body)}),
   greenStopCrew:(id:number)=>request<{id:number;endedAt:string}>('/api/rapport/green/crews/'+id+'/stop',{method:'POST'}),
