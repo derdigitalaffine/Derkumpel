@@ -3,6 +3,7 @@ import { useNetwork } from '@mantine/hooks';
 import { Link, useLocation } from 'react-router-dom';
 import { useCallback, type ReactNode } from 'react';
 import { db } from '../db';
+import { currentRapportQueue } from '../rapportQueue';
 import { useDexieLive } from '../live';
 import { UIIcon, type IconName } from './UIIcon';
 
@@ -18,8 +19,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const network = useNetwork();
   const queue = useDexieLive(useCallback(() => db.outbox.toArray(), []), []);
-  const pendingCount = queue.length;
-  const conflictCount = queue.filter((item) => item.state === 'conflict').length;
+  const rapportQueue=useDexieLive(useCallback(currentRapportQueue,[]),[]);
+  const pendingCount = queue.length+rapportQueue.length;
+  const conflictCount = queue.filter((item) => item.state === 'conflict').length+rapportQueue.filter(item=>item.state==='conflict').length;
   const queueColor = conflictCount ? 'red' : 'orange';
   const queueLabel = conflictCount ? `${conflictCount} Konflikt${conflictCount === 1 ? '' : 'e'}` : `${pendingCount} lokal`;
   const syncBadge = pendingCount > 0
